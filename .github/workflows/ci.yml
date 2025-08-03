@@ -1,4 +1,3 @@
-
 name: Run Unit Tests
 
 on:
@@ -17,6 +16,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
@@ -35,14 +36,9 @@ jobs:
         LLM_MODEL: ${{ secrets.LLM_MODEL }}
         LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       run: |
-        uv run pytest --cov --cov-report=xml tests/unit/
+        uv run pytest --cov --cov-branch --cov-report=xml tests/unit/
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        slug: wirelessr/SpecForge-Agent
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: true
