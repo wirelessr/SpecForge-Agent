@@ -1,5 +1,7 @@
 # AutoGen Multi-Agent Framework
 
+[![Run Unit Tests](https://github.com/wirelessr/SpecForge-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/wirelessr/SpecForge-Agent/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/wirelessr/SpecForge-Agent/graph/badge.svg)](https://codecov.io/gh/wirelessr/SpecForge-Agent)
+
 A Python-based multi-agent collaboration framework using AutoGen for project development, debugging, and code review tasks.
 
 ## Features
