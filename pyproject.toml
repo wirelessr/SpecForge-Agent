@@ -1,0 +1,67 @@
+[project]
+name = "autogen-framework"
+version = "0.1.0"
+description = "AutoGen-based multi-agent collaboration framework for project development, debugging, and code review"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "autogen-agentchat",
+    "autogen-ext[openai]",
+    "openai>=1.0.0",
+    "asyncio-mqtt>=0.11.0",
+    "pydantic>=2.0.0",
+    "aiofiles>=23.0.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "python-dotenv>=1.0.0",
+    "autogen-agentchat>=0.7.1",
+    "autogen-ext[openai]>=0.7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+autogen-framework = "autogen_framework.main:main"
+autogen-config = "autogen_framework.config_cli:config_cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["autogen_framework"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require real services)",
+    "slow: marks tests as slow running",
+    "real: marks tests that use real LLM endpoints"
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "flake8>=7.3.0",
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+]
