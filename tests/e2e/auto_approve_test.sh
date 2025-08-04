@@ -5,259 +5,263 @@
 
 set -e  # Exit on any error
 
-# 設置測試環境變數
+# Set test environment variables
 export INTEGRATION_TESTING=true
 export TESTING=true
 export LOG_LEVEL=WARNING  # 减少测试期间的日志输出
 
 echo "=== Auto-Approve End-to-End Test ==="
-echo "開始時間: $(date)"
+echo "Start time: $(date)"
 echo ""
 
-# 清理函數
+# Test configuration
+TEST_TASK="Create a simple Python file that prints 'Hello, World!' when executed. The file should have a main function and proper Python structure."
+TEST_WORKSPACE="auto_approve_test_workspace"
+
+# Cleanup function
 cleanup_test_files() {
-    echo "正在清理測試檔案..."
-    # 返回到項目根目錄
-    cd ..
-    echo "測試檔案清理完成"
+    echo "Cleaning up test files..."
+    # Remove test workspace and temporary files
+    rm -rf "$TEST_WORKSPACE"
+    rm -f auto_approve_*.txt
+    echo "Test file cleanup completed"
 }
 
-# 設置 trap 來確保清理
+# Set trap to ensure cleanup runs on exit
 trap cleanup_test_files EXIT
 
-echo "=== 環境檢查 ==="
+echo "=== Environment Check ==="
 
-# 確保在正確的專案根目錄中執行
+# Ensure running in correct project root directory
 if [ ! -f "pyproject.toml" ] || [ ! -d "autogen_framework" ]; then
-    echo "錯誤: 請在專案根目錄中執行此測試腳本"
+    echo "Error: Please run this test script from the project root directory"
     exit 1
 fi
 
-# 創建artifacts目錄（如果不存在）
-mkdir -p artifacts
-
-# 切換到artifacts目錄，讓生成的產出物放在正確位置
-echo "📁 切換到artifacts目錄進行測試"
-cd artifacts
-
-# 檢查 .env.integration 文件是否存在（在項目根目錄）
-if [ ! -f "../.env.integration" ]; then
-    echo "錯誤: .env.integration 文件不存在，請創建該文件並配置真實的 LLM 設定"
+# Check if .env.integration file exists
+if [ ! -f ".env.integration" ]; then
+    echo "Error: .env.integration file does not exist. Please create it and configure real LLM settings"
     exit 1
 fi
 
-# 確保 autogen-framework 命令可用
+# Ensure autogen-framework command is available
 if ! command -v autogen-framework &> /dev/null; then
-    echo "錯誤: autogen-framework 命令不存在，請先安裝專案: pip install -e ."
+    echo "Error: autogen-framework command not found. Please install the project: pip install -e ."
     exit 1
 fi
 
-echo "✅ 環境檢查通過"
+echo "✅ Environment check passed"
 echo ""
 
-# 重置 session
-echo "=== 重置 Session ==="
+# Reset session
+echo "=== Reset Session ==="
 autogen-framework --reset-session
-echo "✅ Session 重置完成"
+echo "✅ Session reset completed"
 echo ""
 
-# 提交 auto-approve 請求
-echo "=== 提交 Auto-Approve 請求 ==="
-REQUEST="Create a simple Python file that prints 'Hello, World!' when executed. The file should have a main function and proper Python structure."
-
-echo "請求內容: $REQUEST"
+# Submit auto-approve request
+echo "=== Submit Auto-Approve Request ==="
+echo "Request: $TEST_TASK"
 echo ""
 
-# 使用 auto-approve 模式
-echo "⚡ 使用 auto-approve 模式處理請求..."
-autogen-framework --request "$REQUEST" --auto-approve
+# Use auto-approve mode with workspace
+echo "⚡ Processing request with auto-approve mode..."
+autogen-framework --workspace "$TEST_WORKSPACE" --request "$TEST_TASK" --auto-approve > auto_approve_output.txt 2>&1
 
 if [ $? -ne 0 ]; then
-    echo "❌ Auto-approve 請求失敗"
+    echo "❌ Auto-approve request failed"
+    echo "Error output:"
+    cat auto_approve_output.txt
     exit 1
 fi
 
-echo "✅ Auto-approve 請求處理完成"
+echo "✅ Auto-approve request processing completed"
 echo ""
 
-# 檢查狀態
-echo "=== 檢查框架狀態 ==="
-autogen-framework --status
+# Check status
+echo "=== Check Framework Status ==="
+autogen-framework --workspace "$TEST_WORKSPACE" --status
 echo ""
 
-# 尋找生成的工作目錄
-echo "=== 尋找生成的工作目錄 ==="
+# Find generated workspace
+echo "=== Find Generated Workspace ==="
 
-# 尋找工作目錄 - 按照正確的文件組織原則檢查artifacts/outputs/目錄
-WORK_DIRS=()
-
-# 方法1: 在artifacts/outputs/中尋找 the-user-* 目錄
-for dir in $(find artifacts/outputs -maxdepth 1 -type d -name "the-user-*" 2>/dev/null); do
-    WORK_DIRS+=("$dir")
-done
-
-# 方法2: 在artifacts/outputs/中尋找 create-* 目錄
-for dir in $(find artifacts/outputs -maxdepth 1 -type d -name "create-*" 2>/dev/null); do
-    WORK_DIRS+=("$dir")
-done
-
-# 方法3: 在artifacts/outputs/中尋找包含 requirements.md, design.md, tasks.md 的目錄
-for dir in $(find artifacts/outputs -maxdepth 1 -type d 2>/dev/null); do
-    if [ -f "$dir/requirements.md" ] && [ -f "$dir/design.md" ] && [ -f "$dir/tasks.md" ]; then
-        WORK_DIRS+=("$dir")
-    fi
-done
-
-# 方法4: 如果artifacts/outputs不存在或為空，檢查頂層目錄（向後兼容）
-if [ ${#WORK_DIRS[@]} -eq 0 ]; then
-    echo "⚠️  在artifacts/outputs/中未找到工作目錄，檢查頂層目錄..."
-    
-    for dir in $(find . -maxdepth 1 -type d -name "the-user-*" -o -name "create-*" 2>/dev/null); do
-        if [ -f "$dir/requirements.md" ] && [ -f "$dir/design.md" ] && [ -f "$dir/tasks.md" ]; then
-            WORK_DIRS+=("$dir")
-            echo "⚠️  發現工作目錄在頂層: $dir (應該移動到artifacts/outputs/)"
-        fi
-    done
-fi
-
-if [ ${#WORK_DIRS[@]} -eq 0 ]; then
-    echo "❌ 找不到工作目錄"
+# Check if workspace directory exists
+if [ ! -d "$TEST_WORKSPACE" ]; then
+    echo "❌ Workspace directory not found: $TEST_WORKSPACE"
     echo ""
-    echo "檢查artifacts/outputs/目錄:"
-    if [ -d "artifacts/outputs" ]; then
-        ls -la artifacts/outputs/
-    else
-        echo "artifacts/outputs/目錄不存在"
-    fi
-    echo ""
-    echo "檢查頂層目錄:"
+    echo "Current directory contents:"
     ls -la
     echo ""
-    echo "尋找所有包含 requirements.md 的目錄:"
-    find . -name "requirements.md" -type f 2>/dev/null
+    echo "Auto-approve output:"
+    if [ -f "auto_approve_output.txt" ]; then
+        cat auto_approve_output.txt
+    fi
     exit 1
 fi
 
-# 使用第一個找到的工作目錄
-WORK_DIR="${WORK_DIRS[0]}"
-echo "📂 找到工作目錄: $WORK_DIR"
+echo "📂 Found workspace directory: $TEST_WORKSPACE"
 
-# 檢查必要文件是否存在
+# Find the project directory within workspace
 echo ""
-echo "=== 檢查生成的文件 ==="
+echo "=== Find Project Directory ==="
+
+# Look for project directories (exclude system directories)
+PROJECT_DIRS=()
+for dir in "$TEST_WORKSPACE"/*; do
+    if [ -d "$dir" ]; then
+        dirname=$(basename "$dir")
+        # Skip system directories
+        if [[ "$dirname" != "logs" && "$dirname" != "memory" && "$dirname" != "." && "$dirname" != ".." ]]; then
+            PROJECT_DIRS+=("$dir")
+        fi
+    fi
+done
+
+if [ ${#PROJECT_DIRS[@]} -eq 0 ]; then
+    echo "❌ No project directory found"
+    echo "Workspace contents:"
+    ls -la "$TEST_WORKSPACE"
+    exit 1
+fi
+
+# Use the first project directory found
+PROJECT_DIR="${PROJECT_DIRS[0]}"
+echo "📂 Found project directory: $PROJECT_DIR"
+
+# Check required files exist
+echo ""
+echo "=== Check Generated Files ==="
 
 REQUIRED_FILES=("requirements.md" "design.md" "tasks.md")
 for file in "${REQUIRED_FILES[@]}"; do
-    if [ -f "$WORK_DIR/$file" ]; then
-        echo "✅ $file 存在"
+    if [ -f "$PROJECT_DIR/$file" ]; then
+        echo "✅ $file exists"
     else
-        echo "❌ $file 不存在"
+        echo "❌ $file does not exist"
+        echo "Project directory contents:"
+        ls -la "$PROJECT_DIR"
         exit 1
     fi
 done
 
-# 尋找 Python 文件
+# Find Python files
 echo ""
-echo "=== 尋找 Python 文件 ==="
-PYTHON_FILES=($(find "$WORK_DIR" -name "*.py" -type f))
+echo "=== Find Python Files ==="
+PYTHON_FILES=($(find "$PROJECT_DIR" -name "*.py" -type f))
 
 if [ ${#PYTHON_FILES[@]} -eq 0 ]; then
-    echo "❌ 找不到 Python 文件"
-    echo "$WORK_DIR 目錄內容:"
-    ls -la "$WORK_DIR"
+    echo "❌ No Python files found"
+    echo "$TEST_WORKSPACE directory contents:"
+    ls -la "$TEST_WORKSPACE"
     exit 1
 fi
 
-# 使用第一個找到的 Python 文件
+# Use the first Python file found
 PYTHON_FILE="${PYTHON_FILES[0]}"
-echo "🐍 找到 Python 文件: $PYTHON_FILE"
+echo "🐍 Found Python file: $PYTHON_FILE"
 
-# 顯示 Python 文件內容
+# Display Python file content
 echo ""
-echo "=== Python 文件內容 ==="
+echo "=== Python File Content ==="
 echo "----------------------------------------"
 cat "$PYTHON_FILE"
 echo "----------------------------------------"
 
-# 驗證 Python 文件內容
+# Check if file is empty
+if [ ! -s "$PYTHON_FILE" ]; then
+    echo "❌ Python file is empty!"
+    echo "This indicates the auto-approve process failed to generate code."
+    echo ""
+    echo "Checking auto-approve output for errors:"
+    if [ -f "auto_approve_output.txt" ]; then
+        echo "--- Auto-approve output ---"
+        cat auto_approve_output.txt
+        echo "--- End auto-approve output ---"
+    fi
+    echo ""
+    echo "Checking project directory for other files:"
+    ls -la "$PROJECT_DIR"
+    exit 1
+fi
+
+# Validate Python file content
 echo ""
-echo "=== 驗證 Python 文件內容 ==="
+echo "=== Validate Python File Content ==="
 
 if grep -qi "hello" "$PYTHON_FILE" && grep -qi "world" "$PYTHON_FILE"; then
-    echo "✅ 包含 'Hello' 和 'World'"
+    echo "✅ Contains 'Hello' and 'World'"
 else
-    echo "❌ 缺少 'Hello' 或 'World'"
+    echo "❌ Missing 'Hello' or 'World'"
+    echo "File content:"
+    cat "$PYTHON_FILE"
+    echo ""
+    echo "This indicates the auto-approve process generated incomplete code."
     exit 1
 fi
 
 if grep -q "def main\|def " "$PYTHON_FILE"; then
-    echo "✅ 包含函數定義"
+    echo "✅ Contains function definition"
 else
-    echo "❌ 缺少函數定義"
+    echo "❌ Missing function definition"
     exit 1
 fi
 
 if grep -q 'if __name__ == "__main__"' "$PYTHON_FILE"; then
-    echo "✅ 包含 main guard"
+    echo "✅ Contains main guard"
 else
-    echo "❌ 缺少 main guard"
+    echo "❌ Missing main guard"
     exit 1
 fi
 
-# 測試 Python 文件執行
+# Test Python file execution
 echo ""
-echo "=== 測試 Python 文件執行 ==="
+echo "=== Test Python File Execution ==="
 
-# 執行Python文件（使用絕對路徑）
+# Execute Python file
 PYTHON_OUTPUT=$(python "$PYTHON_FILE" 2>&1)
 PYTHON_EXIT_CODE=$?
 
 if [ $PYTHON_EXIT_CODE -eq 0 ]; then
-    echo "✅ Python 文件執行成功"
-    echo "📤 輸出: $PYTHON_OUTPUT"
+    echo "✅ Python file executed successfully"
+    echo "📤 Output: $PYTHON_OUTPUT"
     
-    # 驗證輸出包含 Hello World (不區分大小寫)
+    # Validate output contains Hello World (case insensitive)
     if echo "$PYTHON_OUTPUT" | grep -qi "hello" && echo "$PYTHON_OUTPUT" | grep -qi "world"; then
-        echo "✅ 輸出包含預期的 'Hello, World!'"
+        echo "✅ Output contains expected 'Hello, World!'"
         
-        # 額外驗證：檢查常見的Hello World格式
+        # Additional validation: check common Hello World formats
         if echo "$PYTHON_OUTPUT" | grep -qi "Hello, World!"; then
-            echo "✅ 輸出格式標準: 'Hello, World!'"
+            echo "✅ Standard output format: 'Hello, World!'"
         elif echo "$PYTHON_OUTPUT" | grep -qi "Hello, world!"; then
-            echo "✅ 輸出格式正確: 'Hello, world!'"
+            echo "✅ Correct output format: 'Hello, world!'"
         else
-            echo "✅ 輸出包含Hello和World: $PYTHON_OUTPUT"
+            echo "✅ Output contains Hello and World: $PYTHON_OUTPUT"
         fi
     else
-        echo "❌ 輸出不包含預期的 'Hello, World!': $PYTHON_OUTPUT"
-        echo "這表示auto-approve生成的代碼有問題"
+        echo "❌ Output does not contain expected 'Hello, World!': $PYTHON_OUTPUT"
+        echo "This indicates the auto-approve generated code has issues"
         exit 1
     fi
 else
-    echo "❌ Python 文件執行失敗"
-    echo "錯誤輸出: $PYTHON_OUTPUT"
+    echo "❌ Python file execution failed"
+    echo "Error output: $PYTHON_OUTPUT"
     exit 1
 fi
 
-# 不需要返回原目錄，因為沒有切換目錄
-
-# 成功總結
+# Success summary
 echo ""
-echo "🎉 Auto-Approve 端到端測試成功完成!"
+echo "🎉 Auto-Approve End-to-End Test Successfully Completed!"
 echo "=================================================="
-echo "✅ 真實 AutoGen agents 成功創建了可工作的 Python 應用程式"
-echo "✅ Auto-approve 模式端到端工作，無需手動干預"
-echo "✅ 生成的 Python 文件可執行並產生預期輸出"
-echo "✅ 所有工作流程階段 (Requirements → Design → Tasks → Implementation) 完成"
+echo "✅ Real AutoGen agents successfully created a working Python application"
+echo "✅ Auto-approve mode works end-to-end without manual intervention"
+echo "✅ Generated Python file is executable and produces expected output"
+echo "✅ All workflow stages (Requirements → Design → Tasks → Implementation) completed"
 echo ""
-echo "📁 生成文件位置: artifacts/$WORK_DIR"
-echo "🐍 Python 文件: artifacts/$PYTHON_FILE"
-echo "📤 執行輸出: $PYTHON_OUTPUT"
+echo "📁 Generated files location: $TEST_WORKSPACE"
+echo "🐍 Python file: $PYTHON_FILE"
+echo "📤 Execution output: $PYTHON_OUTPUT"
 echo ""
-echo "💡 所有產出物已保存在 artifacts/ 目錄中"
-echo "結束時間: $(date)"
-
-# 返回到項目根目錄
-cd ..
+echo "End time: $(date)"
 
 exit 0
