@@ -235,6 +235,24 @@ class LLMConfig:
         return True
 
 
+@dataclass
+class CompressionResult:
+    """Result of context compression operation."""
+    original_size: int
+    compressed_size: int
+    compression_ratio: float
+    compressed_content: str
+    method_used: str
+    success: bool
+    error: Optional[str] = None
+    timestamp: str = ""
+    
+    def __post_init__(self):
+        """Set timestamp after initialization."""
+        if not self.timestamp:
+            self.timestamp = datetime.now().isoformat()
+
+
 # Type aliases for better code readability
 AgentContext = Dict[str, Any]
 MemoryContent = Dict[str, str]

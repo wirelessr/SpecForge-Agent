@@ -244,6 +244,159 @@ class TestConfigManager:
             assert 'workspace_path' in config
             assert 'log_level' in config
     
+    def test_get_token_config_success(self):
+        """Test successful token configuration retrieval."""
+        with patch.dict(os.environ, {
+            'DEFAULT_TOKEN_LIMIT': '16384',
+            'TOKEN_COMPRESSION_THRESHOLD': '0.8',
+            'CONTEXT_COMPRESSION_ENABLED': 'true',
+            'COMPRESSION_TARGET_RATIO': '0.4',
+            'VERBOSE_TOKEN_LOGGING': 'true'
+        }, clear=True):
+            config_manager = ConfigManager(load_env=False)
+            config = config_manager.get_token_config()
+            
+            assert config['default_token_limit'] == 16384
+            assert config['compression_threshold'] == 0.8
+            assert config['compression_enabled'] is True
+            assert config['compression_target_ratio'] == 0.4
+            assert config['verbose_logging'] is True
+    
+    def test_get_token_config_with_defaults(self):
+        """Test token configuration uses defaults when not set."""
+        with patch.dict(os.environ, {}, clear=True):
+            config_manager = ConfigManager(load_env=False)
+            config = config_manager.get_token_config()
+            
+            assert config['default_token_limit'] == 8192
+            assert config['compression_threshold'] == 0.9
+            assert config['compression_enabled'] is True
+            assert config['compression_target_ratio'] == 0.5
+            assert config['verbose_logging'] is False
+    
+    def test_get_token_config_boolean_parsing(self):
+        """Test token configuration boolean parsing."""
+        test_cases = [
+            ('true', True),
+            ('True', True),
+            ('TRUE', True),
+            ('false', False),
+            ('False', False),
+            ('FALSE', False),
+            ('invalid', False)  # Should default to False for invalid values
+        ]
+        
+        for env_value, expected in test_cases:
+            with patch.dict(os.environ, {
+                'CONTEXT_COMPRESSION_ENABLED': env_value,
+                'VERBOSE_TOKEN_LOGGING': env_value
+            }, clear=True):
+                config_manager = ConfigManager(load_env=False)
+                config = config_manager.get_token_config()
+                
+                assert config['compression_enabled'] is expected
+                assert config['verbose_logging'] is expected
+    
+    def test_validate_token_config_invalid_threshold(self):
+        """Test token configuration validation with invalid compression threshold."""
+        config_manager = ConfigManager(load_env=False)
+        
+        # Test threshold <= 0
+        invalid_config = {
+            'compression_threshold': 0.0,
+            'default_token_limit': 8192,
+            'compression_target_ratio': 0.5
+        }
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(invalid_config)
+            mock_warning.assert_called_once()
+            assert validated['compression_threshold'] == 0.9  # Should use default
+        
+        # Test threshold > 1
+        invalid_config['compression_threshold'] = 1.5
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(invalid_config)
+            mock_warning.assert_called_once()
+            assert validated['compression_threshold'] == 0.9  # Should use default
+    
+    def test_validate_token_config_invalid_token_limit(self):
+        """Test token configuration validation with invalid token limit."""
+        config_manager = ConfigManager(load_env=False)
+        
+        invalid_config = {
+            'compression_threshold': 0.9,
+            'default_token_limit': -100,  # Invalid: negative
+            'compression_target_ratio': 0.5
+        }
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(invalid_config)
+            mock_warning.assert_called_once()
+            assert validated['default_token_limit'] == 8192  # Should use default
+    
+    def test_validate_token_config_invalid_target_ratio(self):
+        """Test token configuration validation with invalid target ratio."""
+        config_manager = ConfigManager(load_env=False)
+        
+        # Test ratio <= 0
+        invalid_config = {
+            'compression_threshold': 0.9,
+            'default_token_limit': 8192,
+            'compression_target_ratio': 0.0
+        }
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(invalid_config)
+            mock_warning.assert_called_once()
+            assert validated['compression_target_ratio'] == 0.5  # Should use default
+        
+        # Test ratio >= 1
+        invalid_config['compression_target_ratio'] = 1.0
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(invalid_config)
+            mock_warning.assert_called_once()
+            assert validated['compression_target_ratio'] == 0.5  # Should use default
+    
+    def test_validate_token_config_valid_values(self):
+        """Test token configuration validation with valid values."""
+        config_manager = ConfigManager(load_env=False)
+        
+        valid_config = {
+            'compression_threshold': 0.85,
+            'default_token_limit': 16384,
+            'compression_target_ratio': 0.3
+        }
+        
+        with patch.object(config_manager.logger, 'warning') as mock_warning:
+            validated = config_manager.validate_token_config(valid_config)
+            mock_warning.assert_not_called()  # No warnings for valid config
+            
+            # Values should remain unchanged
+            assert validated['compression_threshold'] == 0.85
+            assert validated['default_token_limit'] == 16384
+            assert validated['compression_target_ratio'] == 0.3
+    
+    def test_get_token_config_invalid_values_fallback(self):
+        """Test token configuration falls back to defaults for invalid environment values."""
+        with patch.dict(os.environ, {
+            'DEFAULT_TOKEN_LIMIT': 'invalid_number',
+            'TOKEN_COMPRESSION_THRESHOLD': 'not_a_float',
+            'COMPRESSION_TARGET_RATIO': 'invalid'
+        }, clear=True):
+            config_manager = ConfigManager(load_env=False)
+            
+            with patch.object(config_manager.logger, 'warning') as mock_warning:
+                config = config_manager.get_token_config()
+                
+                # Should fall back to defaults and log warnings
+                assert mock_warning.call_count >= 3  # At least 3 warnings for invalid values
+                assert config['default_token_limit'] == 8192
+                assert config['compression_threshold'] == 0.9
+                assert config['compression_target_ratio'] == 0.5
+    
     def test_global_config_manager(self):
         """Test global configuration manager functions."""
         from autogen_framework.config_manager import get_config_manager, reset_config_manager
