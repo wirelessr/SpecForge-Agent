@@ -192,10 +192,12 @@ def print_help():
               help='Revise a specific phase with feedback (format: phase:feedback)')
 @click.option('--execute-task',
               help='Execute a specific task from tasks.md (format: task_number or task_title)')
+@click.option('--auto-approve', is_flag=True,
+              help='Automatically approve all workflow phases without manual intervention')
 def main(workspace: str, request: Optional[str], continue_workflow: bool,
          status: bool, verbose: bool, log_file: Optional[str],
          llm_base_url: str, llm_model: str, llm_api_key: str,
-         help_examples: bool, reset_session: bool, approve: Optional[str], reject: Optional[str], revise: Optional[str], execute_task: Optional[str]):
+         help_examples: bool, reset_session: bool, approve: Optional[str], reject: Optional[str], revise: Optional[str], execute_task: Optional[str], auto_approve: bool):
     """
     AutoGen Multi-Agent Framework
     
@@ -458,7 +460,7 @@ def main(workspace: str, request: Optional[str], continue_workflow: bool,
             
             async def process_request():
                 try:
-                    result = await controller.process_user_request(request)
+                    result = await controller.process_request(request, auto_approve=auto_approve)
                     
                     if result.get("success"):
                         click.echo("✅ Request processed successfully!")
