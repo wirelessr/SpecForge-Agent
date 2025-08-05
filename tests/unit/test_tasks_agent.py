@@ -51,7 +51,8 @@ class TestTasksAgent:
             "Create structured task lists with requirements references",
             "Format tasks in markdown checkbox format",
             "Maintain context access to requirements.md and design.md",
-            "Ensure tasks build incrementally on each other"
+            "Ensure tasks build incrementally on each other",
+            "Handle task list revisions based on user feedback"
         ]
         
         assert capabilities == expected_capabilities
@@ -82,6 +83,28 @@ class TestTasksAgent:
         tasks_agent.generate_task_list.assert_called_once_with(
             design_path, requirements_path, temp_work_dir
         )
+    
+    @pytest.mark.asyncio
+    async def test_process_task_revision(self, tasks_agent, temp_work_dir):
+        """Test processing task revision request."""
+        # Mock the revision handler
+        tasks_agent._handle_revision_task = AsyncMock()
+        tasks_agent._handle_revision_task.return_value = {
+            "success": True,
+            "revision_applied": True
+        }
+        
+        task_input = {
+            "task_type": "revision",
+            "revision_feedback": "Add more tests",
+            "work_directory": temp_work_dir
+        }
+        
+        result = await tasks_agent.process_task(task_input)
+        
+        assert result["success"] is True
+        assert result["revision_applied"] is True
+        tasks_agent._handle_revision_task.assert_called_once_with(task_input)
     
     @pytest.mark.asyncio
     async def test_process_task_unknown_type(self, tasks_agent):
@@ -431,3 +454,179 @@ class TestTasksAgentIntegration:
         with open(result, 'r') as f:
             content = f.read()
             assert content == mock_task_content
+
+
+class TestTasksAgentRevision:
+    """Test suite for task revision functionality."""
+    
+    @pytest.fixture
+    def tasks_agent(self, test_llm_config):
+        """Create a TasksAgent instance for testing."""
+        return TasksAgent(llm_config=test_llm_config)
+    
+    @pytest.fixture
+    def temp_work_dir(self):
+        """Create a temporary work directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield temp_dir
+    
+    @pytest.mark.asyncio
+    async def test_handle_revision_task_success(self, tasks_agent, temp_work_dir):
+        """Test successful task revision."""
+        # Create initial tasks.md file
+        tasks_path = os.path.join(temp_work_dir, "tasks.md")
+        initial_content = """# Tasks
+- [ ] Task 1
+  - Step 1
+  - Requirements: 1.1
+- [ ] Task 2
+  - Step 2
+  - Requirements: 2.1"""
+        
+        with open(tasks_path, 'w') as f:
+            f.write(initial_content)
+        
+        # Mock LLM response for revision
+        revised_content = """# Tasks
+- [ ] Task 1
+  - Step 1 (updated)
+  - Requirements: 1.1
+- [ ] Task 2
+  - Step 2
+  - Requirements: 2.1
+- [ ] Task 3 (new)
+  - New step
+  - Requirements: 3.1"""
+        
+        tasks_agent._apply_tasks_revision = AsyncMock()
+        tasks_agent._apply_tasks_revision.return_value = revised_content
+        
+        task_input = {
+            "revision_feedback": "Add a new task and update task 1",
+            "work_directory": temp_work_dir
+        }
+        
+        result = await tasks_agent._handle_revision_task(task_input)
+        
+        assert result["success"] is True
+        assert result["revision_applied"] is True
+        assert result["work_directory"] == temp_work_dir
+        assert result["tasks_path"] == tasks_path
+        
+        # Verify file was updated
+        with open(tasks_path, 'r') as f:
+            content = f.read()
+            assert content == revised_content
+        
+        tasks_agent._apply_tasks_revision.assert_called_once_with(
+            initial_content, "Add a new task and update task 1"
+        )
+    
+    @pytest.mark.asyncio
+    async def test_handle_revision_task_missing_feedback(self, tasks_agent, temp_work_dir):
+        """Test revision task with missing feedback."""
+        task_input = {
+            "work_directory": temp_work_dir
+        }
+        
+        result = await tasks_agent._handle_revision_task(task_input)
+        
+        assert result["success"] is False
+        assert "revision_feedback is required" in result["error"]
+    
+    @pytest.mark.asyncio
+    async def test_handle_revision_task_missing_directory(self, tasks_agent):
+        """Test revision task with missing work directory."""
+        task_input = {
+            "revision_feedback": "Some feedback"
+        }
+        
+        result = await tasks_agent._handle_revision_task(task_input)
+        
+        assert result["success"] is False
+        assert "work_directory is required" in result["error"]
+    
+    @pytest.mark.asyncio
+    async def test_handle_revision_task_missing_tasks_file(self, tasks_agent, temp_work_dir):
+        """Test revision task when tasks.md doesn't exist."""
+        task_input = {
+            "revision_feedback": "Some feedback",
+            "work_directory": temp_work_dir
+        }
+        
+        result = await tasks_agent._handle_revision_task(task_input)
+        
+        assert result["success"] is False
+        assert "tasks.md not found" in result["error"]
+    
+    @pytest.mark.asyncio
+    async def test_apply_tasks_revision_success(self, tasks_agent):
+        """Test successful task revision application."""
+        current_tasks = """# Tasks
+- [ ] Task 1
+  - Step 1
+  - Requirements: 1.1"""
+        
+        revision_feedback = "Add more detailed steps to Task 1"
+        
+        revised_content = """# Tasks
+- [ ] Task 1
+  - Step 1: Initialize project
+  - Step 2: Set up configuration
+  - Step 3: Create basic structure
+  - Requirements: 1.1"""
+        
+        tasks_agent.generate_response = AsyncMock()
+        tasks_agent.generate_response.return_value = revised_content
+        
+        result = await tasks_agent._apply_tasks_revision(current_tasks, revision_feedback)
+        
+        assert result == revised_content
+        
+        # Verify LLM was called with correct prompt
+        tasks_agent.generate_response.assert_called_once()
+        call_args = tasks_agent.generate_response.call_args[0][0]
+        assert current_tasks in call_args
+        assert revision_feedback in call_args
+        assert "markdown checkbox format" in call_args
+    
+    @pytest.mark.asyncio
+    async def test_apply_tasks_revision_with_markdown_cleanup(self, tasks_agent):
+        """Test revision with markdown code block cleanup."""
+        current_tasks = "# Tasks\n- [ ] Task 1"
+        revision_feedback = "Update task"
+        
+        # Mock LLM response with markdown code blocks
+        llm_response = """```markdown
+# Tasks
+- [ ] Task 1 (updated)
+  - New step
+  - Requirements: 1.1
+```"""
+        
+        tasks_agent.generate_response = AsyncMock()
+        tasks_agent.generate_response.return_value = llm_response
+        
+        result = await tasks_agent._apply_tasks_revision(current_tasks, revision_feedback)
+        
+        expected = """# Tasks
+- [ ] Task 1 (updated)
+  - New step
+  - Requirements: 1.1"""
+        
+        assert result == expected
+    
+    @pytest.mark.asyncio
+    async def test_apply_tasks_revision_llm_error(self, tasks_agent):
+        """Test revision when LLM fails."""
+        current_tasks = "# Tasks\n- [ ] Task 1"
+        revision_feedback = "Update task"
+        
+        tasks_agent.generate_response = AsyncMock()
+        tasks_agent.generate_response.side_effect = Exception("LLM failed")
+        
+        result = await tasks_agent._apply_tasks_revision(current_tasks, revision_feedback)
+        
+        assert current_tasks in result
+        assert "Revision attempted but failed" in result
+        assert "LLM failed" in result

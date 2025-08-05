@@ -94,6 +94,8 @@ Always maintain the existing task generation logic, prompts, and formatting unch
         
         if task_type == "generate_task_list":
             return await self._handle_generate_task_list(task_input)
+        elif task_type == "revision":
+            return await self._handle_revision_task(task_input)
         else:
             raise ValueError(f"Unknown task type for TasksAgent: {task_type}")
     
@@ -110,7 +112,8 @@ Always maintain the existing task generation logic, prompts, and formatting unch
             "Create structured task lists with requirements references",
             "Format tasks in markdown checkbox format",
             "Maintain context access to requirements.md and design.md",
-            "Ensure tasks build incrementally on each other"
+            "Ensure tasks build incrementally on each other",
+            "Handle task list revisions based on user feedback"
         ]
     
     async def generate_task_list(
@@ -263,3 +266,104 @@ Generate the complete tasks.md content now:"""
         except Exception as e:
             self.logger.error(f"Failed to write file {file_path}: {e}")
             raise IOError(f"Failed to write file: {file_path}")
+    
+    async def _handle_revision_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle task list revision based on user feedback.
+        
+        Args:
+            task_input: Dictionary containing revision parameters
+            
+        Returns:
+            Dictionary containing revision results
+        """
+        try:
+            revision_feedback = task_input.get("revision_feedback", "")
+            current_result = task_input.get("current_result", {})
+            work_directory = task_input.get("work_directory", "")
+            
+            if not revision_feedback:
+                raise ValueError("revision_feedback is required for revision tasks")
+            
+            if not work_directory:
+                raise ValueError("work_directory is required for revision tasks")
+            
+            # Get current tasks.md path
+            tasks_path = os.path.join(work_directory, "tasks.md")
+            
+            if not os.path.exists(tasks_path):
+                raise ValueError(f"tasks.md not found at {tasks_path}")
+            
+            # Read current tasks content
+            with open(tasks_path, 'r', encoding='utf-8') as f:
+                current_tasks = f.read()
+            
+            # Apply revision using LLM
+            revised_tasks = await self._apply_tasks_revision(current_tasks, revision_feedback)
+            
+            # Write revised tasks back to file
+            with open(tasks_path, 'w', encoding='utf-8') as f:
+                f.write(revised_tasks)
+            
+            self.logger.info(f"Tasks revised based on feedback: {revision_feedback[:100]}...")
+            
+            return {
+                "success": True,
+                "message": "Tasks revised successfully",
+                "work_directory": work_directory,
+                "tasks_path": tasks_path,
+                "revision_applied": True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error handling revision task: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    async def _apply_tasks_revision(self, current_tasks: str, revision_feedback: str) -> str:
+        """
+        Apply revision feedback to current tasks using LLM.
+        
+        Args:
+            current_tasks: Current tasks.md content
+            revision_feedback: User's revision feedback
+            
+        Returns:
+            Revised tasks content
+        """
+        revision_prompt = f"""Please revise the following tasks.md file based on the user's feedback.
+
+Current Tasks Document:
+{current_tasks}
+
+User Feedback:
+{revision_feedback}
+
+Please provide the complete revised tasks.md content that incorporates the user's feedback while maintaining the same markdown checkbox format (- [ ] Task title). Make sure to:
+
+1. Keep all existing tasks unless specifically asked to remove them
+2. Add new tasks based on the feedback
+3. Modify existing tasks if requested
+4. Maintain the same structure and format
+5. Keep the detailed steps for each task
+6. Preserve requirement references
+
+Provide only the revised tasks.md content, no additional explanation."""
+
+        try:
+            revised_content = await self.generate_response(revision_prompt)
+            
+            # Clean up the response to ensure it's properly formatted
+            if revised_content.startswith("```markdown"):
+                revised_content = revised_content.replace("```markdown", "").replace("```", "").strip()
+            elif revised_content.startswith("```"):
+                revised_content = revised_content.replace("```", "").strip()
+            
+            return revised_content
+            
+        except Exception as e:
+            self.logger.error(f"Error applying tasks revision: {e}")
+            # Return original content with a note about the revision attempt
+            return f"{current_tasks}\n\n<!-- Revision attempted but failed: {str(e)} -->"

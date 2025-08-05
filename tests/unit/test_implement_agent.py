@@ -2,7 +2,7 @@
 Unit tests for the ImplementAgent class.
 
 This module tests the implementation agent's functionality including
-task list generation, task execution, shell integration, and completion recording.
+task execution, shell integration, and completion recording.
 """
 
 import pytest
@@ -104,6 +104,14 @@ class TestImplementAgent:
     async def test_process_task_unknown_type(self, implement_agent):
         """Test processing unknown task type."""
         task_input = {"task_type": "unknown_task"}
+        
+        with pytest.raises(ValueError, match="Unknown task type"):
+            await implement_agent.process_task(task_input)
+    
+    @pytest.mark.asyncio
+    async def test_process_task_revision_not_supported(self, implement_agent):
+        """Test that ImplementAgent no longer handles revision tasks."""
+        task_input = {"task_type": "revision"}
         
         with pytest.raises(ValueError, match="Unknown task type"):
             await implement_agent.process_task(task_input)
@@ -1446,38 +1454,7 @@ class TestImplementAgentMocking:
         assert result["success"] is True
         assert result["task_id"] == sample_task.id
     
-    @pytest.mark.asyncio
-    async def test_fast_task_list_generation(self, implement_agent, temp_workspace):
-        """Test that task list generation is fast with proper mocking."""
-        # Mock file operations
-        implement_agent._read_file_content = AsyncMock(side_effect=[
-            "# Design\nDesign content",
-            "# Requirements\nRequirements content"
-        ])
-        implement_agent._write_file_content = AsyncMock()
-        
-        # Mock LLM response
-        mock_task_content = """# Tasks
-- [ ] Task 1
-  - Step 1
-  - Requirements: 1.1
-- [ ] Task 2
-  - Step A
-  - Requirements: 2.1"""
-        
-        implement_agent.generate_response = AsyncMock(return_value=mock_task_content)
-        
-        # Execute - should be very fast
-        import time
-        start_time = time.time()
-        result = await implement_agent.generate_task_list(
-            "design.md", "requirements.md", temp_workspace
-        )
-        execution_time = time.time() - start_time
-        
-        # Should complete very quickly
-        assert execution_time < 1.0
-        assert result == f"{temp_workspace}/tasks.md"
+
     
     def test_agent_capabilities_fast(self, implement_agent):
         """Test that getting agent capabilities is fast."""
