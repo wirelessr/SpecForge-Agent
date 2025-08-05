@@ -278,7 +278,7 @@ echo ""
 echo "工作流程執行結果:"
 echo "1. ✓ Requirements 生成 (PlanAgent)"
 echo "2. ✓ Design 生成 (DesignAgent)" 
-echo "3. ✓ Tasks 生成 (ImplementAgent)"
+echo "3. ✓ Tasks 生成 (TasksAgent)"
 echo "4. ✓ Implementation 執行 (ImplementAgent)"
 echo ""
 
