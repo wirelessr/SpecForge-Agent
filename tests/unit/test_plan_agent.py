@@ -382,6 +382,61 @@ This project aims to fix authentication bugs in the login system.
         assert "directories" in capability_text
         assert "EARS" in capability_text
     
+    def test_token_compression_inheritance(self, plan_agent):
+        """Test that PlanAgent inherits token compression attributes from BaseLLMAgent."""
+        # Verify that PlanAgent has token management attributes from BaseLLMAgent
+        assert hasattr(plan_agent, 'token_manager')
+        assert hasattr(plan_agent, 'context_compressor')
+        assert hasattr(plan_agent, 'compression_history')
+        assert hasattr(plan_agent, 'compression_stats')
+        
+        # Verify that token compression methods are available
+        assert hasattr(plan_agent, '_perform_context_compression')
+        assert hasattr(plan_agent, 'compress_context')
+        
+        # These should be inherited from BaseLLMAgent
+        assert callable(getattr(plan_agent, '_perform_context_compression'))
+        assert callable(getattr(plan_agent, 'compress_context'))
+        
+        # Verify compression stats structure
+        assert isinstance(plan_agent.compression_stats, dict)
+        assert 'total_compressions' in plan_agent.compression_stats
+        assert 'successful_compressions' in plan_agent.compression_stats
+    
+    @pytest.mark.asyncio
+    async def test_token_compression_functionality(self, plan_agent):
+        """Test that PlanAgent can handle token compression functionality."""
+        # Test that compression stats can be updated
+        initial_compressions = plan_agent.compression_stats['total_compressions']
+        
+        # Mock a compression result
+        from autogen_framework.models import CompressionResult
+        mock_compression = CompressionResult(
+            original_size=1000,
+            compressed_size=500,
+            compression_ratio=0.5,
+            compressed_content="Compressed content",
+            method_used="test_compression",
+            success=True,
+            error=None
+        )
+        
+        # Add compression to history
+        plan_agent.compression_history.append(mock_compression)
+        plan_agent.compression_stats['total_compressions'] += 1
+        plan_agent.compression_stats['successful_compressions'] += 1
+        
+        # Verify compression was recorded
+        assert len(plan_agent.compression_history) == 1
+        assert plan_agent.compression_stats['total_compressions'] == initial_compressions + 1
+        assert plan_agent.compression_stats['successful_compressions'] == 1
+        
+        # Test that compression methods exist and are callable
+        assert hasattr(plan_agent, '_perform_context_compression')
+        assert callable(plan_agent._perform_context_compression)
+        assert hasattr(plan_agent, 'compress_context')
+        assert callable(plan_agent.compress_context)
+    
     @pytest.mark.asyncio
     async def test_get_work_directory_suggestions(self, plan_agent):
         """Test work directory name suggestions."""

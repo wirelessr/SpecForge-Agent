@@ -235,6 +235,9 @@ class TestMainController:
             "tasks": UserApprovalStatus.APPROVED
         }
         
+        # Sync approval status to WorkflowManager
+        main_controller._sync_workflow_state_to_manager()
+        
         # Mock agent manager coordination for all phases
         # Each phase returns a structured result matching the actual implementation
         requirements_result = {
@@ -269,7 +272,7 @@ class TestMainController:
                 return requirements_result
             elif task_type == "design_generation":
                 return design_result
-            elif task_type == "task_execution":
+            elif task_type == "task_generation":
                 return tasks_result
             else:
                 return {"success": False, "error": "Unknown task type"}
@@ -291,14 +294,20 @@ class TestMainController:
         # Verify workflow was completed and cleared
         assert main_controller.current_workflow is None
     
-    def test_approve_phase_success(self, main_controller):
+    def test_approve_phase_success(self, main_controller, llm_config):
         """Test successful phase approval."""
+        # Initialize framework first
+        main_controller.initialize_framework(llm_config)
+        
         # Setup a mock workflow to avoid the "no active workflow" error
         from autogen_framework.models import WorkflowState, WorkflowPhase
         main_controller.current_workflow = WorkflowState(
             phase=WorkflowPhase.PLANNING,
             work_directory=""  # Empty work directory to skip file existence check
         )
+        
+        # Sync the workflow state to the workflow manager
+        main_controller._sync_workflow_state_to_manager()
         
         result = main_controller.approve_phase("requirements", True)
         
@@ -312,14 +321,20 @@ class TestMainController:
         assert main_controller.user_approval_status["requirements"] == UserApprovalStatus.APPROVED
         assert len(main_controller.execution_log) > 0
     
-    def test_approve_phase_rejection(self, main_controller):
+    def test_approve_phase_rejection(self, main_controller, llm_config):
         """Test phase rejection."""
+        # Initialize framework first
+        main_controller.initialize_framework(llm_config)
+        
         # Setup a mock workflow to avoid the "no active workflow" error
         from autogen_framework.models import WorkflowState, WorkflowPhase
         main_controller.current_workflow = WorkflowState(
             phase=WorkflowPhase.PLANNING,
             work_directory=""  # Empty work directory to skip file existence check
         )
+        
+        # Sync the workflow state to the workflow manager
+        main_controller._sync_workflow_state_to_manager()
         
         result = main_controller.approve_phase("design", False)
         
@@ -332,16 +347,22 @@ class TestMainController:
         # Verify approval status
         assert main_controller.user_approval_status["design"] == UserApprovalStatus.REJECTED
     
-    def test_approve_phase_invalid_phase(self, main_controller):
+    def test_approve_phase_invalid_phase(self, main_controller, llm_config):
         """Test approval of invalid phase."""
+        # Initialize framework first
+        main_controller.initialize_framework(llm_config)
+        
         result = main_controller.approve_phase("invalid_phase", True)
         
         assert result["success"] is False
         assert "Invalid phase 'invalid_phase'" in result["error"]
     
     @pytest.mark.asyncio
-    async def test_continue_workflow_no_active_workflow(self, main_controller):
+    async def test_continue_workflow_no_active_workflow(self, main_controller, llm_config):
         """Test continuing workflow when no workflow is active."""
+        # Initialize framework first
+        main_controller.initialize_framework(llm_config)
+        
         with pytest.raises(RuntimeError, match="No active workflow"):
             await main_controller.continue_workflow()
     
@@ -360,6 +381,9 @@ class TestMainController:
         
         # Approve requirements phase
         main_controller.user_approval_status["requirements"] = UserApprovalStatus.APPROVED
+        
+        # Sync workflow state to WorkflowManager
+        main_controller._sync_workflow_state_to_manager()
         
         # Add requirements result to execution log
         main_controller._record_execution_event(
@@ -761,6 +785,9 @@ class TestMainControllerMocking:
         
         # Approve requirements phase
         main_controller.user_approval_status["requirements"] = UserApprovalStatus.APPROVED
+        
+        # Sync workflow state to WorkflowManager
+        main_controller._sync_workflow_state_to_manager()
         
         # Add requirements result to phase results and execution log
         requirements_result = {

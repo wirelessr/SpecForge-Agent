@@ -235,12 +235,13 @@ class TestAgentManager:
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.plan_agent.PlanAgent')
     @patch('autogen_framework.agents.design_agent.DesignAgent')
+    @patch('autogen_framework.agents.tasks_agent.TasksAgent')
     @patch('autogen_framework.agents.implement_agent.ImplementAgent')
-    async def test_coordinate_full_workflow_plan_failure(self, mock_implement, mock_design, mock_plan,
+    async def test_coordinate_full_workflow_plan_failure(self, mock_implement, mock_tasks, mock_design, mock_plan,
                                                         agent_manager, llm_config):
         """Test full workflow coordination when planning fails."""
         # Setup mocked agents
-        await self._setup_mocked_agents(agent_manager, mock_plan, mock_design, mock_implement, llm_config)
+        await self._setup_mocked_agents(agent_manager, mock_plan, mock_design, mock_tasks, mock_implement, llm_config)
         
         # Mock plan agent failure
         plan_result = {"success": False, "error": "Planning failed"}
@@ -516,8 +517,9 @@ class TestAgentManagerMocking:
     
     @patch('autogen_framework.agent_manager.PlanAgent')
     @patch('autogen_framework.agent_manager.DesignAgent')
+    @patch('autogen_framework.agent_manager.TasksAgent')
     @patch('autogen_framework.agent_manager.ImplementAgent')
-    def test_setup_agents_with_mocked_autogen(self, mock_implement, mock_design, mock_plan, 
+    def test_setup_agents_with_mocked_autogen(self, mock_implement, mock_tasks, mock_design, mock_plan, 
                                             agent_manager, llm_config):
         """Test agent setup with fully mocked AutoGen components."""
         # Mock agent instances
@@ -532,6 +534,12 @@ class TestAgentManagerMocking:
         mock_design_instance.get_agent_status.return_value = {"name": "DesignAgent", "initialized": True}
         mock_design_instance.get_agent_capabilities.return_value = ["design_generation", "mermaid_diagrams"]
         mock_design.return_value = mock_design_instance
+        
+        mock_tasks_instance = Mock()
+        mock_tasks_instance.initialize_autogen_agent.return_value = True
+        mock_tasks_instance.get_agent_status.return_value = {"name": "TasksAgent", "initialized": True}
+        mock_tasks_instance.get_agent_capabilities.return_value = ["task_generation", "task_decomposition"]
+        mock_tasks.return_value = mock_tasks_instance
         
         mock_implement_instance = Mock()
         mock_implement_instance.initialize_autogen_agent.return_value = True
@@ -552,22 +560,25 @@ class TestAgentManagerMocking:
         # Verify all agents were created with correct config
         mock_plan.assert_called_once()
         mock_design.assert_called_once()
+        mock_tasks.assert_called_once()
         mock_implement.assert_called_once()
         
         # Verify initialization was called for all agents
         assert mock_plan_instance.initialize_autogen_agent.called
         assert mock_design_instance.initialize_autogen_agent.called
+        assert mock_tasks_instance.initialize_autogen_agent.called
         assert mock_implement_instance.initialize_autogen_agent.called
     
     @pytest.mark.asyncio
     @patch('autogen_framework.agent_manager.PlanAgent')
     @patch('autogen_framework.agent_manager.DesignAgent')
+    @patch('autogen_framework.agent_manager.TasksAgent')
     @patch('autogen_framework.agent_manager.ImplementAgent')
-    async def test_coordinate_agents_with_mocked_responses(self, mock_implement, mock_design, mock_plan,
+    async def test_coordinate_agents_with_mocked_responses(self, mock_implement, mock_tasks, mock_design, mock_plan,
                                                          agent_manager, llm_config):
         """Test agent coordination with mocked agent responses."""
         # Setup mocked agents
-        await self._setup_mocked_agents_for_coordination(agent_manager, mock_plan, mock_design, mock_implement, llm_config)
+        await self._setup_mocked_agents_for_coordination(agent_manager, mock_plan, mock_design, mock_tasks, mock_implement, llm_config)
         
         # Mock agent task results
         plan_result = {
@@ -592,7 +603,7 @@ class TestAgentManagerMocking:
         # Mock process_task methods
         agent_manager.agents["plan"].process_task = AsyncMock(return_value=plan_result)
         agent_manager.agents["design"].process_task = AsyncMock(return_value=design_result)
-        agent_manager.agents["implement"].process_task = AsyncMock(return_value=task_gen_result)
+        agent_manager.agents["tasks"].process_task = AsyncMock(return_value=task_gen_result)
         
         # Test coordination
         context = {"user_request": "Create a test application"}
@@ -605,12 +616,13 @@ class TestAgentManagerMocking:
         # Verify all agents were called
         agent_manager.agents["plan"].process_task.assert_called_once()
         agent_manager.agents["design"].process_task.assert_called_once()
-        agent_manager.agents["implement"].process_task.assert_called_once()
+        agent_manager.agents["tasks"].process_task.assert_called_once()
     
     @patch('autogen_framework.agent_manager.PlanAgent')
     @patch('autogen_framework.agent_manager.DesignAgent')
+    @patch('autogen_framework.agent_manager.TasksAgent')
     @patch('autogen_framework.agent_manager.ImplementAgent')
-    def test_agent_capabilities_with_mocks(self, mock_implement, mock_design, mock_plan,
+    def test_agent_capabilities_with_mocks(self, mock_implement, mock_tasks, mock_design, mock_plan,
                                          agent_manager, llm_config):
         """Test agent capabilities reporting with mocked agents."""
         # Mock agent instances with capabilities
@@ -623,6 +635,11 @@ class TestAgentManagerMocking:
         mock_design_instance.initialize_autogen_agent.return_value = True
         mock_design_instance.get_agent_capabilities.return_value = ["design", "architecture"]
         mock_design.return_value = mock_design_instance
+        
+        mock_tasks_instance = Mock()
+        mock_tasks_instance.initialize_autogen_agent.return_value = True
+        mock_tasks_instance.get_agent_capabilities.return_value = ["task_generation", "task_decomposition"]
+        mock_tasks.return_value = mock_tasks_instance
         
         mock_implement_instance = Mock()
         mock_implement_instance.initialize_autogen_agent.return_value = True
@@ -642,15 +659,37 @@ class TestAgentManagerMocking:
         assert len(capabilities) == 4  # plan, design, tasks, implement
         assert capabilities["plan"] == ["requirements", "planning"]
         assert capabilities["design"] == ["design", "architecture"]
+        assert capabilities["tasks"] == ["task_generation", "task_decomposition"]
         assert capabilities["implement"] == ["implementation", "testing"]
     
-    async def _setup_mocked_agents_for_coordination(self, agent_manager, mock_plan, mock_design, mock_implement, llm_config):
+    async def _setup_mocked_agents_for_coordination(self, agent_manager, mock_plan, mock_design, mock_tasks, mock_implement, llm_config):
         """Helper to setup mocked agents for coordination testing."""
         # Mock agent instances
         mock_plan_instance = Mock()
         mock_plan_instance.initialize_autogen_agent.return_value = True
         mock_plan_instance.get_agent_status.return_value = {"name": "PlanAgent", "initialized": True}
         mock_plan.return_value = mock_plan_instance
+        
+        mock_design_instance = Mock()
+        mock_design_instance.initialize_autogen_agent.return_value = True
+        mock_design_instance.get_agent_status.return_value = {"name": "DesignAgent", "initialized": True}
+        mock_design.return_value = mock_design_instance
+        
+        mock_tasks_instance = Mock()
+        mock_tasks_instance.initialize_autogen_agent.return_value = True
+        mock_tasks_instance.get_agent_status.return_value = {"name": "TasksAgent", "initialized": True}
+        mock_tasks.return_value = mock_tasks_instance
+        
+        mock_implement_instance = Mock()
+        mock_implement_instance.initialize_autogen_agent.return_value = True
+        mock_implement_instance.get_agent_status.return_value = {"name": "ImplementAgent", "initialized": True}
+        mock_implement.return_value = mock_implement_instance
+        
+        # Mock memory manager load_memory method
+        agent_manager.memory_manager.load_memory = Mock(return_value={})
+        
+        # Setup agents
+        agent_manager.setup_agents(llm_config)
         
         mock_design_instance = Mock()
         mock_design_instance.initialize_autogen_agent.return_value = True

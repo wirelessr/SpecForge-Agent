@@ -456,6 +456,70 @@ class TestTasksAgentIntegration:
             assert content == mock_task_content
 
 
+class TestTasksAgentTokenCompression:
+    """Test suite for TasksAgent token compression functionality."""
+    
+    @pytest.fixture
+    def tasks_agent(self, test_llm_config):
+        """Create a TasksAgent instance for testing."""
+        return TasksAgent(llm_config=test_llm_config)
+    
+    def test_token_compression_inheritance(self, tasks_agent):
+        """Test that TasksAgent inherits token compression attributes from BaseLLMAgent."""
+        # Verify that TasksAgent has token management attributes from BaseLLMAgent
+        assert hasattr(tasks_agent, 'token_manager')
+        assert hasattr(tasks_agent, 'context_compressor')
+        assert hasattr(tasks_agent, 'compression_history')
+        assert hasattr(tasks_agent, 'compression_stats')
+        
+        # Verify that token compression methods are available
+        assert hasattr(tasks_agent, '_perform_context_compression')
+        assert hasattr(tasks_agent, 'compress_context')
+        
+        # These should be inherited from BaseLLMAgent
+        assert callable(getattr(tasks_agent, '_perform_context_compression'))
+        assert callable(getattr(tasks_agent, 'compress_context'))
+        
+        # Verify compression stats structure
+        assert isinstance(tasks_agent.compression_stats, dict)
+        assert 'total_compressions' in tasks_agent.compression_stats
+        assert 'successful_compressions' in tasks_agent.compression_stats
+    
+    @pytest.mark.asyncio
+    async def test_token_compression_functionality(self, tasks_agent):
+        """Test that TasksAgent can handle token compression functionality."""
+        # Test that compression stats can be updated
+        initial_compressions = tasks_agent.compression_stats['total_compressions']
+        
+        # Mock a compression result
+        from autogen_framework.models import CompressionResult
+        mock_compression = CompressionResult(
+            original_size=3000,
+            compressed_size=1200,
+            compression_ratio=0.4,
+            compressed_content="Compressed task content",
+            method_used="task_compression",
+            success=True,
+            error=None
+        )
+        
+        # Add compression to history
+        tasks_agent.compression_history.append(mock_compression)
+        tasks_agent.compression_stats['total_compressions'] += 1
+        tasks_agent.compression_stats['successful_compressions'] += 1
+        
+        # Verify compression was recorded
+        assert len(tasks_agent.compression_history) == 1
+        assert tasks_agent.compression_stats['total_compressions'] == initial_compressions + 1
+        assert tasks_agent.compression_stats['successful_compressions'] == 1
+        
+        # Test that compression methods exist and are callable
+        assert hasattr(tasks_agent, '_perform_context_compression')
+        assert callable(tasks_agent._perform_context_compression)
+        assert hasattr(tasks_agent, 'compress_context')
+        assert callable(tasks_agent.compress_context)
+
+
 class TestTasksAgentRevision:
     """Test suite for task revision functionality."""
     

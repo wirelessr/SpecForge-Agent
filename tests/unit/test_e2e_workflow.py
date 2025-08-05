@@ -436,9 +436,9 @@ graph TD
                     "design_path": str(design_path)
                 }
             
-            elif task_type == "task_execution" and context.get("task_type") == "generate_task_list":
-                # Simulate task generation
-                work_directory = context.get("work_dir")
+            elif task_type == "task_generation":
+                # Simulate task generation using TasksAgent
+                work_directory = context.get("work_directory")
                 if not work_directory:
                     # Try to get work directory from design_path
                     design_path = context.get("design_path")

@@ -8,6 +8,7 @@ set -e  # Exit on any error
 # 設置測試環境變數
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=WARNING  # 减少测试期间的日志输出
 
 echo "=== Auto-Approve End-to-End Test ==="
 echo "開始時間: $(date)"
