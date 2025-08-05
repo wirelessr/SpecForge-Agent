@@ -22,6 +22,7 @@ from .memory_manager import MemoryManager
 from .agent_manager import AgentManager
 from .shell_executor import ShellExecutor
 from .config_manager import ConfigManager, ConfigurationError
+from .session_manager import SessionManager
 
 
 class UserApprovalStatus(Enum):
@@ -59,26 +60,18 @@ class MainController:
         self.memory_manager: Optional[MemoryManager] = None
         self.agent_manager: Optional[AgentManager] = None
         self.shell_executor: Optional[ShellExecutor] = None
+        self.session_manager: Optional[SessionManager] = None
         
         # Framework configuration
         self.llm_config: Optional[LLMConfig] = None
         self.is_initialized = False
         
-        # Session management
+        # Session-related properties (delegated to SessionManager after initialization)
         self.session_id: Optional[str] = None
-        self.session_file = self.workspace_path / "memory" / "session_state.json"
-        
-        # Workflow state management
         self.current_workflow: Optional[WorkflowState] = None
         self.user_approval_status: Dict[str, UserApprovalStatus] = {}
-        
-        # Framework execution log
-        self.execution_log: List[Dict[str, Any]] = []
-        
-        # Phase results storage
         self.phase_results: Dict[str, Dict[str, Any]] = {}
-        
-        # Auto-approve functionality
+        self.execution_log: List[Dict[str, Any]] = []
         self.approval_log: List[Dict[str, Any]] = []
         self.error_recovery_attempts: Dict[str, int] = {}
         self.workflow_summary: Dict[str, Any] = {
@@ -716,6 +709,11 @@ class MainController:
     def _initialize_core_components(self) -> bool:
         """Initialize all core framework components."""
         try:
+            # Initialize SessionManager
+            if self.session_manager is None:
+                self.session_manager = SessionManager(str(self.workspace_path))
+                self.logger.info("SessionManager initialized")
+            
             # Initialize MemoryManager
             if self.memory_manager is None:
                 self.memory_manager = MemoryManager(str(self.workspace_path))
@@ -1627,148 +1625,89 @@ class MainController:
     
     def _load_or_create_session(self):
         """Load existing session or create a new one."""
-        try:
-            if self.session_file.exists():
-                # Load existing session
-                with open(self.session_file, 'r', encoding='utf-8') as f:
-                    session_data = json.load(f)
-                
-                self.session_id = session_data.get('session_id')
-                
-                # Reconstruct workflow object if it exists
-                workflow_data = session_data.get('current_workflow')
-                if workflow_data:
-                    self.current_workflow = WorkflowState(
-                        phase=WorkflowPhase(workflow_data.get('phase')) if workflow_data.get('phase') else WorkflowPhase.PLANNING,
-                        work_directory=workflow_data.get('work_directory', '')
-                    )
-                else:
-                    self.current_workflow = None
-                
-                # Load approval status
-                approval_data = session_data.get('user_approval_status', {})
-                self.user_approval_status = {
-                    k: UserApprovalStatus(v) for k, v in approval_data.items()
-                }
-                
-                self.phase_results = session_data.get('phase_results', {})
-                self.execution_log = session_data.get('execution_log', [])
-                
-                # Load auto-approve related data
-                self.approval_log = session_data.get('approval_log', [])
-                self.error_recovery_attempts = session_data.get('error_recovery_attempts', {})
-                self.workflow_summary = session_data.get('workflow_summary', {
-                    'phases_completed': [],
-                    'tasks_completed': [],
-                    'token_usage': {},
-                    'compression_events': [],
-                    'auto_approvals': [],
-                    'errors_recovered': []
-                })
-                
-                self.logger.info(f"Loaded existing session: {self.session_id}")
-            else:
-                # Create new session
-                self._create_new_session()
-        except Exception as e:
-            self.logger.warning(f"Failed to load session, creating new one: {e}")
-            self._create_new_session()
+        session_data = self.session_manager.load_or_create_session()
+        
+        # Sync session data from SessionManager to MainController
+        self.session_id = self.session_manager.session_id
+        self.current_workflow = self.session_manager.current_workflow
+        
+        # Convert approval status from strings to enum values for backward compatibility
+        self.user_approval_status = {
+            k: UserApprovalStatus(v) for k, v in self.session_manager.user_approval_status.items()
+        }
+        
+        self.phase_results = self.session_manager.phase_results
+        self.execution_log = self.session_manager.execution_log
+        self.approval_log = self.session_manager.approval_log
+        self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+        self.workflow_summary = self.session_manager.workflow_summary
     
     def _create_new_session(self):
         """Create a new session with unique ID."""
-        self.session_id = str(uuid.uuid4())
-        self.current_workflow = None
-        self.user_approval_status = {}
-        self.phase_results = {}
-        self.execution_log = []
-        self.approval_log = []
-        self.error_recovery_attempts = {}
-        self.workflow_summary = {
-            'phases_completed': [],
-            'tasks_completed': [],
-            'token_usage': {},
-            'compression_events': [],
-            'auto_approvals': [],
-            'errors_recovered': []
-        }
-        self._save_session_state()
-        self.logger.info(f"Created new session: {self.session_id}")
+        session_data = self.session_manager._create_new_session()
+        
+        # Sync session data from SessionManager to MainController
+        self.session_id = self.session_manager.session_id
+        self.current_workflow = self.session_manager.current_workflow
+        self.user_approval_status = {}  # Empty since it's a new session
+        self.phase_results = self.session_manager.phase_results
+        self.execution_log = self.session_manager.execution_log
+        self.approval_log = self.session_manager.approval_log
+        self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+        self.workflow_summary = self.session_manager.workflow_summary
     
     def _save_session_state(self):
         """Save current session state to disk."""
-        try:
-            # Ensure memory directory exists
-            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+        # Only save if SessionManager is initialized
+        if self.session_manager is None:
+            self.logger.warning("SessionManager not initialized, skipping session save")
+            return False
             
-            session_data = {
-                'session_id': self.session_id,
-                'current_workflow': {
-                    'phase': self.current_workflow.phase.value if self.current_workflow else None,
-                    'work_directory': self.current_workflow.work_directory if self.current_workflow else None
-                } if self.current_workflow else None,
-                'user_approval_status': {k: v.value for k, v in self.user_approval_status.items()},
-                'phase_results': self.phase_results,
-                'execution_log': self.execution_log,
-                'approval_log': self.approval_log,
-                'error_recovery_attempts': self.error_recovery_attempts,
-                'workflow_summary': self.workflow_summary,
-                'last_updated': datetime.now().isoformat()
-            }
-            
-            with open(self.session_file, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, indent=2, ensure_ascii=False)
-            
-            self.logger.debug(f"Session state saved: {self.session_id}")
-        except Exception as e:
-            self.logger.error(f"Failed to save session state: {e}")
+        # Sync MainController state to SessionManager before saving
+        self.session_manager.session_id = self.session_id
+        self.session_manager.current_workflow = self.current_workflow
+        
+        # Convert approval status from enum values to strings for SessionManager
+        self.session_manager.user_approval_status = {
+            k: v.value for k, v in self.user_approval_status.items()
+        }
+        
+        self.session_manager.phase_results = self.phase_results
+        self.session_manager.execution_log = self.execution_log
+        self.session_manager.approval_log = self.approval_log
+        self.session_manager.error_recovery_attempts = self.error_recovery_attempts
+        self.session_manager.workflow_summary = self.workflow_summary
+        
+        # Delegate to SessionManager
+        return self.session_manager.save_session_state()
     
     def get_session_id(self) -> str:
         """Get the current session ID."""
-        return self.session_id
+        if self.session_manager is None:
+            return self.session_id
+        return self.session_manager.get_session_id()
     
     def reset_session(self):
         """Reset the current session and create a new one."""
-        try:
-            self.logger.info("Starting session reset...")
-            
-            # Clear in-memory state first (fast)
-            self.current_workflow = None
-            self.user_approval_status.clear()
-            self.phase_results.clear()
-            self.execution_log.clear()
-            self.approval_log.clear()
-            self.error_recovery_attempts.clear()
-            self.workflow_summary = {
-                'phases_completed': [],
-                'tasks_completed': [],
-                'token_usage': {},
-                'compression_events': [],
-                'auto_approvals': [],
-                'errors_recovered': []
-            }
-            
-            # Remove session file if it exists
-            if self.session_file.exists():
-                self.session_file.unlink()
-                self.logger.info("Removed existing session file")
-            
-            # Create new session
-            self._create_new_session()
-            self.logger.info(f"Session reset completed, new session: {self.session_id}")
-            
-            return {
-                "success": True,
-                "message": f"Session reset successfully. New session ID: {self.session_id}",
-                "session_id": self.session_id
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to reset session: {e}"
-            self.logger.error(error_msg)
-            return {
-                "success": False,
-                "error": error_msg
-            }
+        # Initialize SessionManager if not already initialized
+        if self.session_manager is None:
+            self.session_manager = SessionManager(str(self.workspace_path))
+        
+        # Delegate to SessionManager
+        result = self.session_manager.reset_session()
+        
+        if result.get("success"):
+            # Sync session data from SessionManager to MainController
+            self.session_id = self.session_manager.session_id
+            self.current_workflow = self.session_manager.current_workflow
+            self.user_approval_status = {}  # Empty since it's a new session
+            self.phase_results = self.session_manager.phase_results
+            self.execution_log = self.session_manager.execution_log
+            self.approval_log = self.session_manager.approval_log
+            self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+            self.workflow_summary = self.session_manager.workflow_summary
+        
+        return result
     
     # Error Recovery Helper Methods
     
