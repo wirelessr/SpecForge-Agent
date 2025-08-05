@@ -213,11 +213,14 @@ cat design_revise_1_output.txt
 echo ""
 
 # 檢查 design revise 是否生效
+DESIGN_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/design.md" ]; then
     if ! diff -q "$WORK_DIR/design.md.original" "$WORK_DIR/design.md" > /dev/null 2>&1; then
         echo "✓ Design 第一次 Revise 成功，內容已更新"
+        DESIGN_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Design 第一次 Revise 可能沒有生效"
+        echo "❌ Design 第一次 Revise 失敗，內容沒有變化"
+        DESIGN_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/design.md" "$WORK_DIR/design.md.after_revise_1"
 fi
@@ -235,11 +238,14 @@ cat design_revise_2_output.txt
 echo ""
 
 # 檢查第二次 design revise 是否生效
+DESIGN_REVISE_2_SUCCESS=false
 if [ -f "$WORK_DIR/design.md" ] && [ -f "$WORK_DIR/design.md.after_revise_1" ]; then
     if ! diff -q "$WORK_DIR/design.md.after_revise_1" "$WORK_DIR/design.md" > /dev/null 2>&1; then
         echo "✓ Design 第二次 Revise 成功，內容已更新"
+        DESIGN_REVISE_2_SUCCESS=true
     else
-        echo "⚠️ Design 第二次 Revise 可能沒有生效"
+        echo "❌ Design 第二次 Revise 失敗，內容沒有變化"
+        DESIGN_REVISE_2_SUCCESS=false
     fi
 fi
 echo ""
@@ -282,11 +288,14 @@ cat tasks_revise_1_output.txt
 echo ""
 
 # 檢查 tasks revise 是否生效
+TASKS_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/tasks.md" ]; then
     if ! diff -q "$WORK_DIR/tasks.md.original" "$WORK_DIR/tasks.md" > /dev/null 2>&1; then
         echo "✓ Tasks 第一次 Revise 成功，內容已更新"
+        TASKS_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Tasks 第一次 Revise 可能沒有生效"
+        echo "❌ Tasks 第一次 Revise 失敗，內容沒有變化"
+        TASKS_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/tasks.md" "$WORK_DIR/tasks.md.after_revise_1"
 fi

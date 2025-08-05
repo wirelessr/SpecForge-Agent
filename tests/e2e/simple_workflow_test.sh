@@ -240,10 +240,18 @@ if [ -f "$WORK_DIR/tasks.md" ]; then
     TOTAL_TASKS=$(grep -c "^- \[" "$WORK_DIR/tasks.md" 2>/dev/null || echo "0")
     COMPLETED_TASKS=$(grep -c "^- \[x\]" "$WORK_DIR/tasks.md" 2>/dev/null || echo "0")
     
+    # 確保變量是純數字
+    TOTAL_TASKS=$(echo "$TOTAL_TASKS" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    COMPLETED_TASKS=$(echo "$COMPLETED_TASKS" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    
+    # 如果變量為空，設為0
+    TOTAL_TASKS=${TOTAL_TASKS:-0}
+    COMPLETED_TASKS=${COMPLETED_TASKS:-0}
+    
     echo "  總任務數: $TOTAL_TASKS"
     echo "  已完成: $COMPLETED_TASKS"
     
-    if [ "$TOTAL_TASKS" -gt 0 ] && [ "$TOTAL_TASKS" != "0" ]; then
+    if [ "$TOTAL_TASKS" -gt 0 ]; then
         COMPLETION_RATE=$((COMPLETED_TASKS * 100 / TOTAL_TASKS))
         echo "  完成率: $COMPLETION_RATE%"
     fi
