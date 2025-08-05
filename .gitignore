@@ -38,6 +38,7 @@ minimal_test.py
 # IDE and editor files
 .vscode/
 .idea/
+.kiro/
 *.swp
 *.swo
 *~

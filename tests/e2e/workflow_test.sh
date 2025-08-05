@@ -138,11 +138,14 @@ cat req_revise_1_output.txt
 echo ""
 
 # 檢查 revise 是否生效
+REQUIREMENTS_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/requirements.md" ]; then
     if ! diff -q "$WORK_DIR/requirements.md.original" "$WORK_DIR/requirements.md" > /dev/null 2>&1; then
         echo "✓ Requirements 第一次 Revise 成功，內容已更新"
+        REQUIREMENTS_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Requirements 第一次 Revise 可能沒有生效"
+        echo "❌ Requirements 第一次 Revise 失敗，內容沒有變化"
+        REQUIREMENTS_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/requirements.md" "$WORK_DIR/requirements.md.after_revise_1"
 fi
@@ -160,11 +163,14 @@ cat req_revise_2_output.txt
 echo ""
 
 # 檢查第二次 revise 是否生效
+REQUIREMENTS_REVISE_2_SUCCESS=false
 if [ -f "$WORK_DIR/requirements.md" ] && [ -f "$WORK_DIR/requirements.md.after_revise_1" ]; then
     if ! diff -q "$WORK_DIR/requirements.md.after_revise_1" "$WORK_DIR/requirements.md" > /dev/null 2>&1; then
         echo "✓ Requirements 第二次 Revise 成功，內容已更新"
+        REQUIREMENTS_REVISE_2_SUCCESS=true
     else
-        echo "⚠️ Requirements 第二次 Revise 可能沒有生效"
+        echo "❌ Requirements 第二次 Revise 失敗，內容沒有變化"
+        REQUIREMENTS_REVISE_2_SUCCESS=false
     fi
 fi
 echo ""

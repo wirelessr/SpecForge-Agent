@@ -497,7 +497,7 @@ class AgentManager:
         agent_mapping = {
             "requirements": "plan",
             "design": "design", 
-            "tasks": "implement"
+            "tasks": "tasks"  # Fixed: tasks revision should use TasksAgent, not ImplementAgent
         }
         
         agent_name = agent_mapping.get(phase)
