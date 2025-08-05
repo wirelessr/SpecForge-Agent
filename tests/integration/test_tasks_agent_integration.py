@@ -39,12 +39,13 @@ class TestTasksAgentIntegration:
         """Create an AgentManager instance for testing."""
         return AgentManager(temp_workspace)
     
+    @pytest.mark.integration
     @patch('autogen_framework.agent_manager.TasksAgent')
     @patch('autogen_framework.agent_manager.ImplementAgent')
     @patch('autogen_framework.agent_manager.DesignAgent')
     @patch('autogen_framework.agent_manager.PlanAgent')
-    def test_tasks_agent_initialization(self, mock_plan, mock_design, mock_tasks, mock_implement,
-                                       agent_manager, llm_config):
+    def test_tasks_agent_initialization_in_agent_manager(self, mock_plan, mock_design, mock_tasks, mock_implement,
+                                       agent_manager, real_llm_config):
         """Test that TasksAgent is properly initialized in AgentManager."""
         # Mock agent instances
         mock_plan_instance = Mock()
@@ -67,7 +68,7 @@ class TestTasksAgentIntegration:
         agent_manager.memory_manager.load_memory = Mock(return_value={})
         
         # Setup agents
-        result = agent_manager.setup_agents(llm_config)
+        result = agent_manager.setup_agents(real_llm_config)
         
         # Verify TasksAgent is properly initialized
         assert result is True
@@ -78,9 +79,15 @@ class TestTasksAgentIntegration:
         # Verify TasksAgent was created with correct parameters
         mock_tasks.assert_called_once()
         mock_tasks_instance.initialize_autogen_agent.assert_called_once()
+        
+        # Verify TasksAgent is properly integrated in agent registry
+        assert len(agent_manager.agents) == 4
+        assert "tasks" in agent_manager.agents
+        assert agent_manager.agents["tasks"] is not None
     
+    @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_task_generation_routing(self, agent_manager, llm_config):
+    async def test_task_generation_routing_to_tasks_agent(self, agent_manager, real_llm_config):
         """Test that task generation requests are routed to TasksAgent."""
         # Create mock TasksAgent that doesn't try to read files
         mock_tasks_agent = Mock()
@@ -129,8 +136,9 @@ class TestTasksAgentIntegration:
         # Verify TasksAgent process_task was called with correct context
         mock_tasks_agent.process_task.assert_called_once_with(context)
     
+    @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_full_workflow_uses_tasks_agent(self, agent_manager, llm_config):
+    async def test_full_workflow_uses_tasks_agent(self, agent_manager, real_llm_config):
         """Test that full workflow uses TasksAgent for task generation phase."""
         # Create mock agents that return success without real processing
         mock_plan_agent = Mock()
@@ -191,6 +199,7 @@ class TestTasksAgentIntegration:
         assert "requirements_path" in call_args
         assert "work_dir" in call_args
     
+    @pytest.mark.integration
     def test_agent_registry_includes_tasks_agent(self, agent_manager, temp_workspace):
         """Test that agent registry includes TasksAgent after setup."""
         # Create mock agents

@@ -83,7 +83,7 @@ class TestAgentManagerRealIntegration:
             init_event = agent_manager.coordination_log[0]
             assert init_event["event_type"] == "agent_initialization"
             assert "agents_initialized" in init_event["details"]
-            assert len(init_event["details"]["agents_initialized"]) == 3
+            assert len(init_event["details"]["agents_initialized"]) == 4
             
             # Verify that real LLM config was used
             assert init_event["details"]["llm_config"]["model"] == real_llm_config.model

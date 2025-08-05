@@ -1,8 +1,9 @@
 """
 Integration tests for MainController with real components.
 
-This module contains tests that use actual MemoryManager, ShellExecutor, and other
-real components to verify the main controller integration.
+This module contains tests that use actual MemoryManager, ShellExecutor, SessionManager,
+WorkflowManager and other real components to verify the main controller integration
+with the new refactored architecture.
 """
 
 import pytest
@@ -13,6 +14,8 @@ from unittest.mock import patch
 from autogen_framework.main_controller import MainController, UserApprovalStatus
 from autogen_framework.memory_manager import MemoryManager
 from autogen_framework.shell_executor import ShellExecutor
+from autogen_framework.session_manager import SessionManager
+from autogen_framework.workflow_manager import WorkflowManager
 
 
 class TestMainControllerRealIntegration:
@@ -24,8 +27,8 @@ class TestMainControllerRealIntegration:
         return MainController(temp_workspace)
     
     @pytest.mark.integration
-    def test_main_controller_with_real_memory_manager(self, main_controller, temp_workspace, real_llm_config):
-        """Test MainController with real MemoryManager integration."""
+    def test_main_controller_with_real_components_initialization(self, main_controller, temp_workspace, real_llm_config):
+        """Test MainController initialization with real components."""
         # Mock only the agent setup to avoid AutoGen dependencies
         with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             mock_agent_instance = mock_agent.return_value
@@ -36,13 +39,22 @@ class TestMainControllerRealIntegration:
             result = main_controller.initialize_framework(real_llm_config)
             
             assert result is True
+            
+            # Verify all components were initialized
             assert isinstance(main_controller.memory_manager, MemoryManager)
+            assert isinstance(main_controller.shell_executor, ShellExecutor)
+            assert isinstance(main_controller.session_manager, SessionManager)
+            assert isinstance(main_controller.workflow_manager, WorkflowManager)
+            
+            # Verify component paths
             assert main_controller.memory_manager.workspace_path == Path(temp_workspace)
+            assert main_controller.shell_executor.default_working_dir == temp_workspace
+            assert main_controller.session_manager.workspace_path == Path(temp_workspace)
             
             # Test that memory manager can save and load content
             main_controller.memory_manager.save_memory(
                 "integration_test",
-                "# Integration Test\n\nTesting MainController with real MemoryManager.",
+                "# Integration Test\n\nTesting MainController with real components.",
                 "global"
             )
             
@@ -82,8 +94,8 @@ class TestMainControllerRealIntegration:
             assert result.success is True
     
     @pytest.mark.integration
-    def test_workflow_state_transitions_with_real_components(self, main_controller, temp_workspace, real_llm_config):
-        """Test workflow state transitions through phases with real components."""
+    def test_workflow_delegation_to_workflow_manager(self, main_controller, temp_workspace, real_llm_config):
+        """Test that MainController properly delegates workflow operations to WorkflowManager."""
         # Mock agent manager
         with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             mock_agent_instance = mock_agent.return_value
@@ -92,6 +104,10 @@ class TestMainControllerRealIntegration:
             
             # Initialize framework
             main_controller.initialize_framework(real_llm_config)
+            
+            # Verify WorkflowManager was created
+            assert main_controller.workflow_manager is not None
+            assert isinstance(main_controller.workflow_manager, WorkflowManager)
             
             # Create a mock workflow state with work directory
             from autogen_framework.models import WorkflowState, WorkflowPhase
@@ -103,13 +119,13 @@ class TestMainControllerRealIntegration:
             (work_dir / "design.md").write_text("# Design\nTest design")
             (work_dir / "tasks.md").write_text("# Tasks\nTest tasks")
             
-            # Set up workflow state
-            main_controller.current_workflow = WorkflowState(
+            # Set up workflow state in WorkflowManager
+            main_controller.workflow_manager.current_workflow = WorkflowState(
                 phase=WorkflowPhase.PLANNING,
                 work_directory=str(work_dir)
             )
             
-            # Test phase approvals with real execution log
+            # Test phase approvals through MainController delegation
             result1 = main_controller.approve_phase("requirements", True)
             result2 = main_controller.approve_phase("design", True)
             result3 = main_controller.approve_phase("tasks", True)
@@ -119,20 +135,16 @@ class TestMainControllerRealIntegration:
             assert result2["approved"] is True
             assert result3["approved"] is True
             
-            # Verify approval status
+            # Verify approval status was synced back to MainController
             assert main_controller.user_approval_status["requirements"] == UserApprovalStatus.APPROVED
             assert main_controller.user_approval_status["design"] == UserApprovalStatus.APPROVED
             assert main_controller.user_approval_status["tasks"] == UserApprovalStatus.APPROVED
             
-            # Verify execution log contains approval events
-            approval_events = [e for e in main_controller.execution_log if e["event_type"] == "phase_approval"]
-            assert len(approval_events) == 3
-            
-            # Verify each approval event has proper structure
-            for event in approval_events:
-                assert "phase" in event["details"]
-                assert "approved" in event["details"]
-                assert "timestamp" in event
+            # Verify WorkflowManager has the approval status
+            from autogen_framework.workflow_manager import UserApprovalStatus as WMUserApprovalStatus
+            assert main_controller.workflow_manager.user_approval_status["requirements"] == WMUserApprovalStatus.APPROVED
+            assert main_controller.workflow_manager.user_approval_status["design"] == WMUserApprovalStatus.APPROVED
+            assert main_controller.workflow_manager.user_approval_status["tasks"] == WMUserApprovalStatus.APPROVED
     
     @pytest.mark.integration
     def test_framework_status_with_real_components(self, main_controller, temp_workspace, real_llm_config):
@@ -256,11 +268,14 @@ class TestMainControllerRealIntegration:
             # Create phase file that approve_phase expects
             (work_dir / "requirements.md").write_text("# Requirements\nTest requirements")
             
-            # Set up workflow state
-            main_controller.current_workflow = WorkflowState(
+            # Set up workflow state in WorkflowManager (since MainController delegates to it)
+            main_controller.workflow_manager.current_workflow = WorkflowState(
                 phase=WorkflowPhase.PLANNING,
                 work_directory=str(work_dir)
             )
+            
+            # Sync state to MainController
+            main_controller._sync_workflow_state_from_manager()
             
             # Add some execution events
             main_controller._record_execution_event("test_event", {"data": "test"})
@@ -299,8 +314,8 @@ class TestMainControllerRealIntegration:
             assert any(event["event_type"] == "phase_approval" for event in execution_log)
     
     @pytest.mark.integration
-    def test_session_management_with_real_components(self, main_controller, temp_workspace, real_llm_config):
-        """Test session management with real components."""
+    def test_session_delegation_to_session_manager(self, main_controller, temp_workspace, real_llm_config):
+        """Test that MainController properly delegates session operations to SessionManager."""
         # Mock agent manager
         with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             mock_agent_instance = mock_agent.return_value
@@ -310,12 +325,19 @@ class TestMainControllerRealIntegration:
             # Initialize framework
             main_controller.initialize_framework(real_llm_config)
             
-            # Get session ID
+            # Verify SessionManager was created
+            assert main_controller.session_manager is not None
+            assert isinstance(main_controller.session_manager, SessionManager)
+            
+            # Get session ID through MainController delegation
             session_id = main_controller.get_session_id()
             assert session_id is not None
             assert len(session_id) > 0
             
-            # Verify session file was created
+            # Verify session ID matches SessionManager
+            assert session_id == main_controller.session_manager.get_session_id()
+            
+            # Verify session file was created by SessionManager
             session_file = Path(temp_workspace) / "memory" / "session_state.json"
             assert session_file.exists()
             
@@ -326,13 +348,16 @@ class TestMainControllerRealIntegration:
             assert session_data['session_id'] == session_id
             assert 'last_updated' in session_data
             
-            # Test session persistence across instances
+            # Test session persistence across MainController instances
             main_controller2 = MainController(temp_workspace)
             main_controller2.initialize_framework(real_llm_config)
             
-            # Should have the same session ID
+            # Should have the same session ID through delegation
             session_id2 = main_controller2.get_session_id()
             assert session_id2 == session_id
+            
+            # Verify both MainControllers use the same SessionManager session
+            assert main_controller2.session_manager.get_session_id() == session_id
 
 
 if __name__ == "__main__":
