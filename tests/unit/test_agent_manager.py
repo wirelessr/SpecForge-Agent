@@ -63,6 +63,10 @@ class TestAgentManager:
         mock_design_agent.initialize_autogen_agent.return_value = True
         mock_design_agent.get_agent_status.return_value = {"name": "DesignAgent", "initialized": True}
         
+        mock_tasks_agent = Mock()
+        mock_tasks_agent.initialize_autogen_agent.return_value = True
+        mock_tasks_agent.get_agent_status.return_value = {"name": "TasksAgent", "initialized": True}
+        
         mock_implement_agent = Mock()
         mock_implement_agent.initialize_autogen_agent.return_value = True
         mock_implement_agent.get_agent_status.return_value = {"name": "ImplementAgent", "initialized": True}
@@ -71,10 +75,12 @@ class TestAgentManager:
         agent_manager.agents = {
             "plan": mock_plan_agent,
             "design": mock_design_agent,
+            "tasks": mock_tasks_agent,
             "implement": mock_implement_agent
         }
         agent_manager.plan_agent = mock_plan_agent
         agent_manager.design_agent = mock_design_agent
+        agent_manager.tasks_agent = mock_tasks_agent
         agent_manager.implement_agent = mock_implement_agent
         agent_manager.llm_config = llm_config
         
@@ -112,6 +118,7 @@ class TestAgentManager:
         # Verify agent initialization was called
         mock_plan_agent.initialize_autogen_agent.assert_called_once()
         mock_design_agent.initialize_autogen_agent.assert_called_once()
+        mock_tasks_agent.initialize_autogen_agent.assert_called_once()
         mock_implement_agent.initialize_autogen_agent.assert_called_once()
     
     def test_setup_agents_failure(self, agent_manager, llm_config):
@@ -125,6 +132,10 @@ class TestAgentManager:
         mock_design_agent.initialize_autogen_agent.return_value = True
         mock_design_agent.get_agent_status.return_value = {"name": "DesignAgent", "initialized": True}
         
+        mock_tasks_agent = Mock()
+        mock_tasks_agent.initialize_autogen_agent.return_value = True
+        mock_tasks_agent.get_agent_status.return_value = {"name": "TasksAgent", "initialized": True}
+        
         mock_implement_agent = Mock()
         mock_implement_agent.initialize_autogen_agent.return_value = True
         mock_implement_agent.get_agent_status.return_value = {"name": "ImplementAgent", "initialized": True}
@@ -133,6 +144,7 @@ class TestAgentManager:
         agent_manager.agents = {
             "plan": mock_plan_agent,
             "design": mock_design_agent,
+            "tasks": mock_tasks_agent,
             "implement": mock_implement_agent
         }
         
