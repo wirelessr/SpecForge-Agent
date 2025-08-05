@@ -71,44 +71,13 @@ class TestImplementAgent:
         
         assert isinstance(capabilities, list)
         assert len(capabilities) > 0
-        assert any("task lists" in cap.lower() for cap in capabilities)
+        # Task generation capability should no longer be present
+        assert not any("task lists" in cap.lower() for cap in capabilities)
         assert any("shell commands" in cap.lower() for cap in capabilities)
         assert any("retry mechanisms" in cap.lower() for cap in capabilities)
         assert any("patch" in cap.lower() for cap in capabilities)
     
-    @pytest.mark.asyncio
-    async def test_process_task_generate_task_list(self, implement_agent, temp_work_dir):
-        """Test processing task list generation request."""
-        # Create mock files
-        design_path = os.path.join(temp_work_dir, "design.md")
-        requirements_path = os.path.join(temp_work_dir, "requirements.md")
-        
-        # Mock file reading
-        implement_agent._read_file_content = AsyncMock()
-        implement_agent._read_file_content.side_effect = [
-            "# Design Document\nSome design content",
-            "# Requirements\nSome requirements"
-        ]
-        
-        # Mock task list generation
-        implement_agent.generate_task_list = AsyncMock()
-        implement_agent.generate_task_list.return_value = os.path.join(temp_work_dir, "tasks.md")
-        implement_agent.current_tasks = [Mock(), Mock()]  # Mock 2 tasks
-        
-        task_input = {
-            "task_type": "generate_task_list",
-            "design_path": design_path,
-            "requirements_path": requirements_path,
-            "work_dir": temp_work_dir
-        }
-        
-        result = await implement_agent.process_task(task_input)
-        
-        assert result["success"] is True
-        assert result["task_count"] == 2
-        assert result["work_directory"] == temp_work_dir
-        implement_agent.generate_task_list.assert_called_once()
-    
+
     @pytest.mark.asyncio
     async def test_process_task_execute_task(self, implement_agent, sample_task, temp_work_dir):
         """Test processing single task execution request."""
@@ -139,156 +108,6 @@ class TestImplementAgent:
         with pytest.raises(ValueError, match="Unknown task type"):
             await implement_agent.process_task(task_input)
 
-class TestImplementAgentTaskGeneration:
-    """Test suite for task list generation functionality."""
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def mock_shell_executor(self):
-        executor = Mock(spec=ShellExecutor)
-        executor.execute_command = AsyncMock()
-        return executor
-    
-    @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
-        return ImplementAgent(
-            name="TestAgent",
-            llm_config=test_llm_config,
-            system_message="Test agent",
-            shell_executor=mock_shell_executor
-        )
-    
-    @pytest.fixture
-    def temp_work_dir(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield temp_dir
-    
-    @pytest.mark.asyncio
-    async def test_generate_task_list_success(self, implement_agent, temp_work_dir):
-        """
-        Test successful task list generation.
-        
-        This test verifies the complete task list generation workflow:
-        1. Reading design and requirements files
-        2. Generating task content via LLM
-        3. Writing tasks to file
-        4. Updating agent state
-        """
-        design_path = os.path.join(temp_work_dir, "design.md")
-        requirements_path = os.path.join(temp_work_dir, "requirements.md")
-        
-        # Mock file reading with side_effect for multiple calls
-        # The agent reads both design and requirements files in sequence
-        implement_agent._read_file_content = AsyncMock()
-        implement_agent._read_file_content.side_effect = [
-            "# Design\nDesign content",      # First call: design.md content
-            "# Requirements\nRequirements content"  # Second call: requirements.md content
-        ]
-        
-        # Mock LLM response with realistic task format
-        # This simulates the actual task format that the LLM would generate
-        mock_task_content = """# Tasks
-- [ ] Task 1
-  - Step 1
-  - Step 2
-  - Requirements: 1.1, 2.2
-- [ ] Task 2
-  - Step A
-  - Requirements: 3.1"""
-        
-        # Mock the LLM response generation
-        # The agent calls generate_response with design and requirements context
-        implement_agent.generate_response = AsyncMock()
-        implement_agent.generate_response.return_value = mock_task_content
-        
-        # Mock file writing operation
-        # The agent writes the generated tasks to tasks.md file
-        implement_agent._write_file_content = AsyncMock()
-        
-        # Execute the task list generation
-        result = await implement_agent.generate_task_list(
-            design_path, requirements_path, temp_work_dir
-        )
-        
-        # Verify the expected results
-        expected_tasks_path = os.path.join(temp_work_dir, "tasks.md")
-        assert result == expected_tasks_path
-        assert implement_agent.current_work_directory == temp_work_dir
-        assert len(implement_agent.current_tasks) == 2
-        
-        # Verify file operations
-        implement_agent._read_file_content.assert_any_call(design_path)
-        implement_agent._read_file_content.assert_any_call(requirements_path)
-        implement_agent._write_file_content.assert_called_once_with(
-            expected_tasks_path, mock_task_content
-        )
-    
-    @pytest.mark.asyncio
-    async def test_generate_task_list_file_read_error(self, implement_agent, temp_work_dir):
-        """Test task list generation with file read error."""
-        design_path = "nonexistent_design.md"
-        requirements_path = "nonexistent_requirements.md"
-        
-        # Mock file reading failure
-        implement_agent._read_file_content = AsyncMock()
-        implement_agent._read_file_content.side_effect = FileNotFoundError("File not found")
-        
-        with pytest.raises(FileNotFoundError):
-            await implement_agent.generate_task_list(
-                design_path, requirements_path, temp_work_dir
-            )
-    
-    def test_parse_task_list(self, implement_agent):
-        """Test parsing task list content into TaskDefinition objects."""
-        task_content = """# Implementation Tasks
-
-- [ ] Task 1: Create base structure
-  - Create directory
-  - Initialize files
-  - Requirements: 1.1, 2.3
-
-- [ ] Task 2: Implement functionality
-  - Write code
-  - Add tests
-  - Requirements: 3.1
-
-- [x] Task 3: Completed task
-  - This was done
-  - Requirements: 4.1"""
-        
-        tasks = implement_agent._parse_task_list(task_content)
-        
-        assert len(tasks) == 3
-        
-        # Check first task
-        assert tasks[0].title == "Task 1: Create base structure"
-        assert len(tasks[0].steps) == 2
-        assert "Create directory" in tasks[0].steps
-        assert tasks[0].requirements_ref == ["1.1", "2.3"]
-        
-        # Check second task
-        assert tasks[1].title == "Task 2: Implement functionality"
-        assert len(tasks[1].steps) == 2
-        assert tasks[1].requirements_ref == ["3.1"]
-        
-        # Check third task
-        assert tasks[2].title == "Task 3: Completed task"
-        assert tasks[2].requirements_ref == ["4.1"]
-    
-    def test_build_task_generation_prompt(self, implement_agent):
-        """Test task generation prompt building."""
-        design_content = "# Design\nSome design"
-        requirements_content = "# Requirements\nSome requirements"
-        
-        prompt = implement_agent._build_task_generation_prompt(
-            design_content, requirements_content
-        )
-        
-        assert "DESIGN DOCUMENT:" in prompt
-        assert "REQUIREMENTS DOCUMENT:" in prompt
-        assert design_content in prompt
-        assert requirements_content in prompt
-        assert "tasks.md" in prompt
-        assert "checkbox format" in prompt
 
 class TestImplementAgentTaskExecution:
     """Test suite for task execution functionality."""

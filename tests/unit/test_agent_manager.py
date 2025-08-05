@@ -102,9 +102,10 @@ class TestAgentManager:
         # Verify results
         assert all_initialized is True
         assert agent_manager.is_initialized is True
-        assert len(agent_manager.agents) == 3
+        assert len(agent_manager.agents) == 4  # plan, design, tasks, implement
         assert "plan" in agent_manager.agents
         assert "design" in agent_manager.agents
+        assert "tasks" in agent_manager.agents
         assert "implement" in agent_manager.agents
         assert len(agent_manager.coordination_log) > 0
         
@@ -165,12 +166,13 @@ class TestAgentManager:
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.plan_agent.PlanAgent')
     @patch('autogen_framework.agents.design_agent.DesignAgent')
+    @patch('autogen_framework.agents.tasks_agent.TasksAgent')
     @patch('autogen_framework.agents.implement_agent.ImplementAgent')
-    async def test_coordinate_full_workflow_success(self, mock_implement, mock_design, mock_plan,
+    async def test_coordinate_full_workflow_success(self, mock_implement, mock_tasks, mock_design, mock_plan,
                                                    agent_manager, llm_config):
         """Test successful full workflow coordination."""
         # Setup mocked agents
-        await self._setup_mocked_agents(agent_manager, mock_plan, mock_design, mock_implement, llm_config)
+        await self._setup_mocked_agents(agent_manager, mock_plan, mock_design, mock_tasks, mock_implement, llm_config)
         
         # Mock agent task results
         plan_result = {
@@ -195,7 +197,8 @@ class TestAgentManager:
         # Mock process_task methods
         agent_manager.agents["plan"].process_task = AsyncMock(return_value=plan_result)
         agent_manager.agents["design"].process_task = AsyncMock(return_value=design_result)
-        agent_manager.agents["implement"].process_task = AsyncMock(return_value=task_gen_result)
+        agent_manager.agents["tasks"].process_task = AsyncMock(return_value=task_gen_result)
+        agent_manager.agents["implement"].process_task = AsyncMock(return_value={"success": True})
         
         # Test coordination
         context = {"user_request": "Create a test application"}
@@ -462,7 +465,7 @@ class TestAgentManager:
     
     # Helper methods
     
-    async def _setup_mocked_agents(self, agent_manager, mock_plan, mock_design, mock_implement, llm_config):
+    async def _setup_mocked_agents(self, agent_manager, mock_plan, mock_design, mock_tasks, mock_implement, llm_config):
         """Helper to setup mocked agents for testing."""
         # Mock agent instances
         mock_plan_instance = Mock()
@@ -474,6 +477,11 @@ class TestAgentManager:
         mock_design_instance.initialize_autogen_agent.return_value = True
         mock_design_instance.get_agent_status.return_value = {"name": "DesignAgent", "initialized": True}
         mock_design.return_value = mock_design_instance
+        
+        mock_tasks_instance = Mock()
+        mock_tasks_instance.initialize_autogen_agent.return_value = True
+        mock_tasks_instance.get_agent_status.return_value = {"name": "TasksAgent", "initialized": True}
+        mock_tasks.return_value = mock_tasks_instance
         
         mock_implement_instance = Mock()
         mock_implement_instance.initialize_autogen_agent.return_value = True
@@ -527,7 +535,7 @@ class TestAgentManagerMocking:
         
         assert result is True
         assert agent_manager.is_initialized is True
-        assert len(agent_manager.agents) == 3
+        assert len(agent_manager.agents) == 4  # plan, design, tasks, implement
         
         # Verify all agents were created with correct config
         mock_plan.assert_called_once()
@@ -619,7 +627,7 @@ class TestAgentManagerMocking:
         capabilities = agent_manager.get_agent_capabilities()
         
         assert isinstance(capabilities, dict)
-        assert len(capabilities) == 3
+        assert len(capabilities) == 4  # plan, design, tasks, implement
         assert capabilities["plan"] == ["requirements", "planning"]
         assert capabilities["design"] == ["design", "architecture"]
         assert capabilities["implement"] == ["implementation", "testing"]

@@ -879,7 +879,7 @@ class MainController:
         
         try:
             result = await self.agent_manager.coordinate_agents(
-                "task_execution",
+                "task_generation",
                 {
                     "task_type": "generate_task_list",
                     "design_path": design_result.get("design_path"),
@@ -923,7 +923,7 @@ class MainController:
                 # Retry the phase after successful recovery
                 try:
                     result = await self.agent_manager.coordinate_agents(
-                        "task_execution", recovery_context
+                        "task_generation", recovery_context
                     )
                     if result.get("success", False):
                         self.phase_results["tasks"] = result

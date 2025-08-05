@@ -80,9 +80,7 @@ class ImplementAgent(BaseLLMAgent):
         """
         task_type = task_input.get("task_type")
         
-        if task_type == "generate_task_list":
-            return await self._handle_generate_task_list(task_input)
-        elif task_type == "execute_task":
+        if task_type == "execute_task":
             return await self._handle_execute_task(task_input)
         elif task_type == "execute_multiple_tasks":
             return await self._handle_execute_multiple_tasks(task_input)
@@ -99,7 +97,6 @@ class ImplementAgent(BaseLLMAgent):
             List of capability descriptions
         """
         return [
-            "Generate task lists from design documents",
             "Execute coding tasks through shell commands",
             "Implement retry mechanisms for failed tasks",
             "Record task execution and learning outcomes",
@@ -109,59 +106,7 @@ class ImplementAgent(BaseLLMAgent):
             "Update global memory with reusable knowledge"
         ]
     
-    async def generate_task_list(
-        self, 
-        design_path: str, 
-        requirements_path: str, 
-        work_dir: str
-    ) -> str:
-        """
-        Generate a tasks.md file based on design and requirements documents.
-        
-        Args:
-            design_path: Path to the design.md file
-            requirements_path: Path to the requirements.md file
-            work_dir: Working directory for the project
-            
-        Returns:
-            Path to the generated tasks.md file
-        """
-        self.current_work_directory = work_dir
-        
-        # Read design and requirements documents
-        design_content = await self._read_file_content(design_path)
-        requirements_content = await self._read_file_content(requirements_path)
-        
-        # Prepare context for task generation
-        context = {
-            "design_document": design_content,
-            "requirements_document": requirements_content,
-            "work_directory": work_dir,
-            "task_type": "task_list_generation"
-        }
-        
-        # Generate task list using LLM
-        prompt = self._build_task_generation_prompt(design_content, requirements_content)
-        
-        self.logger.info(f"Generating task list for project in {work_dir}")
-        
-        try:
-            task_list_content = await self.generate_response(prompt, context)
-            
-            # Save tasks.md file
-            tasks_path = os.path.join(work_dir, "tasks.md")
-            await self._write_file_content(tasks_path, task_list_content)
-            
-            # Parse and store task definitions
-            self.current_tasks = self._parse_task_list(task_list_content)
-            
-            self.logger.info(f"Generated task list with {len(self.current_tasks)} tasks")
-            return tasks_path
-            
-        except Exception as e:
-            self.logger.error(f"Failed to generate task list: {e}")
-            raise
-    
+
     async def execute_task(self, task: TaskDefinition, work_dir: str) -> Dict[str, Any]:
         """
         Execute a specific coding task with retry mechanism.
@@ -554,21 +499,7 @@ class ImplementAgent(BaseLLMAgent):
     
     # Private helper methods
     
-    async def _handle_generate_task_list(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle task list generation request."""
-        design_path = task_input["design_path"]
-        requirements_path = task_input["requirements_path"]
-        work_dir = task_input["work_dir"]
-        
-        tasks_path = await self.generate_task_list(design_path, requirements_path, work_dir)
-        
-        return {
-            "success": True,
-            "tasks_file": tasks_path,
-            "task_count": len(self.current_tasks),
-            "work_directory": work_dir
-        }
-    
+
     async def _handle_execute_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """Handle single task execution request."""
         task = task_input["task"]
@@ -775,32 +706,7 @@ class ImplementAgent(BaseLLMAgent):
         # Default to non-critical for unknown errors
         return False
     
-    def _build_task_generation_prompt(self, design_content: str, requirements_content: str) -> str:
-        """Build prompt for task list generation."""
-        return f"""Based on the following design document and requirements, generate a comprehensive tasks.md file with specific, actionable coding tasks.
 
-DESIGN DOCUMENT:
-{design_content}
-
-REQUIREMENTS DOCUMENT:
-{requirements_content}
-
-Generate a tasks.md file that:
-1. Uses markdown checkbox format (- [ ] Task title)
-2. Each task should be small, testable, and specific
-3. Include detailed steps for each task (do a, do b, ...)
-4. Reference specific requirements (Requirements: X.Y, Z.A)
-5. Order tasks by dependencies
-6. Focus ONLY on coding tasks that can be executed via shell commands
-
-Format each task as:
-- [ ] Task Title
-  - Step 1: Specific action
-  - Step 2: Another specific action
-  - Requirements: X.Y, Z.A
-
-Generate the complete tasks.md content now:"""
-    
     def _build_patch_execution_prompt(self, task: TaskDefinition) -> str:
         """Build prompt for patch-first execution strategy."""
         return f"""Execute the following task using a patch-first strategy for file modifications:
@@ -843,44 +749,7 @@ Generate the specific shell commands needed to complete this task. Focus on:
 
 Provide the shell commands:"""
     
-    def _parse_task_list(self, task_list_content: str) -> List[TaskDefinition]:
-        """Parse tasks.md content into TaskDefinition objects."""
-        tasks = []
-        lines = task_list_content.split('\n')
-        current_task = None
-        
-        for line in lines:
-            line = line.strip()
-            
-            # Check for task checkbox
-            if line.startswith('- [ ]') or line.startswith('- [x]'):
-                if current_task:
-                    tasks.append(current_task)
-                
-                title = line[5:].strip()
-                task_id = f"task_{len(tasks) + 1}"
-                current_task = TaskDefinition(
-                    id=task_id,
-                    title=title,
-                    description=title,
-                    steps=[],
-                    requirements_ref=[]
-                )
-            
-            # Check for task steps
-            elif line.startswith('-') and current_task:
-                step = line[1:].strip()
-                if not step.startswith('Requirements:'):
-                    current_task.steps.append(step)
-                else:
-                    # Parse requirements references
-                    req_part = step.replace('Requirements:', '').strip()
-                    current_task.requirements_ref = [r.strip() for r in req_part.split(',')]
-        
-        if current_task:
-            tasks.append(current_task)
-        
-        return tasks
+
     
     def _extract_shell_commands(self, execution_plan: str) -> List[str]:
         """Extract shell commands from execution plan."""
