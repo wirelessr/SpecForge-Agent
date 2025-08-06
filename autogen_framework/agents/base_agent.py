@@ -501,12 +501,32 @@ class BaseLLMAgent(ABC):
         """
         return self.conversation_history.copy()
     
-    @abstractmethod
     async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process a task assigned to this agent.
+        Process a task assigned to this agent with automatic context retrieval.
         
-        This is the main method that each specialized agent must implement
+        This method automatically retrieves appropriate context from ContextManager
+        before delegating to the concrete agent implementation.
+        
+        Args:
+            task_input: Dictionary containing task parameters and context
+            
+        Returns:
+            Dictionary containing task results and any relevant metadata
+        """
+        # Automatically retrieve context if ContextManager is available
+        if self.context_manager:
+            await self._retrieve_agent_context(task_input)
+        
+        # Delegate to concrete agent implementation
+        return await self._process_task_impl(task_input)
+    
+    @abstractmethod
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Concrete implementation of task processing for each agent type.
+        
+        This is the method that each specialized agent must implement
         to handle their specific responsibilities.
         
         Args:
@@ -516,6 +536,68 @@ class BaseLLMAgent(ABC):
             Dictionary containing task results and any relevant metadata
         """
         pass
+    
+    async def _retrieve_agent_context(self, task_input: Dict[str, Any]) -> None:
+        """
+        Automatically retrieve appropriate context based on agent type.
+        
+        Args:
+            task_input: Dictionary containing task parameters
+        """
+        try:
+            agent_name = self.name.lower()
+            
+            if agent_name == "planagent" and task_input.get("user_request"):
+                plan_context = await self.context_manager.get_plan_context(task_input["user_request"])
+                self.update_context({
+                    "plan_context": plan_context,
+                    "project_structure": plan_context.project_structure,
+                    "memory_patterns": plan_context.memory_patterns,
+                    "compressed": plan_context.compressed
+                })
+                self.logger.info("Retrieved PlanContext from ContextManager")
+                
+            elif agent_name == "designagent" and task_input.get("user_request"):
+                design_context = await self.context_manager.get_design_context(task_input["user_request"])
+                self.update_context({
+                    "design_context": design_context,
+                    "requirements": design_context.requirements,
+                    "project_structure": design_context.project_structure,
+                    "memory_patterns": design_context.memory_patterns,
+                    "compressed": design_context.compressed
+                })
+                self.logger.info("Retrieved DesignContext from ContextManager")
+                
+            elif agent_name == "tasksagent" and task_input.get("user_request"):
+                tasks_context = await self.context_manager.get_tasks_context(task_input["user_request"])
+                self.update_context({
+                    "tasks_context": tasks_context,
+                    "requirements": tasks_context.requirements,
+                    "design": tasks_context.design,
+                    "memory_patterns": tasks_context.memory_patterns,
+                    "compressed": tasks_context.compressed
+                })
+                self.logger.info("Retrieved TasksContext from ContextManager")
+                
+            elif "implement" in agent_name and task_input.get("task"):
+                implementation_context = await self.context_manager.get_implementation_context(task_input["task"])
+                self.update_context({
+                    "implementation_context": implementation_context,
+                    "task": implementation_context.task,
+                    "requirements": implementation_context.requirements,
+                    "design": implementation_context.design,
+                    "tasks": implementation_context.tasks,
+                    "project_structure": implementation_context.project_structure,
+                    "execution_history": implementation_context.execution_history,
+                    "related_tasks": implementation_context.related_tasks,
+                    "memory_patterns": implementation_context.memory_patterns,
+                    "compressed": implementation_context.compressed
+                })
+                self.logger.info("Retrieved ImplementationContext from ContextManager")
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to retrieve context from ContextManager: {e}")
+            # Continue without context - agents should handle missing context gracefully
     
     @abstractmethod
     def get_agent_capabilities(self) -> List[str]:

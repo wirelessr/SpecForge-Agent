@@ -80,7 +80,7 @@ You should generate tasks that:
 
 Always maintain the existing task generation logic, prompts, and formatting unchanged."""
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task assigned to the TasksAgent.
         

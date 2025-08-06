@@ -101,7 +101,7 @@ You should be thorough, precise, and consider both functional and non-functional
         except Exception as e:
             self.logger.warning(f"Could not load memory context: {e}")
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a planning task.
         
