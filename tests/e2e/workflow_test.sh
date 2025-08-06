@@ -10,6 +10,7 @@ set -e  # Exit on any error
 # 設置測試環境變數
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=ERROR  # 只顯示錯誤信息
 
 echo "=== Task 18: Correct Workflow End-to-End Test ==="
 echo "開始時間: $(date)"

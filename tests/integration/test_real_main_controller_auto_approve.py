@@ -134,7 +134,7 @@ class TestMainControllerAutoApproveIntegration:
         
         # Create second controller and load session
         controller2 = MainController(temp_workspace)
-        controller2._load_or_create_session()
+        controller2.initialize_framework(real_llm_config)
         
         # Verify auto-approve data was persisted
         assert controller2.session_id == session_id
@@ -167,6 +167,11 @@ class TestMainControllerAutoApproveIntegration:
                     return {
                         "success": True,
                         "design_path": str(work_path / "design.md")
+                    }
+                elif task_type == "task_generation":
+                    return {
+                        "success": True,
+                        "tasks_file": str(work_path / "tasks.md")
                     }
                 elif task_type == "task_execution":
                     return {

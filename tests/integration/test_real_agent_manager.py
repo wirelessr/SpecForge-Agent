@@ -184,9 +184,10 @@ class TestAgentManagerRealIntegration:
             capabilities = agent_manager.get_agent_capabilities()
             
             assert isinstance(capabilities, dict)
-            assert len(capabilities) == 3  # plan, design, implement
+            assert len(capabilities) == 4  # plan, design, tasks, implement
             assert "plan" in capabilities
             assert "design" in capabilities
+            assert "tasks" in capabilities
             assert "implement" in capabilities
             
             # Each agent should have capabilities
@@ -220,7 +221,7 @@ class TestAgentManagerRealIntegration:
             
             # Verify statistics are accurate
             assert stats["total_interactions"] >= 2
-            assert stats["agents_initialized"] == 3
+            assert stats["agents_initialized"] == 4
             assert "plan" in stats["agent_interaction_counts"]
             assert "design" in stats["agent_interaction_counts"]
     

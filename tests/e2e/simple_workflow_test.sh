@@ -8,6 +8,7 @@ set -e  # Exit on any error
 # 設置測試環境變數
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=ERROR  # 只顯示錯誤信息
 
 echo "=== AutoGen Framework 端到端工作流程測試 ==="
 echo "開始時間: $(date)"
@@ -82,18 +83,17 @@ echo ""
 # 處理初始請求 (Requirements 階段)
 echo "=== 階段 1: 處理初始請求 (生成 Requirements) ==="
 echo "測試任務: $TEST_TASK"
-echo ""
 
 autogen-framework --workspace integration_test_workspace --request "$TEST_TASK" > request_output.txt 2>&1
 REQUEST_EXIT_CODE=$?
 
-echo "初始請求執行結果:"
-cat request_output.txt
-echo ""
-
 if [ $REQUEST_EXIT_CODE -ne 0 ]; then
     echo "❌ 初始請求執行失敗"
+    echo "錯誤詳情:"
+    cat request_output.txt
     exit 1
+else
+    echo "✓ Requirements 生成成功"
 fi
 
 # 查找工作目錄
@@ -136,13 +136,13 @@ echo "=== 階段 2: 批准 Requirements (生成 Design) ==="
 autogen-framework --workspace integration_test_workspace --approve requirements > approve_req_output.txt 2>&1
 APPROVE_REQ_EXIT_CODE=$?
 
-echo "Requirements 批准結果:"
-cat approve_req_output.txt
-echo ""
-
 if [ $APPROVE_REQ_EXIT_CODE -ne 0 ]; then
     echo "❌ Requirements 批准失敗"
+    echo "錯誤詳情:"
+    cat approve_req_output.txt
     exit 1
+else
+    echo "✓ Design 生成成功"
 fi
 
 # 檢查 design.md 是否生成
