@@ -1,0 +1,3905 @@
+# Merge Conflict Resolution Record
+
+**Date:** $(date)
+**Branch:** refactor/work_flow_mgmt
+**Merged from:** main
+**Strategy:** Keep branch changes, discard main changes
+
+## Summary
+During the merge of main into refactor/work_flow_mgmt, conflicts occurred in the following files. This document records what changes from main were discarded in favor of keeping the branch changes.
+
+## Conflicted Files
+
+### 1. autogen_framework/main_controller.py
+**Status:** both modified
+**Resolution:** Kept refactor/work_flow_mgmt version
+**Main branch changes discarded:** See section below
+
+### 2. autogen_framework/docs/FUTURE_IMPROVEMENTS.md  
+**Status:** both added
+**Resolution:** Kept refactor/work_flow_mgmt version
+**Main branch changes discarded:** See section below
+
+### 3. tests/e2e/auto_approve_test.sh
+**Status:** both added
+**Resolution:** Kept refactor/work_flow_mgmt version  
+**Main branch changes discarded:** See section below
+
+### 4. tests/integration/test_real_main_controller_auto_approve.py
+**Status:** both added
+**Resolution:** Kept refactor/work_flow_mgmt version
+**Main branch changes discarded:** See section below
+
+### 5. tests/unit/test_main_controller_auto_approve.py
+**Status:** both added
+**Resolution:** Kept refactor/work_flow_mgmt version
+**Main branch changes discarded:** See section below
+
+## Detailed Changes Discarded from Main
+### autogen_framework/main_controller.py - Main Branch Version:
+```python
+"""
+Main Controller for the AutoGen multi-agent framework.
+
+This module implements the MainController class which serves as the central
+orchestrator for the entire framework. It manages the initialization process,
+coordinates all components, handles user interactions, and controls the
+workflow progression with proper user approval checkpoints.
+"""
+
+import asyncio
+import logging
+import json
+import os
+import uuid
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+from datetime import datetime
+from enum import Enum
+
+from .models import LLMConfig, WorkflowState, WorkflowPhase
+from .memory_manager import MemoryManager
+from .agent_manager import AgentManager
+from .shell_executor import ShellExecutor
+from .config_manager import ConfigManager, ConfigurationError
+
+
+class UserApprovalStatus(Enum):
+    """Status of user approval for workflow phases."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    NEEDS_REVISION = "needs_revision"
+
+
+class MainController:
+    """
+    Main controller for the AutoGen multi-agent framework.
+    
+    The MainController serves as the central orchestrator that:
+    - Initializes the entire framework and all components
+    - Processes user requests and manages workflow progression
+    - Handles user approval checkpoints between workflow phases
+    - Integrates all core components (MemoryManager, AgentManager, ShellExecutor)
+    - Provides error handling and recovery mechanisms
+    - Maintains framework state and configuration
+    """
+    
+    def __init__(self, workspace_path: str):
+        """
+        Initialize the Main Controller.
+        
+        Args:
+            workspace_path: Path to the workspace root directory
+        """
+        self.workspace_path = Path(workspace_path)
+        self.logger = logging.getLogger(__name__)
+        
+        # Core components (initialized later)
+        self.memory_manager: Optional[MemoryManager] = None
+        self.agent_manager: Optional[AgentManager] = None
+        self.shell_executor: Optional[ShellExecutor] = None
+        
+        # Framework configuration
+        self.llm_config: Optional[LLMConfig] = None
+        self.is_initialized = False
+        
+        # Session management
+        self.session_id: Optional[str] = None
+        self.session_file = self.workspace_path / "memory" / "session_state.json"
+        
+        # Workflow state management
+        self.current_workflow: Optional[WorkflowState] = None
+        self.user_approval_status: Dict[str, UserApprovalStatus] = {}
+        
+        # Framework execution log
+        self.execution_log: List[Dict[str, Any]] = []
+        
+        # Phase results storage
+        self.phase_results: Dict[str, Dict[str, Any]] = {}
+        
+        # Auto-approve functionality
+        self.approval_log: List[Dict[str, Any]] = []
+        self.error_recovery_attempts: Dict[str, int] = {}
+        self.workflow_summary: Dict[str, Any] = {
+            'phases_completed': [],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [],
+            'errors_recovered': []
+        }
+        
+        self.logger.info(f"MainController initialized for workspace: {workspace_path}")
+    
+    def initialize_framework(self, llm_config: Optional[LLMConfig] = None) -> bool:
+        """
+        Initialize the entire framework and all components.
+        
+        This method fulfills requirements 1.1-1.4 by setting up the complete
+        framework environment including virtual environment, AutoGen configuration,
+        memory loading, and text interface preparation.
+        
+        Args:
+            llm_config: Optional LLM configuration. If None, uses default configuration.
+            
+        Returns:
+            True if initialization was successful, False otherwise
+        """
+        try:
+            self.logger.info("Starting framework initialization")
+            
+            # Use environment-based configuration if none provided (Requirement 1.2)
+            if llm_config is None:
+                config_manager = ConfigManager()
+                llm_config = LLMConfig.from_config_manager(config_manager)
+            
+            self.llm_config = llm_config
+            
+            # Validate LLM configuration
+            if not llm_config.validate():
+                raise ValueError("Invalid LLM configuration provided")
+            
+            # Initialize core components
+            success = self._initialize_core_components()
+            if not success:
+                raise RuntimeError("Failed to initialize core components")
+            
+            # Load memory context (Requirement 1.3)
+            success = self._load_framework_memory()
+            if not success:
+                self.logger.warning("Failed to load memory context, continuing with empty memory")
+            
+            # Setup agents with LLM configuration
+            success = self.agent_manager.setup_agents(llm_config)
+            if not success:
+                self.logger.error("Failed to setup agents")
+                return False
+            
+            # Load or create session
+            self._load_or_create_session()
+            
+            self.is_initialized = True
+            
+            # Record initialization
+            self._record_execution_event(
+                event_type="framework_initialization",
+                details={
+                    "llm_config": {
+                        "model": llm_config.model,
+                        "base_url": llm_config.base_url
+                    },
+                    "workspace_path": str(self.workspace_path),
+                    "components_initialized": ["MemoryManager", "AgentManager", "ShellExecutor"]
+                }
+            )
+            
+            self.logger.info("Framework initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Framework initialization failed: {e}")
+            self._record_execution_event(
+                event_type="initialization_error",
+                details={"error": str(e)}
+            )
+            return False
+    
+    async def process_request(self, user_request: str, auto_approve: bool = False) -> Dict[str, Any]:
+        """
+        Process a user request through the complete workflow with optional auto-approve.
+        
+        This is the main entry point for handling user requests. It manages the
+        entire workflow from requirements generation through implementation,
+        with proper user approval checkpoints at each phase or automatic approval
+        when auto_approve is enabled.
+        
+        Args:
+            user_request: The user's request string
+            auto_approve: Whether to automatically approve all workflow phases
+            
+        Returns:
+            Dictionary containing the complete workflow results and status
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Framework not initialized. Call initialize_framework() first.")
+        
+        # Check if there's already an active workflow
+        if self.current_workflow is not None:
+            return {
+                "success": False,
+                "error": "Active workflow in progress. Please complete current workflow first.",
+                "current_workflow": {
+                    "phase": self.current_workflow.phase.value,
+                    "work_directory": self.current_workflow.work_directory
+                }
+            }
+        
+        self.logger.info(f"Processing user request: {user_request[:100]}...")
+        
+        if auto_approve:
+            self.logger.info("Auto-approve mode enabled - proceeding through all phases automatically")
+        
+        # Initialize workflow state
+        workflow_id = self._generate_workflow_id()
+        self.current_workflow = WorkflowState(
+            phase=WorkflowPhase.PLANNING,
+            work_directory=""
+        )
+        
+        # Reset workflow summary for new workflow
+        self.workflow_summary = {
+            'phases_completed': [],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [],
+            'errors_recovered': []
+        }
+        
+        # Save session state after workflow initialization
+        self._save_session_state()
+        
+        # Note: approval status is managed separately and persists across requests
+        # This allows for pre-approval of phases in testing scenarios
+        
+        workflow_result = {
+            "workflow_id": workflow_id,
+            "user_request": user_request,
+            "phases": {},
+            "current_phase": None,
+            "success": False,
+            "requires_user_approval": False,
+            "approval_needed_for": None,
+            "auto_approve_enabled": auto_approve
+        }
+        
+        try:
+            # Phase 1: Requirements Generation
+            requirements_result = await self._execute_requirements_phase(user_request, workflow_id)
+            workflow_result["phases"]["requirements"] = requirements_result
+            workflow_result["current_phase"] = "requirements"
+            
+            if not requirements_result.get("success", False):
+                error_msg = requirements_result.get("error", "Requirements generation failed")
+                raise RuntimeError(error_msg)
+            
+            # Check if user approval is needed for requirements
+            requirements_approved = self.should_auto_approve("requirements", auto_approve)
+            if not requirements_approved:
+                workflow_result["requires_user_approval"] = True
+                workflow_result["approval_needed_for"] = "requirements"
+                workflow_result["requirements_path"] = requirements_result.get("requirements_path")
+                return workflow_result
+            
+            # Phase 2: Design Generation (only if requirements approved)
+            design_result = await self._execute_design_phase(requirements_result, workflow_id)
+            workflow_result["phases"]["design"] = design_result
+            workflow_result["current_phase"] = "design"
+            
+            if not design_result.get("success", False):
+                error_msg = design_result.get("error", "Design generation failed")
+                raise RuntimeError(error_msg)
+            
+            # Check if user approval is needed for design
+            design_approved = self.should_auto_approve("design", auto_approve)
+            if not design_approved:
+                workflow_result["requires_user_approval"] = True
+                workflow_result["approval_needed_for"] = "design"
+                workflow_result["design_path"] = design_result.get("design_path")
+                return workflow_result
+            
+            # Phase 3: Task Generation (only if design approved)
+            tasks_result = await self._execute_tasks_phase(design_result, requirements_result, workflow_id)
+            workflow_result["phases"]["tasks"] = tasks_result
+            workflow_result["current_phase"] = "tasks"
+            
+            if not tasks_result.get("success", False):
+                error_msg = tasks_result.get("error", "Task generation failed")
+                raise RuntimeError(error_msg)
+            
+            # Check if user approval is needed for tasks
+            tasks_approved = self.should_auto_approve("tasks", auto_approve)
+            if not tasks_approved:
+                workflow_result["requires_user_approval"] = True
+                workflow_result["approval_needed_for"] = "tasks"
+                workflow_result["tasks_path"] = tasks_result.get("tasks_file")
+                return workflow_result
+            
+            # Phase 4: Implementation Preparation (only if tasks approved)
+            implementation_result = await self._execute_implementation_phase(tasks_result, workflow_id)
+            workflow_result["phases"]["implementation"] = implementation_result
+            workflow_result["current_phase"] = "implementation"
+            
+            # Mark workflow as completed
+            self.current_workflow.phase = WorkflowPhase.COMPLETED
+            workflow_result["success"] = True
+            
+            # Complete and clear the workflow
+            self.complete_workflow()
+            
+            self.logger.info(f"User request processed successfully: {workflow_id}")
+            return workflow_result
+            
+        except Exception as e:
+            self.logger.error(f"Error processing user request: {e}")
+            workflow_result["error"] = str(e)
+            
+            self._record_execution_event(
+                event_type="workflow_error",
+                details={
+                    "workflow_id": workflow_id,
+                    "error": str(e),
+                    "failed_phase": workflow_result.get("current_phase")
+                }
+            )
+            
+            return workflow_result
+    
+    async def process_user_request(self, user_request: str) -> Dict[str, Any]:
+        """
+        Process a user request through the complete workflow with approval checkpoints.
+        
+        This method provides backward compatibility with the original interface.
+        For new code, use process_request() with the auto_approve parameter.
+        
+        Args:
+            user_request: The user's request string
+            
+        Returns:
+            Dictionary containing the complete workflow results and status
+        """
+        return await self.process_request(user_request, auto_approve=False)
+    
+    def approve_phase(self, phase: str, approved: bool = True) -> Dict[str, Any]:
+        """
+        Approve or reject a workflow phase.
+        
+        Args:
+            phase: Phase name ("requirements", "design", "tasks")
+            approved: Whether the phase is approved
+            
+        Returns:
+            Dictionary containing approval status and next steps
+        """
+        # Validate phase name
+        valid_phases = ["requirements", "design", "tasks"]
+        if phase not in valid_phases:
+            return {
+                "success": False,
+                "error": f"Invalid phase '{phase}'. Valid phases are: {', '.join(valid_phases)}"
+            }
+        
+        # Check if there's an active workflow
+        if not self.current_workflow:
+            return {
+                "success": False,
+                "error": "No active workflow found. Please submit a request first using --request."
+            }
+        
+        # Check if the phase exists and can be approved
+        phase_file_map = {
+            "requirements": "requirements.md",
+            "design": "design.md", 
+            "tasks": "tasks.md"
+        }
+        
+        if self.current_workflow.work_directory:
+            phase_file = Path(self.current_workflow.work_directory) / phase_file_map[phase]
+            if not phase_file.exists():
+                return {
+                    "success": False,
+                    "error": f"Cannot approve {phase} phase. The {phase_file_map[phase]} file does not exist. Please ensure the phase has been generated first."
+                }
+        
+        status = UserApprovalStatus.APPROVED if approved else UserApprovalStatus.REJECTED
+        self.user_approval_status[phase] = status
+        
+        self.logger.info(f"Phase '{phase}' {'approved' if approved else 'rejected'} by user")
+        
+        # Record approval event
+        self._record_execution_event(
+            event_type="phase_approval",
+            details={
+                "phase": phase,
+                "approved": approved,
+                "workflow_id": self._get_current_workflow_id()
+            }
+        )
+        
+        # Save session state after approval
+        self._save_session_state()
+        
+        result = {
+            "phase": phase,
+            "approved": approved,
+            "status": status.value,
+            "can_proceed": approved
+        }
+        
+        if approved:
+            result["message"] = f"Phase '{phase}' approved. Ready to proceed to next phase."
+        else:
+            result["message"] = f"Phase '{phase}' rejected. Please revise and resubmit."
+        
+        return result
+    
+    async def continue_workflow(self) -> Dict[str, Any]:
+        """
+        Continue the workflow after user approval.
+        
+        Returns:
+            Dictionary containing the next phase results or completion status
+        """
+        if not self.current_workflow:
+            raise RuntimeError("No active workflow to continue")
+        
+        workflow_id = self._get_current_workflow_id()
+        
+        # Determine next phase based on current state and approvals
+        if (self.current_workflow.phase == WorkflowPhase.PLANNING and 
+            self._is_phase_approved("requirements")):
+            
+            # Continue to design phase
+            requirements_result = self._get_last_phase_result("requirements")
+            design_result = await self._execute_design_phase(requirements_result, workflow_id)
+            
+            # Update workflow phase after successful execution
+            if design_result.get("success"):
+                self.current_workflow.phase = WorkflowPhase.DESIGN
+            
+            # Save session state after phase update
+            self._save_session_state()
+            
+            return {
+                "phase": "design",
+                "result": design_result,
+                "requires_approval": not self._is_phase_approved("design")
+            }
+            
+        elif (self.current_workflow.phase == WorkflowPhase.DESIGN and 
+              self._is_phase_approved("design")):
+            
+            # Continue to tasks phase
+            design_result = self._get_last_phase_result("design")
+            requirements_result = self._get_last_phase_result("requirements")
+            tasks_result = await self._execute_tasks_phase(design_result, requirements_result, workflow_id)
+            
+            # Update workflow phase after successful execution
+            if tasks_result.get("success"):
+                self.current_workflow.phase = WorkflowPhase.TASK_GENERATION
+            
+            # Save session state after phase update
+            self._save_session_state()
+            
+            return {
+                "phase": "tasks",
+                "result": tasks_result,
+                "requires_approval": not self._is_phase_approved("tasks")
+            }
+            
+        elif (self.current_workflow.phase == WorkflowPhase.TASK_GENERATION and 
+              self._is_phase_approved("tasks")):
+            
+            # Continue to implementation phase
+            tasks_result = self._get_last_phase_result("tasks")
+            implementation_result = await self._execute_implementation_phase(tasks_result, workflow_id)
+            
+            # Mark workflow as completed and clean up
+            self.current_workflow.phase = WorkflowPhase.COMPLETED
+            self.complete_workflow()
+            
+            # Save session state after completion
+            self._save_session_state()
+            
+            return {
+                "phase": "implementation",
+                "result": implementation_result,
+                "workflow_completed": True
+            }
+        
+        else:
+            return {
+                "error": "Cannot continue workflow. Check approval status and current phase.",
+                "current_phase": self.current_workflow.phase.value,
+                "approval_status": {k: v.value for k, v in self.user_approval_status.items()}
+            }
+    
+    def get_framework_status(self) -> Dict[str, Any]:
+        """
+        Get the current status of the framework.
+        
+        Returns:
+            Dictionary containing comprehensive framework status information
+        """
+        status = {
+            "initialized": self.is_initialized,
+            "session_id": self.session_id,
+            "workspace_path": str(self.workspace_path),
+            "llm_config": {
+                "model": self.llm_config.model if self.llm_config else None,
+                "base_url": self.llm_config.base_url if self.llm_config else None
+            } if self.llm_config else None,
+            "current_workflow": {
+                "active": self.current_workflow is not None,
+                "phase": self.current_workflow.phase.value if self.current_workflow else None,
+                "work_directory": self.current_workflow.work_directory if self.current_workflow else None
+            },
+            "approval_status": {k: v.value for k, v in self.user_approval_status.items()},
+            "components": {}
+        }
+        
+        # Add component status if initialized
+        if self.is_initialized:
+            if self.agent_manager:
+                status["components"]["agent_manager"] = self.agent_manager.get_agent_status()
+            if self.memory_manager:
+                status["components"]["memory_manager"] = self.memory_manager.get_memory_stats()
+            if self.shell_executor:
+                status["components"]["shell_executor"] = self.shell_executor.get_execution_stats()
+        
+        return status
+    
+    async def apply_phase_revision(self, phase: str, revision_feedback: str) -> Dict[str, Any]:
+        """
+        Apply revision feedback to a specific phase.
+        
+        Args:
+            phase: Phase name ("requirements", "design", "tasks")
+            revision_feedback: User's revision feedback
+            
+        Returns:
+            Dictionary containing revision results
+        """
+        if phase not in ["requirements", "design", "tasks"]:
+            return {"success": False, "error": f"Invalid phase: {phase}"}
+        
+        if not self.current_workflow:
+            return {"success": False, "error": "No active workflow"}
+        
+        try:
+            self.logger.info(f"Applying revision to {phase} phase: {revision_feedback[:100]}...")
+            
+            # Get the current phase result
+            phase_result = self._get_last_phase_result(phase)
+            if not phase_result:
+                return {"success": False, "error": f"No {phase} result found"}
+            
+            # Prepare revision context
+            revision_context = {
+                "phase": phase,
+                "revision_feedback": revision_feedback,
+                "current_result": phase_result,
+                "work_directory": self.current_workflow.work_directory
+            }
+            
+            # Apply revision through agent coordination
+            revision_result = await self.agent_manager.coordinate_agents(
+                f"{phase}_revision",
+                revision_context
+            )
+            
+            if revision_result.get("success"):
+                # Update the phase result
+                self.phase_results[phase] = revision_result
+                
+                # Reset approval status for this phase
+                if phase in self.user_approval_status:
+                    del self.user_approval_status[phase]
+                
+                # Record revision event
+                self._record_execution_event(
+                    event_type="phase_revision",
+                    details={
+                        "phase": phase,
+                        "feedback": revision_feedback,
+                        "workflow_id": self._get_current_workflow_id()
+                    }
+                )
+                
+                # Save session state after revision
+                self._save_session_state()
+                
+                return {
+                    "success": True,
+                    "message": f"{phase.title()} phase revised successfully",
+                    "updated_path": revision_result.get(f"{phase}_path")
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": revision_result.get("error", "Revision failed")
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error applying revision to {phase}: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_pending_approval(self) -> Optional[Dict[str, Any]]:
+        """
+        Check if there's a pending approval needed.
+        
+        Returns:
+            Dictionary with pending approval info, or None if no approval needed
+        """
+        if not self.current_workflow:
+            return None
+        
+        current_phase = self.current_workflow.phase
+        
+        if current_phase == WorkflowPhase.PLANNING and not self._is_phase_approved("requirements"):
+            return {
+                "phase": "requirements",
+                "phase_name": "Requirements",
+                "description": "Requirements document needs approval"
+            }
+        elif current_phase == WorkflowPhase.DESIGN and not self._is_phase_approved("design"):
+            return {
+                "phase": "design", 
+                "phase_name": "Design",
+                "description": "Design document needs approval"
+            }
+        elif current_phase == WorkflowPhase.TASK_GENERATION and not self._is_phase_approved("tasks"):
+            return {
+                "phase": "tasks",
+                "phase_name": "Tasks", 
+                "description": "Task list needs approval"
+            }
+        
+        return None
+    
+    def complete_workflow(self) -> bool:
+        """
+        Mark the current workflow as completed and clear it.
+        
+        Returns:
+            True if workflow was completed, False if no active workflow
+        """
+        if self.current_workflow is None:
+            return False
+        
+        self.logger.info(f"Completing workflow in phase: {self.current_workflow.phase.value}")
+        
+        # Record workflow completion
+        self._record_execution_event(
+            event_type="workflow_completed",
+            details={
+                "final_phase": self.current_workflow.phase.value,
+                "work_directory": self.current_workflow.work_directory,
+                "workflow_id": self._get_current_workflow_id()
+            }
+        )
+        
+        # Clear workflow state
+        self.current_workflow = None
+        self.user_approval_status.clear()
+        
+        # Save session state after completion
+        self._save_session_state()
+        
+        return True
+    
+    def get_execution_log(self) -> List[Dict[str, Any]]:
+        """
+        Get the complete execution log.
+        
+        Returns:
+            List of execution events with timestamps and details
+        """
+        return self.execution_log.copy()
+    
+    def reset_framework(self) -> bool:
+        """
+        Reset the framework to initial state.
+        
+        Returns:
+            True if reset was successful, False otherwise
+        """
+        try:
+            # Reset workflow state
+            self.current_workflow = None
+            self.user_approval_status.clear()
+            self.phase_results.clear()
+            self.approval_log.clear()
+            self.error_recovery_attempts.clear()
+            self.workflow_summary = {
+                'phases_completed': [],
+                'tasks_completed': [],
+                'token_usage': {},
+                'compression_events': [],
+                'auto_approvals': [],
+                'errors_recovered': []
+            }
+            
+            # Reset components if they exist
+            if self.agent_manager and hasattr(self.agent_manager, 'reset_coordination_state'):
+                self.agent_manager.reset_coordination_state()
+            
+            if self.shell_executor and hasattr(self.shell_executor, 'clear_history'):
+                self.shell_executor.clear_history()
+            
+            # Clear execution log
+            self.execution_log.clear()
+            
+            # Save session state after reset
+            self._save_session_state()
+            
+            self.logger.info("Framework reset completed")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error resetting framework: {e}")
+            return False    
+   
+ # Private helper methods
+    
+    def _initialize_core_components(self) -> bool:
+        """Initialize all core framework components."""
+        try:
+            # Initialize MemoryManager
+            if self.memory_manager is None:
+                self.memory_manager = MemoryManager(str(self.workspace_path))
+                self.logger.info("MemoryManager initialized")
+            
+            # Initialize ShellExecutor
+            if self.shell_executor is None:
+                self.shell_executor = ShellExecutor(str(self.workspace_path))
+                self.logger.info("ShellExecutor initialized")
+            
+            # Initialize AgentManager
+            if self.agent_manager is None:
+                self.agent_manager = AgentManager(str(self.workspace_path))
+                self.logger.info("AgentManager initialized")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error initializing core components: {e}")
+            return False
+    
+    def _load_framework_memory(self) -> bool:
+        """Load memory context for the framework."""
+        try:
+            memory_content = self.memory_manager.load_memory()
+            
+            # Update agents with memory context if agent manager is available
+            if self.agent_manager:
+                self.agent_manager.update_agent_memory(memory_content)
+            
+            self.logger.info("Framework memory loaded successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error loading framework memory: {e}")
+            return False
+    
+    async def _execute_requirements_phase(self, user_request: str, workflow_id: str) -> Dict[str, Any]:
+        """Execute the requirements generation phase."""
+        self.logger.info("Executing requirements phase")
+        self.current_workflow.phase = WorkflowPhase.PLANNING
+        
+        try:
+            result = await self.agent_manager.coordinate_agents(
+                "requirements_generation",
+                {
+                    "user_request": user_request,
+                    "workspace_path": str(self.workspace_path)
+                }
+            )
+            
+            if result.get("success", False):
+                # Update workflow state
+                self.current_workflow.work_directory = result.get("work_directory", "")
+                
+                # Store phase result
+                self.phase_results["requirements"] = result
+                
+                # Record phase completion
+                self._record_execution_event(
+                    event_type="phase_completed",
+                    details={
+                        "phase": "requirements",
+                        "workflow_id": workflow_id,
+                        "work_directory": self.current_workflow.work_directory
+                    }
+                )
+                
+                # Save session state after phase completion
+                self._save_session_state()
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Requirements phase failed: {e}")
+            
+            # Attempt error recovery
+            recovery_context = {
+                "user_request": user_request,
+                "workspace_path": str(self.workspace_path),
+                "memory_context": self.memory_manager.load_memory() if self.memory_manager else {}
+            }
+            
+            if self.handle_error_recovery(e, "requirements", recovery_context):
+                self.logger.info("Requirements phase recovered from error, retrying...")
+                # Retry the phase after successful recovery
+                try:
+                    result = await self.agent_manager.coordinate_agents(
+                        "requirements_generation", recovery_context
+                    )
+                    if result.get("success", False):
+                        self.phase_results["requirements"] = result
+                        return result
+                except Exception as retry_error:
+                    self.logger.error(f"Requirements phase retry failed: {retry_error}")
+            
+            return {"success": False, "error": str(e)}
+    
+    async def _execute_design_phase(self, requirements_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
+        """Execute the design generation phase."""
+        self.logger.info("Executing design phase")
+        self.current_workflow.phase = WorkflowPhase.DESIGN
+        
+        try:
+            result = await self.agent_manager.coordinate_agents(
+                "design_generation",
+                {
+                    "requirements_path": requirements_result.get("requirements_path"),
+                    "work_directory": requirements_result.get("work_directory"),
+                    "memory_context": self.memory_manager.load_memory()
+                }
+            )
+            
+            if result.get("success", False):
+                # Store phase result
+                self.phase_results["design"] = result
+                
+                # Record phase completion
+                self._record_execution_event(
+                    event_type="phase_completed",
+                    details={
+                        "phase": "design",
+                        "workflow_id": workflow_id,
+                        "design_path": result.get("design_path")
+                    }
+                )
+                
+                # Save session state after phase completion
+                self._save_session_state()
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Design phase failed: {e}")
+            
+            # Attempt error recovery
+            recovery_context = {
+                "requirements_path": requirements_result.get("requirements_path"),
+                "work_directory": requirements_result.get("work_directory"),
+                "memory_context": self.memory_manager.load_memory()
+            }
+            
+            if self.handle_error_recovery(e, "design", recovery_context):
+                self.logger.info("Design phase recovered from error, retrying...")
+                # Retry the phase after successful recovery
+                try:
+                    result = await self.agent_manager.coordinate_agents(
+                        "design_generation", recovery_context
+                    )
+                    if result.get("success", False):
+                        self.phase_results["design"] = result
+                        return result
+                except Exception as retry_error:
+                    self.logger.error(f"Design phase retry failed: {retry_error}")
+            
+            return {"success": False, "error": str(e)}
+    
+    async def _execute_tasks_phase(self, design_result: Dict[str, Any], 
+                                  requirements_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
+        """Execute the task generation phase."""
+        self.logger.info("Executing tasks phase")
+        self.current_workflow.phase = WorkflowPhase.TASK_GENERATION
+        
+        try:
+            result = await self.agent_manager.coordinate_agents(
+                "task_execution",
+                {
+                    "task_type": "generate_task_list",
+                    "design_path": design_result.get("design_path"),
+                    "requirements_path": requirements_result.get("requirements_path"),
+                    "work_dir": requirements_result.get("work_directory")
+                }
+            )
+            
+            if result.get("success", False):
+                # Store phase result
+                self.phase_results["tasks"] = result
+                
+                # Record phase completion
+                self._record_execution_event(
+                    event_type="phase_completed",
+                    details={
+                        "phase": "tasks",
+                        "workflow_id": workflow_id,
+                        "tasks_file": result.get("tasks_file")
+                    }
+                )
+                
+                # Save session state after phase completion
+                self._save_session_state()
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Tasks phase failed: {e}")
+            
+            # Attempt error recovery
+            recovery_context = {
+                "design_path": design_result.get("design_path"),
+                "requirements_path": requirements_result.get("requirements_path"),
+                "work_directory": design_result.get("work_directory"),
+                "memory_context": self.memory_manager.load_memory()
+            }
+            
+            if self.handle_error_recovery(e, "tasks", recovery_context):
+                self.logger.info("Tasks phase recovered from error, retrying...")
+                # Retry the phase after successful recovery
+                try:
+                    result = await self.agent_manager.coordinate_agents(
+                        "task_execution", recovery_context
+                    )
+                    if result.get("success", False):
+                        self.phase_results["tasks"] = result
+                        return result
+                except Exception as retry_error:
+                    self.logger.error(f"Tasks phase retry failed: {retry_error}")
+            
+            return {"success": False, "error": str(e)}
+    
+    async def _execute_implementation_phase(self, tasks_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
+        """Execute the implementation phase by actually running all tasks."""
+        self.logger.info("Executing implementation phase")
+        self.current_workflow.phase = WorkflowPhase.IMPLEMENTATION
+        
+        try:
+            # Try both "tasks_file" and "tasks_path" for compatibility
+            tasks_file = tasks_result.get("tasks_file") or tasks_result.get("tasks_path")
+            work_directory = self.current_workflow.work_directory
+            
+            if not tasks_file or not Path(tasks_file).exists():
+                return {
+                    "success": False,
+                    "error": f"Tasks file not found: {tasks_file}"
+                }
+            
+            # Parse tasks from tasks.md file
+            tasks = self._parse_tasks_from_file(tasks_file)
+            
+            if not tasks:
+                return {
+                    "success": False,
+                    "error": "No tasks found in tasks.md file"
+                }
+            
+            self.logger.info(f"Found {len(tasks)} tasks to execute")
+            
+            # Execute all tasks using the ImplementAgent
+            execution_result = await self.agent_manager.coordinate_agents(
+                "execute_multiple_tasks",
+                {
+                    "task_type": "execute_multiple_tasks",
+                    "tasks": tasks,
+                    "work_dir": work_directory,
+                    "stop_on_failure": False  # Continue even if some tasks fail
+                }
+            )
+            
+            # Update tasks.md file with completion status
+            if execution_result.get("success"):
+                self._update_tasks_file_with_completion(tasks_file, execution_result.get("task_results", []))
+            
+            # Record phase completion
+            self._record_execution_event(
+                event_type="phase_completed",
+                details={
+                    "phase": "implementation",
+                    "workflow_id": workflow_id,
+                    "status": "tasks_executed",
+                    "total_tasks": len(tasks),
+                    "completed_tasks": execution_result.get("completed_count", 0),
+                    "success_rate": f"{execution_result.get('completed_count', 0)}/{len(tasks)}"
+                }
+            )
+            
+            result = {
+                "success": execution_result.get("success", False),
+                "message": f"Implementation phase completed. {execution_result.get('completed_count', 0)}/{len(tasks)} tasks executed successfully.",
+                "tasks_file": tasks_file,
+                "work_directory": work_directory,
+                "total_tasks": len(tasks),
+                "completed_tasks": execution_result.get("completed_count", 0),
+                "task_results": execution_result.get("task_results", []),
+                "execution_completed": True
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Implementation phase failed: {e}")
+            
+            # Attempt error recovery
+            recovery_context = {
+                "tasks_file": tasks_file,
+                "work_directory": self.current_workflow.work_directory,
+                "memory_context": self.memory_manager.load_memory()
+            }
+            
+            if self.handle_error_recovery(e, "implementation", recovery_context):
+                self.logger.info("Implementation phase recovered from error, retrying...")
+                # Retry the phase after successful recovery
+                try:
+                    # Re-parse tasks and retry execution
+                    tasks = self._parse_tasks_from_file(tasks_file)
+                    uncompleted_tasks = [task for task in tasks if not task.completed]
+                    
+                    if uncompleted_tasks:
+                        task_results = await self.agent_manager.coordinate_agents(
+                            "execute_multiple_tasks",
+                            {
+                                "tasks": [task.to_dict() for task in uncompleted_tasks],
+                                "work_directory": self.current_workflow.work_directory,
+                                "memory_context": self.memory_manager.load_memory()
+                            }
+                        )
+                        
+                        if task_results.get("success", False):
+                            self._update_tasks_file_with_completion(tasks_file, task_results.get("task_results", []))
+                            result = {
+                                "success": True,
+                                "execution_completed": True,
+                                "tasks_completed": len(task_results.get("task_results", [])),
+                                "work_directory": self.current_workflow.work_directory
+                            }
+                            self.phase_results["implementation"] = result
+                            return result
+                except Exception as retry_error:
+                    self.logger.error(f"Implementation phase retry failed: {retry_error}")
+            
+            return {"success": False, "error": str(e)}
+    
+    def _is_phase_approved(self, phase: str) -> bool:
+        """Check if a phase has been approved by the user."""
+        return self.user_approval_status.get(phase) == UserApprovalStatus.APPROVED
+    
+    def should_auto_approve(self, phase: str, auto_approve: bool) -> bool:
+        """
+        Determine if phase should be automatically approved based on --auto-approve flag.
+        
+        Args:
+            phase: Phase name ("requirements", "design", "tasks")
+            auto_approve: Whether auto-approve mode is enabled
+            
+        Returns:
+            True if phase should be automatically approved, False otherwise
+        """
+        # First check if phase is already manually approved
+        if self._is_phase_approved(phase):
+            return True
+        
+        # If auto-approve is not enabled, return False
+        if not auto_approve:
+            return False
+        
+        # Check for critical checkpoints that require explicit approval even in auto-approve mode
+        critical_checkpoints = self._get_critical_checkpoints()
+        if phase in critical_checkpoints:
+            self.log_auto_approval(phase, False, f"Critical checkpoint requires explicit approval")
+            return False
+        
+        # Auto-approve the phase
+        self.user_approval_status[phase] = UserApprovalStatus.APPROVED
+        self.log_auto_approval(phase, True, f"Auto-approved in auto-approve mode")
+        
+        # Track in workflow summary
+        self.workflow_summary['phases_completed'].append({
+            'phase': phase,
+            'auto_approved': True,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        return True
+    
+    def _get_critical_checkpoints(self) -> List[str]:
+        """
+        Get list of critical checkpoints that require explicit approval.
+        
+        Returns:
+            List of phase names that are considered critical checkpoints
+        """
+        # For now, no phases are considered critical checkpoints
+        # This can be configured via environment variables or config in the future
+        critical_checkpoints_env = os.getenv('AUTO_APPROVE_CRITICAL_CHECKPOINTS', '')
+        if critical_checkpoints_env:
+            return [phase.strip() for phase in critical_checkpoints_env.split(',')]
+        return []
+    
+    def log_auto_approval(self, phase: str, decision: bool, reason: str) -> None:
+        """
+        Log automatic approval decisions for audit trail.
+        
+        Args:
+            phase: Phase name
+            decision: Whether the phase was approved
+            reason: Reason for the decision
+        """
+        approval_entry = {
+            'phase': phase,
+            'decision': decision,
+            'reason': reason,
+            'timestamp': datetime.now().isoformat()
+        }
+        self.approval_log.append(approval_entry)
+        self.workflow_summary['auto_approvals'].append(approval_entry)
+        self.logger.info(f"Auto-approval decision for {phase}: {decision} - {reason}")
+    
+    def handle_error_recovery(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+        """
+        Attempt automatic error recovery. Returns True if recovery successful.
+        
+        Args:
+            error: The exception that occurred
+            phase: Phase where the error occurred
+            context: Context information for recovery
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        max_attempts = self._get_error_recovery_max_attempts()
+        current_attempts = self.error_recovery_attempts.get(phase, 0)
+        
+        if current_attempts >= max_attempts:
+            self.logger.error(f"Maximum error recovery attempts ({max_attempts}) exceeded for {phase}")
+            return False
+        
+        self.error_recovery_attempts[phase] = current_attempts + 1
+        
+        # Attempt recovery strategies
+        recovery_strategies = [
+            self._retry_with_modified_parameters,
+            self._skip_non_critical_steps,
+            self._use_fallback_implementation
+        ]
+        
+        for strategy in recovery_strategies:
+            try:
+                if strategy(error, phase, context):
+                    self.workflow_summary['errors_recovered'].append({
+                        'phase': phase,
+                        'error': str(error),
+                        'strategy': getattr(strategy, '__name__', str(strategy)),
+                        'attempt': current_attempts + 1,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    self.logger.info(f"Error recovery successful using {getattr(strategy, '__name__', str(strategy))} for {phase}")
+                    return True
+            except Exception as recovery_error:
+                self.logger.warning(f"Recovery strategy {getattr(strategy, '__name__', str(strategy))} failed: {recovery_error}")
+        
+        return False
+    
+    def _get_error_recovery_max_attempts(self) -> int:
+        """Get maximum error recovery attempts from configuration."""
+        return int(os.getenv('AUTO_APPROVE_ERROR_RECOVERY_ATTEMPTS', '3'))
+    
+    def _retry_with_modified_parameters(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+        """
+        Recovery strategy: Retry with modified parameters.
+        
+        This strategy attempts to recover from errors by modifying parameters
+        that might have caused the failure and retrying the operation.
+        
+        Args:
+            error: The exception that occurred
+            phase: Phase where the error occurred
+            context: Context information for recovery
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        self.logger.info(f"Attempting retry with modified parameters for {phase}")
+        
+        try:
+            # Modify parameters based on error type and phase
+            modified_context = self._modify_parameters_for_retry(error, phase, context)
+            
+            if not modified_context:
+                self.logger.warning(f"Could not determine parameter modifications for {phase}")
+                return False
+            
+            # Retry the operation with modified parameters
+            if phase == "requirements":
+                return self._retry_requirements_generation(modified_context)
+            elif phase == "design":
+                return self._retry_design_generation(modified_context)
+            elif phase == "tasks":
+                return self._retry_tasks_generation(modified_context)
+            elif phase == "implementation":
+                return self._retry_implementation_execution(modified_context)
+            else:
+                self.logger.warning(f"Unknown phase for retry: {phase}")
+                return False
+                
+        except Exception as retry_error:
+            self.logger.error(f"Retry with modified parameters failed for {phase}: {retry_error}")
+            return False
+    
+    def _skip_non_critical_steps(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+        """
+        Recovery strategy: Skip non-critical steps.
+        
+        This strategy attempts to recover by identifying and skipping
+        non-essential steps that might be causing the failure.
+        
+        Args:
+            error: The exception that occurred
+            phase: Phase where the error occurred
+            context: Context information for recovery
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        self.logger.info(f"Attempting to skip non-critical steps for {phase}")
+        
+        try:
+            # Identify non-critical steps that can be skipped
+            non_critical_steps = self._identify_non_critical_steps(phase, error)
+            
+            if not non_critical_steps:
+                self.logger.info(f"No non-critical steps identified for {phase}")
+                return False
+            
+            # Create simplified context by skipping non-critical steps
+            simplified_context = self._create_simplified_context(context, non_critical_steps)
+            
+            # Retry with simplified approach
+            if phase == "requirements":
+                return self._execute_simplified_requirements(simplified_context)
+            elif phase == "design":
+                return self._execute_simplified_design(simplified_context)
+            elif phase == "tasks":
+                return self._execute_simplified_tasks(simplified_context)
+            elif phase == "implementation":
+                return self._execute_simplified_implementation(simplified_context)
+            else:
+                self.logger.warning(f"Unknown phase for simplified execution: {phase}")
+                return False
+                
+        except Exception as skip_error:
+            self.logger.error(f"Skip non-critical steps failed for {phase}: {skip_error}")
+            return False
+    
+    def _use_fallback_implementation(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+        """
+        Recovery strategy: Use fallback implementation.
+        
+        This strategy uses a simpler, more reliable fallback approach
+        when the primary implementation fails.
+        
+        Args:
+            error: The exception that occurred
+            phase: Phase where the error occurred
+            context: Context information for recovery
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        self.logger.info(f"Attempting fallback implementation for {phase}")
+        
+        try:
+            # Use fallback implementation based on phase
+            if phase == "requirements":
+                return self._fallback_requirements_generation(context)
+            elif phase == "design":
+                return self._fallback_design_generation(context)
+            elif phase == "tasks":
+                return self._fallback_tasks_generation(context)
+            elif phase == "implementation":
+                return self._fallback_implementation_execution(context)
+            else:
+                self.logger.warning(f"Unknown phase for fallback implementation: {phase}")
+                return False
+                
+        except Exception as fallback_error:
+            self.logger.error(f"Fallback implementation failed for {phase}: {fallback_error}")
+            return False
+    
+    def get_comprehensive_summary(self) -> Dict[str, Any]:
+        """
+        Get comprehensive summary of all work performed.
+        
+        Returns:
+            Dictionary containing comprehensive workflow summary
+        """
+        return {
+            'workflow_summary': self.workflow_summary,
+            'approval_log': self.approval_log,
+            'error_recovery_attempts': self.error_recovery_attempts,
+            'total_phases_completed': len(self.workflow_summary['phases_completed']),
+            'total_tasks_completed': len(self.workflow_summary['tasks_completed']),
+            'total_auto_approvals': len(self.workflow_summary['auto_approvals']),
+            'total_errors_recovered': len(self.workflow_summary['errors_recovered']),
+            'session_id': self.session_id,
+            'timestamp': datetime.now().isoformat()
+        }
+    
+    def _generate_workflow_id(self) -> str:
+        """Generate a unique workflow ID."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"workflow_{timestamp}"
+    
+    def _get_current_workflow_id(self) -> str:
+        """Get the current workflow ID from execution log."""
+        for event in reversed(self.execution_log):
+            if event.get("event_type") == "framework_initialization":
+                continue
+            workflow_id = event.get("details", {}).get("workflow_id")
+            if workflow_id:
+                return workflow_id
+        return "unknown_workflow"
+    
+    def _get_last_phase_result(self, phase: str) -> Dict[str, Any]:
+        """Get the result of the last execution of a specific phase."""
+        return self.phase_results.get(phase, {})
+    
+    def _record_execution_event(self, event_type: str, details: Dict[str, Any]) -> None:
+        """Record an execution event in the framework log."""
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": event_type,
+            "details": details
+        }
+        
+        self.execution_log.append(event)
+        self.logger.debug(f"Recorded execution event: {event_type}")
+    
+    def _parse_tasks_from_file(self, tasks_file: str) -> List['TaskDefinition']:
+        """Parse tasks from tasks.md file and return TaskDefinition objects."""
+        try:
+            from .models import TaskDefinition
+            
+            with open(tasks_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tasks = []
+            lines = content.split('\n')
+            current_task_data = None
+            
+            for i, line in enumerate(lines):
+                # Check for task line (starts with - [ ] or - [x])
+                if line.strip().startswith('- ['):
+                    # Save previous task if exists
+                    if current_task_data:
+                        task_def = TaskDefinition(
+                            id=current_task_data["id"],
+                            title=current_task_data["title"],
+                            description=current_task_data["description"],
+                            steps=current_task_data["steps"],
+                            requirements_ref=current_task_data["requirements_ref"],
+                            completed=current_task_data["completed"]
+                        )
+                        tasks.append(task_def)
+                    
+                    # Extract task title (everything after the checkbox)
+                    task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] "
+                    
+                    current_task_data = {
+                        "id": f"task_{len(tasks) + 1}",
+                        "title": task_title,
+                        "description": task_title,
+                        "steps": [],
+                        "requirements_ref": [],
+                        "completed": line.strip().startswith('- [x]')
+                    }
+                
+                elif current_task_data and line.strip().startswith('- Step'):
+                    # Add step to current task
+                    step = line.strip()[2:].strip()  # Remove "- "
+                    current_task_data["steps"].append(step)
+                
+                elif current_task_data and line.strip().startswith('- Requirements:'):
+                    # Extract requirements
+                    req_text = line.strip()[14:].strip()  # Remove "- Requirements: "
+                    current_task_data["requirements_ref"] = [r.strip() for r in req_text.split(',')]
+            
+            # Add the last task
+            if current_task_data:
+                task_def = TaskDefinition(
+                    id=current_task_data["id"],
+                    title=current_task_data["title"],
+                    description=current_task_data["description"],
+                    steps=current_task_data["steps"],
+                    requirements_ref=current_task_data["requirements_ref"],
+                    completed=current_task_data["completed"]
+                )
+                tasks.append(task_def)
+            
+            # Filter out already completed tasks
+            uncompleted_tasks = [task for task in tasks if not task.completed]
+            
+            self.logger.info(f"Parsed {len(tasks)} total tasks, {len(uncompleted_tasks)} uncompleted")
+            return uncompleted_tasks
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing tasks file: {e}")
+            return []
+    
+    def _update_tasks_file_with_completion(self, tasks_file: str, task_results: List[Dict[str, Any]]) -> None:
+        """Update tasks.md file to mark completed tasks."""
+        try:
+            with open(tasks_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            lines = content.split('\n')
+            task_index = 0
+            
+            for i, line in enumerate(lines):
+                if line.strip().startswith('- [ ]'):
+                    # Check if this task was completed
+                    if task_index < len(task_results) and task_results[task_index].get("success", False):
+                        # Mark as completed
+                        lines[i] = line.replace('- [ ]', '- [x]')
+                    task_index += 1
+            
+            # Write back to file
+            with open(tasks_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
+            
+            self.logger.info(f"Updated tasks file with completion status")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating tasks file: {e}")
+    
+    def _get_json_safe_framework_status(self) -> Dict[str, Any]:
+        """
+        Get framework status in a JSON-serializable format.
+        
+        Returns:
+            Dictionary containing JSON-safe framework status information
+        """
+        status = {
+            "initialized": self.is_initialized,
+            "session_id": self.session_id,
+            "workspace_path": str(self.workspace_path),
+            "llm_config": {
+                "model": self.llm_config.model if self.llm_config else None,
+                "base_url": self.llm_config.base_url if self.llm_config else None
+            } if self.llm_config else None,
+            "current_workflow": {
+                "active": self.current_workflow is not None,
+                "phase": self.current_workflow.phase.value if self.current_workflow else None,
+                "work_directory": self.current_workflow.work_directory if self.current_workflow else None
+            },
+            "approval_status": {k: v.value for k, v in self.user_approval_status.items()},
+            "components": {}
+        }
+        
+        # Add component status in JSON-safe format
+        if self.is_initialized:
+            if self.agent_manager:
+                try:
+                    agent_status = self.agent_manager.get_agent_status()
+                    # Convert any non-serializable objects to strings
+                    status["components"]["agent_manager"] = self._make_json_safe(agent_status)
+                except Exception:
+                    status["components"]["agent_manager"] = {"status": "available"}
+            
+            if self.memory_manager:
+                try:
+                    memory_stats = self.memory_manager.get_memory_stats()
+                    status["components"]["memory_manager"] = self._make_json_safe(memory_stats)
+                except Exception:
+                    status["components"]["memory_manager"] = {"status": "available"}
+            
+            if self.shell_executor:
+                try:
+                    exec_stats = self.shell_executor.get_execution_stats()
+                    status["components"]["shell_executor"] = self._make_json_safe(exec_stats)
+                except Exception:
+                    status["components"]["shell_executor"] = {"status": "available"}
+        
+        return status
+    
+    def _make_json_safe(self, obj: Any) -> Any:
+        """
+        Convert an object to a JSON-serializable format.
+        
+        Args:
+            obj: Object to make JSON-safe
+            
+        Returns:
+            JSON-serializable version of the object
+        """
+        import json
+        from unittest.mock import MagicMock
+        
+        if isinstance(obj, (str, int, float, bool, type(None))):
+            return obj
+        elif isinstance(obj, MagicMock):
+            return f"<MagicMock: {obj._mock_name or 'unnamed'}>"
+        elif isinstance(obj, dict):
+            return {k: self._make_json_safe(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_json_safe(item) for item in obj]
+        else:
+            # Try to serialize, if it fails, convert to string
+            try:
+                json.dumps(obj)
+                return obj
+            except (TypeError, ValueError):
+                return str(obj)
+
+    def export_workflow_report(self, output_path: str) -> bool:
+        """
+        Export a comprehensive workflow report.
+        
+        Args:
+            output_path: Path where to save the workflow report
+            
+        Returns:
+            True if export was successful, False otherwise
+        """
+        try:
+            report = {
+                "timestamp": datetime.now().isoformat(),
+                "framework_status": self._get_json_safe_framework_status(),
+                "execution_log": self._make_json_safe(self.execution_log),
+                "workflow_state": {
+                    "current_workflow": {
+                        "phase": self.current_workflow.phase.value if self.current_workflow else None,
+                        "work_directory": self.current_workflow.work_directory if self.current_workflow else None
+                    },
+                    "approval_status": {k: v.value for k, v in self.user_approval_status.items()}
+                }
+            }
+            
+            # Add agent coordination report if available
+            if self.agent_manager:
+                try:
+                    coordination_report_path = str(Path(output_path).parent / "agent_coordination_report.json")
+                    self.agent_manager.export_coordination_report(coordination_report_path)
+                    report["agent_coordination_report_path"] = coordination_report_path
+                except Exception as e:
+                    self.logger.warning(f"Could not export agent coordination report: {e}")
+            
+            import json
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            
+            self.logger.info(f"Workflow report exported to {output_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting workflow report: {e}")
+            return False
+    
+    async def execute_specific_task(self, task_definition: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a specific task from the task list.
+        
+        Args:
+            task_definition: Task definition dictionary
+            
+        Returns:
+            Dictionary containing task execution results
+        """
+        if not self.current_workflow:
+            raise RuntimeError("No active workflow. Cannot execute task.")
+        
+        if self.current_workflow.phase != WorkflowPhase.IMPLEMENTATION:
+            raise RuntimeError("Workflow not in implementation phase. Cannot execute task.")
+        
+        try:
+            result = await self.agent_manager.coordinate_agents(
+                "task_execution",
+                {
+                    "task_type": "execute_task",
+                    "task": task_definition,
+                    "work_dir": self.current_workflow.work_directory
+                }
+            )
+            
+            # Record task execution
+            self._record_execution_event(
+                event_type="task_executed",
+                details={
+                    "task_id": task_definition.get("id"),
+                    "task_title": task_definition.get("title"),
+                    "success": result.get("success", False),
+                    "workflow_id": self._get_current_workflow_id()
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Task execution failed: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def get_available_commands(self) -> List[str]:
+        """
+        Get list of available commands for the framework.
+        
+        Returns:
+            List of available command descriptions
+        """
+        commands = [
+            "initialize_framework() - Initialize the framework with LLM configuration",
+            "process_user_request(request) - Process a user request through the workflow",
+            "approve_phase(phase, approved) - Approve or reject a workflow phase",
+            "continue_workflow() - Continue workflow after approval",
+            "get_framework_status() - Get current framework status",
+            "get_execution_log() - Get complete execution log",
+            "reset_framework() - Reset framework to initial state",
+            "execute_specific_task(task) - Execute a specific task",
+            "export_workflow_report(path) - Export comprehensive workflow report"
+        ]
+        
+        return commands
+    
+    def _load_or_create_session(self):
+        """Load existing session or create a new one."""
+        try:
+            if self.session_file.exists():
+                # Load existing session
+                with open(self.session_file, 'r', encoding='utf-8') as f:
+                    session_data = json.load(f)
+                
+                self.session_id = session_data.get('session_id')
+                
+                # Reconstruct workflow object if it exists
+                workflow_data = session_data.get('current_workflow')
+                if workflow_data:
+                    self.current_workflow = WorkflowState(
+                        phase=WorkflowPhase(workflow_data.get('phase')) if workflow_data.get('phase') else WorkflowPhase.PLANNING,
+                        work_directory=workflow_data.get('work_directory', '')
+                    )
+                else:
+                    self.current_workflow = None
+                
+                # Load approval status
+                approval_data = session_data.get('user_approval_status', {})
+                self.user_approval_status = {
+                    k: UserApprovalStatus(v) for k, v in approval_data.items()
+                }
+                
+                self.phase_results = session_data.get('phase_results', {})
+                self.execution_log = session_data.get('execution_log', [])
+                
+                # Load auto-approve related data
+                self.approval_log = session_data.get('approval_log', [])
+                self.error_recovery_attempts = session_data.get('error_recovery_attempts', {})
+                self.workflow_summary = session_data.get('workflow_summary', {
+                    'phases_completed': [],
+                    'tasks_completed': [],
+                    'token_usage': {},
+                    'compression_events': [],
+                    'auto_approvals': [],
+                    'errors_recovered': []
+                })
+                
+                self.logger.info(f"Loaded existing session: {self.session_id}")
+            else:
+                # Create new session
+                self._create_new_session()
+        except Exception as e:
+            self.logger.warning(f"Failed to load session, creating new one: {e}")
+            self._create_new_session()
+    
+    def _create_new_session(self):
+        """Create a new session with unique ID."""
+        self.session_id = str(uuid.uuid4())
+        self.current_workflow = None
+        self.user_approval_status = {}
+        self.phase_results = {}
+        self.execution_log = []
+        self.approval_log = []
+        self.error_recovery_attempts = {}
+        self.workflow_summary = {
+            'phases_completed': [],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [],
+            'errors_recovered': []
+        }
+        self._save_session_state()
+        self.logger.info(f"Created new session: {self.session_id}")
+    
+    def _save_session_state(self):
+        """Save current session state to disk."""
+        try:
+            # Ensure memory directory exists
+            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            session_data = {
+                'session_id': self.session_id,
+                'current_workflow': {
+                    'phase': self.current_workflow.phase.value if self.current_workflow else None,
+                    'work_directory': self.current_workflow.work_directory if self.current_workflow else None
+                } if self.current_workflow else None,
+                'user_approval_status': {k: v.value for k, v in self.user_approval_status.items()},
+                'phase_results': self.phase_results,
+                'execution_log': self.execution_log,
+                'approval_log': self.approval_log,
+                'error_recovery_attempts': self.error_recovery_attempts,
+                'workflow_summary': self.workflow_summary,
+                'last_updated': datetime.now().isoformat()
+            }
+            
+            with open(self.session_file, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            
+            self.logger.debug(f"Session state saved: {self.session_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to save session state: {e}")
+    
+    def get_session_id(self) -> str:
+        """Get the current session ID."""
+        return self.session_id
+    
+    def reset_session(self):
+        """Reset the current session and create a new one."""
+        try:
+            self.logger.info("Starting session reset...")
+            
+            # Clear in-memory state first (fast)
+            self.current_workflow = None
+            self.user_approval_status.clear()
+            self.phase_results.clear()
+            self.execution_log.clear()
+            self.approval_log.clear()
+            self.error_recovery_attempts.clear()
+            self.workflow_summary = {
+                'phases_completed': [],
+                'tasks_completed': [],
+                'token_usage': {},
+                'compression_events': [],
+                'auto_approvals': [],
+                'errors_recovered': []
+            }
+            
+            # Remove session file if it exists
+            if self.session_file.exists():
+                self.session_file.unlink()
+                self.logger.info("Removed existing session file")
+            
+            # Create new session
+            self._create_new_session()
+            self.logger.info(f"Session reset completed, new session: {self.session_id}")
+            
+            return {
+                "success": True,
+                "message": f"Session reset successfully. New session ID: {self.session_id}",
+                "session_id": self.session_id
+            }
+            
+        except Exception as e:
+            error_msg = f"Failed to reset session: {e}"
+            self.logger.error(error_msg)
+            return {
+                "success": False,
+                "error": error_msg
+            }
+    
+    # Error Recovery Helper Methods
+    
+    def _modify_parameters_for_retry(self, error: Exception, phase: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Modify parameters based on error type and phase for retry strategy.
+        
+        Args:
+            error: The exception that occurred
+            phase: Phase where the error occurred
+            context: Original context information
+            
+        Returns:
+            Modified context for retry, or None if no modifications possible
+        """
+        modified_context = context.copy()
+        error_str = str(error).lower()
+        
+        # Common parameter modifications based on error patterns
+        if "timeout" in error_str or "connection" in error_str:
+            # Increase timeout and add retry parameters
+            modified_context["timeout"] = modified_context.get("timeout", 30) * 2
+            modified_context["max_retries"] = 3
+            modified_context["retry_delay"] = 5
+            self.logger.info(f"Modified parameters for connection/timeout error in {phase}")
+            
+        elif "memory" in error_str or "limit" in error_str:
+            # Reduce complexity for memory/limit errors
+            modified_context["max_complexity"] = "low"
+            modified_context["simplified_mode"] = True
+            modified_context["reduce_detail"] = True
+            self.logger.info(f"Modified parameters for memory/limit error in {phase}")
+            
+        elif "format" in error_str or "parse" in error_str:
+            # Use more structured format for parsing errors
+            modified_context["strict_format"] = True
+            modified_context["use_templates"] = True
+            modified_context["validate_output"] = True
+            self.logger.info(f"Modified parameters for format/parse error in {phase}")
+            
+        elif "permission" in error_str or "access" in error_str:
+            # Try alternative paths or methods for permission errors
+            modified_context["use_alternative_path"] = True
+            modified_context["fallback_mode"] = True
+            self.logger.info(f"Modified parameters for permission/access error in {phase}")
+            
+        else:
+            # Generic modifications for unknown errors
+            modified_context["safe_mode"] = True
+            modified_context["verbose_logging"] = True
+            modified_context["error_recovery"] = True
+            self.logger.info(f"Applied generic parameter modifications for {phase}")
+        
+        return modified_context
+    
+    def _retry_requirements_generation(self, context: Dict[str, Any]) -> bool:
+        """Retry requirements generation with modified parameters."""
+        try:
+            self.logger.info("Retrying requirements generation with modified parameters")
+            
+            # Use simplified prompt if in safe mode
+            if context.get("safe_mode"):
+                context["simplified_prompt"] = True
+                context["basic_requirements_only"] = True
+            
+            # This would normally call the agent manager with modified context
+            # For now, we'll simulate a successful retry
+            self.logger.info("Requirements generation retry completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Requirements generation retry failed: {e}")
+            return False
+    
+    def _retry_design_generation(self, context: Dict[str, Any]) -> bool:
+        """Retry design generation with modified parameters."""
+        try:
+            self.logger.info("Retrying design generation with modified parameters")
+            
+            # Use simplified design approach if needed
+            if context.get("simplified_mode"):
+                context["basic_design_only"] = True
+                context["skip_advanced_patterns"] = True
+            
+            # This would normally call the agent manager with modified context
+            self.logger.info("Design generation retry completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Design generation retry failed: {e}")
+            return False
+    
+    def _retry_tasks_generation(self, context: Dict[str, Any]) -> bool:
+        """Retry tasks generation with modified parameters."""
+        try:
+            self.logger.info("Retrying tasks generation with modified parameters")
+            
+            # Use simpler task structure if needed
+            if context.get("reduce_detail"):
+                context["simple_tasks_only"] = True
+                context["minimal_descriptions"] = True
+            
+            # This would normally call the agent manager with modified context
+            self.logger.info("Tasks generation retry completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Tasks generation retry failed: {e}")
+            return False
+    
+    def _retry_implementation_execution(self, context: Dict[str, Any]) -> bool:
+        """Retry implementation execution with modified parameters."""
+        try:
+            self.logger.info("Retrying implementation execution with modified parameters")
+            
+            # Use safer execution mode if needed
+            if context.get("fallback_mode"):
+                context["safe_execution"] = True
+                context["skip_risky_operations"] = True
+            
+            # This would normally call the agent manager with modified context
+            self.logger.info("Implementation execution retry completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Implementation execution retry failed: {e}")
+            return False
+    
+    def _identify_non_critical_steps(self, phase: str, error: Exception) -> List[str]:
+        """
+        Identify non-critical steps that can be skipped for recovery.
+        
+        Args:
+            phase: Phase where the error occurred
+            error: The exception that occurred
+            
+        Returns:
+            List of non-critical step names that can be skipped
+        """
+        non_critical_steps = []
+        error_str = str(error).lower()
+        
+        if phase == "requirements":
+            # Non-critical steps in requirements generation
+            non_critical_steps = [
+                "detailed_examples",
+                "edge_case_analysis", 
+                "performance_requirements",
+                "advanced_validation"
+            ]
+            
+        elif phase == "design":
+            # Non-critical steps in design generation
+            non_critical_steps = [
+                "detailed_diagrams",
+                "performance_optimization",
+                "advanced_patterns",
+                "comprehensive_error_handling"
+            ]
+            
+        elif phase == "tasks":
+            # Non-critical steps in task generation
+            non_critical_steps = [
+                "detailed_descriptions",
+                "dependency_analysis",
+                "time_estimates",
+                "risk_assessment"
+            ]
+            
+        elif phase == "implementation":
+            # Non-critical steps in implementation
+            non_critical_steps = [
+                "comprehensive_testing",
+                "performance_optimization",
+                "advanced_error_handling",
+                "detailed_logging"
+            ]
+        
+        # Filter based on error type
+        if "timeout" in error_str:
+            # For timeout errors, skip time-consuming steps
+            non_critical_steps.extend(["comprehensive_analysis", "detailed_validation"])
+        
+        self.logger.info(f"Identified {len(non_critical_steps)} non-critical steps for {phase}")
+        return non_critical_steps
+    
+    def _create_simplified_context(self, context: Dict[str, Any], skip_steps: List[str]) -> Dict[str, Any]:
+        """
+        Create simplified context by marking steps to skip.
+        
+        Args:
+            context: Original context
+            skip_steps: List of steps to skip
+            
+        Returns:
+            Simplified context with skip instructions
+        """
+        simplified_context = context.copy()
+        simplified_context["skip_steps"] = skip_steps
+        simplified_context["simplified_execution"] = True
+        simplified_context["focus_on_essentials"] = True
+        
+        self.logger.info(f"Created simplified context skipping {len(skip_steps)} steps")
+        return simplified_context
+    
+    def _execute_simplified_requirements(self, context: Dict[str, Any]) -> bool:
+        """Execute simplified requirements generation."""
+        try:
+            self.logger.info("Executing simplified requirements generation")
+            
+            # Focus on core requirements only
+            context["core_requirements_only"] = True
+            context["minimal_detail"] = True
+            
+            # This would normally call the agent manager with simplified context
+            self.logger.info("Simplified requirements generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Simplified requirements generation failed: {e}")
+            return False
+    
+    def _execute_simplified_design(self, context: Dict[str, Any]) -> bool:
+        """Execute simplified design generation."""
+        try:
+            self.logger.info("Executing simplified design generation")
+            
+            # Focus on basic design only
+            context["basic_architecture_only"] = True
+            context["skip_complex_patterns"] = True
+            
+            # This would normally call the agent manager with simplified context
+            self.logger.info("Simplified design generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Simplified design generation failed: {e}")
+            return False
+    
+    def _execute_simplified_tasks(self, context: Dict[str, Any]) -> bool:
+        """Execute simplified tasks generation."""
+        try:
+            self.logger.info("Executing simplified tasks generation")
+            
+            # Focus on essential tasks only
+            context["essential_tasks_only"] = True
+            context["basic_descriptions"] = True
+            
+            # This would normally call the agent manager with simplified context
+            self.logger.info("Simplified tasks generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Simplified tasks generation failed: {e}")
+            return False
+    
+    def _execute_simplified_implementation(self, context: Dict[str, Any]) -> bool:
+        """Execute simplified implementation."""
+        try:
+            self.logger.info("Executing simplified implementation")
+            
+            # Focus on core functionality only
+            context["core_functionality_only"] = True
+            context["skip_advanced_features"] = True
+            
+            # This would normally call the agent manager with simplified context
+            self.logger.info("Simplified implementation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Simplified implementation failed: {e}")
+            return False
+    
+    def _fallback_requirements_generation(self, context: Dict[str, Any]) -> bool:
+        """Fallback requirements generation using basic templates."""
+        try:
+            self.logger.info("Using fallback requirements generation")
+            
+            # Use basic template-based approach
+            context["use_basic_template"] = True
+            context["minimal_requirements"] = True
+            context["no_advanced_features"] = True
+            
+            # This would normally use a simple template-based generator
+            self.logger.info("Fallback requirements generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback requirements generation failed: {e}")
+            return False
+    
+    def _fallback_design_generation(self, context: Dict[str, Any]) -> bool:
+        """Fallback design generation using standard patterns."""
+        try:
+            self.logger.info("Using fallback design generation")
+            
+            # Use standard design patterns
+            context["use_standard_patterns"] = True
+            context["basic_architecture"] = True
+            context["no_custom_solutions"] = True
+            
+            # This would normally use predefined design templates
+            self.logger.info("Fallback design generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback design generation failed: {e}")
+            return False
+    
+    def _fallback_tasks_generation(self, context: Dict[str, Any]) -> bool:
+        """Fallback tasks generation using basic task templates."""
+        try:
+            self.logger.info("Using fallback tasks generation")
+            
+            # Use basic task templates
+            context["use_basic_tasks"] = True
+            context["standard_workflow"] = True
+            context["no_complex_dependencies"] = True
+            
+            # This would normally use simple task templates
+            self.logger.info("Fallback tasks generation completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback tasks generation failed: {e}")
+            return False
+    
+    def _fallback_implementation_execution(self, context: Dict[str, Any]) -> bool:
+        """Fallback implementation execution using safe methods."""
+        try:
+            self.logger.info("Using fallback implementation execution")
+            
+            # Use safe execution methods
+            context["safe_execution_only"] = True
+            context["basic_implementation"] = True
+            context["no_risky_operations"] = True
+            
+            # This would normally use conservative implementation approach
+            self.logger.info("Fallback implementation execution completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fallback implementation execution failed: {e}")
+            return False```
+
+### autogen_framework/docs/FUTURE_IMPROVEMENTS.md - Main Branch Version:
+```markdown
+# Future Improvements and Known Issues
+
+This document tracks important improvements and fixes that need to be implemented in future versions of the AutoGen Multi-Agent Framework.
+
+## Critical Issues
+
+### 1. Context Loss in Task Execution Phase
+
+**Priority: HIGH**  
+**Status: Identified, Not Fixed**  
+**Impact: Critical - Affects implementation quality**
+
+#### Problem Description
+
+During task execution, the ImplementAgent lacks access to critical context from previous workflow phases:
+
+- ❌ **No access to requirements.md content**: Agent cannot verify implementation against original requirements
+- ❌ **No access to design.md content**: Agent cannot follow architectural decisions and design patterns
+- ❌ **No memory context**: Agent lacks access to global knowledge and project-specific learnings
+- ❌ **Limited task context**: Only receives task definition and work directory
+
+#### Current Implementation Gap
+
+```python
+# DesignAgent initialization (✅ HAS context)
+self.design_agent = DesignAgent(
+    llm_config=llm_config,
+    memory_context=memory_context  # ✅ Receives memory context
+)
+
+# ImplementAgent initialization (❌ MISSING context)  
+self.implement_agent = ImplementAgent(
+    name="ImplementAgent",
+    llm_config=llm_config,
+    system_message=implement_system_message,
+    shell_executor=self.shell_executor
+    # ❌ No memory_context parameter
+)
+
+# Task execution call (❌ MISSING context)
+result = await self.agent_manager.coordinate_agents(
+    "task_execution",
+    {
+        "task_type": "execute_task",
+        "task": task_definition,
+        "work_dir": self.current_workflow.work_directory
+        # ❌ Missing: requirements_path
+        # ❌ Missing: design_path  
+        # ❌ Missing: memory_context
+    }
+)
+```
+
+#### Impact Analysis
+
+1. **Implementation Drift**: Tasks may be implemented in ways that violate requirements
+2. **Design Violations**: Code may not follow architectural decisions from design phase
+3. **Knowledge Loss**: Agent cannot leverage lessons learned from previous projects
+4. **Context Fragmentation**: Each task executes in isolation without broader project understanding
+5. **Quality Degradation**: Implementations may be suboptimal due to lack of context
+
+#### Proposed Solution
+
+**Phase 1: Immediate Context Restoration**
+```python
+# 1. Update ImplementAgent initialization
+self.implement_agent = ImplementAgent(
+    name="ImplementAgent", 
+    llm_config=llm_config,
+    system_message=implement_system_message,
+    shell_executor=self.shell_executor,
+    memory_context=memory_context  # ✅ Add memory context
+)
+
+# 2. Enhance task execution context
+result = await self.agent_manager.coordinate_agents(
+    "task_execution",
+    {
+        "task_type": "execute_task",
+        "task": task_definition,
+        "work_dir": self.current_workflow.work_directory,
+        "requirements_path": os.path.join(work_dir, "requirements.md"),  # ✅ Add requirements
+        "design_path": os.path.join(work_dir, "design.md"),              # ✅ Add design
+        "memory_context": self.memory_manager.load_memory()              # ✅ Add memory
+    }
+)
+
+# 3. Update ImplementAgent to use full context
+async def _execute_with_approach(self, task: TaskDefinition, work_dir: str, approach: str):
+    # Read workflow documents
+    requirements_content = await self._read_file_content(self.requirements_path)
+    design_content = await self._read_file_content(self.design_path)
+    
+    context = {
+        "task": task.description,
+        "steps": task.steps,
+        "approach": approach,
+        "work_directory": work_dir,
+        "requirements_ref": task.requirements_ref,
+        "requirements_document": requirements_content,  # ✅ Full requirements
+        "design_document": design_content,              # ✅ Full design
+        "memory_context": self.memory_context           # ✅ Memory context
+    }
+```
+
+**Phase 2: Context Optimization Integration**
+- Implement intelligent context compression when full context exceeds token limits
+- Use the ContextCompressor functionality integrated into BaseLLMAgent
+- Preserve critical information while reducing redundancy
+
+#### Files to Modify
+
+1. `autogen_framework/agent_manager.py`:
+   - Update ImplementAgent initialization to include memory_context
+   - Enhance `_coordinate_task_execution` to pass full context
+
+2. `autogen_framework/agents/implement_agent.py`:
+   - Update constructor to accept memory_context
+   - Modify task execution methods to use requirements and design content
+   - Implement context compression when needed
+
+3. `autogen_framework/main_controller.py`:
+   - Update task execution calls to include file paths
+   - Ensure memory context is passed through
+
+#### Testing Requirements
+
+- Verify ImplementAgent receives and uses requirements content
+- Verify ImplementAgent receives and uses design content  
+- Verify ImplementAgent has access to memory context
+- Test context compression when content exceeds token limits
+- Validate that implementations align with requirements and design
+
+#### Estimated Effort
+
+- **Development**: 2-3 days
+- **Testing**: 1-2 days  
+- **Integration**: 1 day
+- **Total**: 4-6 days
+
+---
+
+## Medium Priority Issues
+
+### 2. Context Compression Strategy Refinement
+
+**Priority: MEDIUM**  
+**Status: Partially Implemented**
+
+The current context compression strategy in BaseLLMAgent needs refinement for optimal workflow context preservation.
+
+#### Areas for Improvement
+
+1. **Workflow-Aware Compression**: Compression should understand workflow phases and preserve phase-specific critical information
+2. **Progressive Compression**: Implement multi-level compression strategies based on context age and relevance
+3. **Context Reconstruction**: Ability to reconstruct compressed context when needed for detailed analysis
+
+---
+
+## Low Priority Enhancements
+
+### 3. Cross-Phase Context Analytics
+
+**Priority: LOW**  
+**Status: Not Started**
+
+Implement analytics to track how context flows between workflow phases and identify optimization opportunities.
+
+### 4. Context Validation Framework
+
+**Priority: LOW**  
+**Status: Not Started**
+
+Develop automated validation to ensure critical context is preserved across workflow phases.
+
+---
+
+## Implementation Notes
+
+- All changes should maintain backward compatibility
+- Comprehensive testing required before deployment
+- Consider token usage implications of expanded context
+- Monitor performance impact of context expansion
+- Document context flow patterns for future optimization
+
+---
+
+*Last Updated: 2025-01-03*  
+*Next Review: After Context Loss issue resolution*```
+```
+
+### tests/e2e/auto_approve_test.sh - Main Branch Version:
+```bash
+#!/bin/bash
+
+# Auto-Approve End-to-End Test
+# Tests that auto-approve mode creates a working Hello World Python file using real agents
+
+set -e  # Exit on any error
+
+# Set test environment variables
+export INTEGRATION_TESTING=true
+export TESTING=true
+
+echo "=== Auto-Approve End-to-End Test ==="
+echo "Start time: $(date)"
+echo ""
+
+# Test configuration
+TEST_TASK="Create a simple Python file that prints 'Hello, World!' when executed. The file should have a main function and proper Python structure."
+TEST_WORKSPACE="auto_approve_test_workspace"
+
+# Cleanup function
+cleanup_test_files() {
+    echo "Cleaning up test files..."
+    # Remove test workspace and temporary files
+    rm -rf "$TEST_WORKSPACE"
+    rm -f auto_approve_*.txt
+    echo "Test file cleanup completed"
+}
+
+# Set trap to ensure cleanup runs on exit
+trap cleanup_test_files EXIT
+
+echo "=== Environment Check ==="
+
+# Ensure running in correct project root directory
+if [ ! -f "pyproject.toml" ] || [ ! -d "autogen_framework" ]; then
+    echo "Error: Please run this test script from the project root directory"
+    exit 1
+fi
+
+# Check if .env.integration file exists
+if [ ! -f ".env.integration" ]; then
+    echo "Error: .env.integration file does not exist. Please create it and configure real LLM settings"
+    exit 1
+fi
+
+# Ensure autogen-framework command is available
+if ! command -v autogen-framework &> /dev/null; then
+    echo "Error: autogen-framework command not found. Please install the project: pip install -e ."
+    exit 1
+fi
+
+echo "✅ Environment check passed"
+echo ""
+
+# Reset session
+echo "=== Reset Session ==="
+autogen-framework --reset-session
+echo "✅ Session reset completed"
+echo ""
+
+# Submit auto-approve request
+echo "=== Submit Auto-Approve Request ==="
+echo "Request: $TEST_TASK"
+echo ""
+
+# Use auto-approve mode with workspace
+echo "⚡ Processing request with auto-approve mode..."
+autogen-framework --workspace "$TEST_WORKSPACE" --request "$TEST_TASK" --auto-approve > auto_approve_output.txt 2>&1
+
+if [ $? -ne 0 ]; then
+    echo "❌ Auto-approve request failed"
+    echo "Error output:"
+    cat auto_approve_output.txt
+    exit 1
+fi
+
+echo "✅ Auto-approve request processing completed"
+echo ""
+
+# Check status
+echo "=== Check Framework Status ==="
+autogen-framework --workspace "$TEST_WORKSPACE" --status
+echo ""
+
+# Find generated workspace
+echo "=== Find Generated Workspace ==="
+
+# Check if workspace directory exists
+if [ ! -d "$TEST_WORKSPACE" ]; then
+    echo "❌ Workspace directory not found: $TEST_WORKSPACE"
+    echo ""
+    echo "Current directory contents:"
+    ls -la
+    echo ""
+    echo "Auto-approve output:"
+    if [ -f "auto_approve_output.txt" ]; then
+        cat auto_approve_output.txt
+    fi
+    exit 1
+fi
+
+echo "📂 Found workspace directory: $TEST_WORKSPACE"
+
+# Find the project directory within workspace
+echo ""
+echo "=== Find Project Directory ==="
+
+# Look for project directories (exclude system directories)
+PROJECT_DIRS=()
+for dir in "$TEST_WORKSPACE"/*; do
+    if [ -d "$dir" ]; then
+        dirname=$(basename "$dir")
+        # Skip system directories
+        if [[ "$dirname" != "logs" && "$dirname" != "memory" && "$dirname" != "." && "$dirname" != ".." ]]; then
+            PROJECT_DIRS+=("$dir")
+        fi
+    fi
+done
+
+if [ ${#PROJECT_DIRS[@]} -eq 0 ]; then
+    echo "❌ No project directory found"
+    echo "Workspace contents:"
+    ls -la "$TEST_WORKSPACE"
+    exit 1
+fi
+
+# Use the first project directory found
+PROJECT_DIR="${PROJECT_DIRS[0]}"
+echo "📂 Found project directory: $PROJECT_DIR"
+
+# Check required files exist
+echo ""
+echo "=== Check Generated Files ==="
+
+REQUIRED_FILES=("requirements.md" "design.md" "tasks.md")
+for file in "${REQUIRED_FILES[@]}"; do
+    if [ -f "$PROJECT_DIR/$file" ]; then
+        echo "✅ $file exists"
+    else
+        echo "❌ $file does not exist"
+        echo "Project directory contents:"
+        ls -la "$PROJECT_DIR"
+        exit 1
+    fi
+done
+
+# Find Python files
+echo ""
+echo "=== Find Python Files ==="
+PYTHON_FILES=($(find "$PROJECT_DIR" -name "*.py" -type f))
+
+if [ ${#PYTHON_FILES[@]} -eq 0 ]; then
+    echo "❌ No Python files found"
+    echo "$TEST_WORKSPACE directory contents:"
+    ls -la "$TEST_WORKSPACE"
+    exit 1
+fi
+
+# Use the first Python file found
+PYTHON_FILE="${PYTHON_FILES[0]}"
+echo "🐍 Found Python file: $PYTHON_FILE"
+
+# Display Python file content
+echo ""
+echo "=== Python File Content ==="
+echo "----------------------------------------"
+cat "$PYTHON_FILE"
+echo "----------------------------------------"
+
+# Check if file is empty
+if [ ! -s "$PYTHON_FILE" ]; then
+    echo "❌ Python file is empty!"
+    echo "This indicates the auto-approve process failed to generate code."
+    echo ""
+    echo "Checking auto-approve output for errors:"
+    if [ -f "auto_approve_output.txt" ]; then
+        echo "--- Auto-approve output ---"
+        cat auto_approve_output.txt
+        echo "--- End auto-approve output ---"
+    fi
+    echo ""
+    echo "Checking project directory for other files:"
+    ls -la "$PROJECT_DIR"
+    exit 1
+fi
+
+# Validate Python file content
+echo ""
+echo "=== Validate Python File Content ==="
+
+if grep -qi "hello" "$PYTHON_FILE" && grep -qi "world" "$PYTHON_FILE"; then
+    echo "✅ Contains 'Hello' and 'World'"
+else
+    echo "❌ Missing 'Hello' or 'World'"
+    echo "File content:"
+    cat "$PYTHON_FILE"
+    echo ""
+    echo "This indicates the auto-approve process generated incomplete code."
+    exit 1
+fi
+
+if grep -q "def main\|def " "$PYTHON_FILE"; then
+    echo "✅ Contains function definition"
+else
+    echo "❌ Missing function definition"
+    exit 1
+fi
+
+if grep -q 'if __name__ == "__main__"' "$PYTHON_FILE"; then
+    echo "✅ Contains main guard"
+else
+    echo "❌ Missing main guard"
+    exit 1
+fi
+
+# Test Python file execution
+echo ""
+echo "=== Test Python File Execution ==="
+
+# Execute Python file
+PYTHON_OUTPUT=$(python "$PYTHON_FILE" 2>&1)
+PYTHON_EXIT_CODE=$?
+
+if [ $PYTHON_EXIT_CODE -eq 0 ]; then
+    echo "✅ Python file executed successfully"
+    echo "📤 Output: $PYTHON_OUTPUT"
+    
+    # Validate output contains Hello World (case insensitive)
+    if echo "$PYTHON_OUTPUT" | grep -qi "hello" && echo "$PYTHON_OUTPUT" | grep -qi "world"; then
+        echo "✅ Output contains expected 'Hello, World!'"
+        
+        # Additional validation: check common Hello World formats
+        if echo "$PYTHON_OUTPUT" | grep -qi "Hello, World!"; then
+            echo "✅ Standard output format: 'Hello, World!'"
+        elif echo "$PYTHON_OUTPUT" | grep -qi "Hello, world!"; then
+            echo "✅ Correct output format: 'Hello, world!'"
+        else
+            echo "✅ Output contains Hello and World: $PYTHON_OUTPUT"
+        fi
+    else
+        echo "❌ Output does not contain expected 'Hello, World!': $PYTHON_OUTPUT"
+        echo "This indicates the auto-approve generated code has issues"
+        exit 1
+    fi
+else
+    echo "❌ Python file execution failed"
+    echo "Error output: $PYTHON_OUTPUT"
+    exit 1
+fi
+
+# Success summary
+echo ""
+echo "🎉 Auto-Approve End-to-End Test Successfully Completed!"
+echo "=================================================="
+echo "✅ Real AutoGen agents successfully created a working Python application"
+echo "✅ Auto-approve mode works end-to-end without manual intervention"
+echo "✅ Generated Python file is executable and produces expected output"
+echo "✅ All workflow stages (Requirements → Design → Tasks → Implementation) completed"
+echo ""
+echo "📁 Generated files location: $TEST_WORKSPACE"
+echo "🐍 Python file: $PYTHON_FILE"
+echo "📤 Execution output: $PYTHON_OUTPUT"
+echo ""
+echo "End time: $(date)"
+
+exit 0
+### tests/integration/test_real_main_controller_auto_approve.py - Main Branch Version:
+```python
+"""
+Integration tests for MainController auto-approve functionality with real components.
+
+This module contains integration tests that use real MemoryManager, ShellExecutor,
+and other components to verify the auto-approve functionality works correctly
+in a real environment.
+"""
+
+import pytest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch, AsyncMock
+
+from autogen_framework.main_controller import MainController, UserApprovalStatus
+from autogen_framework.memory_manager import MemoryManager
+from autogen_framework.shell_executor import ShellExecutor
+
+
+class TestMainControllerAutoApproveIntegration:
+    """Integration tests for MainController auto-approve functionality."""
+    
+    @pytest.fixture
+    def main_controller(self, temp_workspace):
+        """Create a MainController instance for integration testing."""
+        return MainController(temp_workspace)
+    
+    @pytest.mark.integration
+    def test_auto_approve_with_real_memory_manager(self, main_controller, temp_workspace, real_llm_config):
+        """Test auto-approve functionality with real MemoryManager integration."""
+        # Mock only the agent setup to avoid AutoGen dependencies
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            # Initialize framework
+            result = main_controller.initialize_framework(real_llm_config)
+            assert result is True
+            
+            # Test auto-approve functionality
+            assert main_controller.should_auto_approve("requirements", True) is True
+            assert main_controller.should_auto_approve("design", True) is True
+            assert main_controller.should_auto_approve("tasks", True) is True
+            
+            # Verify approval logging
+            assert len(main_controller.approval_log) == 3
+            assert len(main_controller.workflow_summary['auto_approvals']) == 3
+            
+            # Verify memory manager can save approval log
+            main_controller.memory_manager.save_memory(
+                "auto_approve_test",
+                f"Auto-approve test completed with {len(main_controller.approval_log)} approvals",
+                "global"
+            )
+            
+            # Verify memory was saved
+            memory_content = main_controller.memory_manager.load_memory()
+            assert "global" in memory_content
+            global_memory = memory_content["global"]
+            assert any("auto_approve_test" in key for key in global_memory.keys())
+    
+    @pytest.mark.integration
+    def test_comprehensive_summary_with_real_components(self, main_controller, temp_workspace, real_llm_config):
+        """Test comprehensive summary generation with real components."""
+        # Mock only the agent setup to avoid AutoGen dependencies
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            # Initialize framework
+            main_controller.initialize_framework(real_llm_config)
+            
+            # Simulate some auto-approve activity
+            main_controller.should_auto_approve("requirements", True)
+            main_controller.should_auto_approve("design", True)
+            
+            # Simulate error recovery
+            main_controller.error_recovery_attempts["design"] = 1
+            main_controller.workflow_summary['errors_recovered'].append({
+                'phase': 'design',
+                'error': 'Test error',
+                'strategy': 'retry',
+                'attempt': 1
+            })
+            
+            # Get comprehensive summary
+            summary = main_controller.get_comprehensive_summary()
+            
+            # Verify summary structure and content
+            assert 'workflow_summary' in summary
+            assert 'approval_log' in summary
+            assert 'error_recovery_attempts' in summary
+            assert 'total_phases_completed' in summary
+            assert 'total_auto_approvals' in summary
+            assert 'total_errors_recovered' in summary
+            assert 'session_id' in summary
+            assert 'timestamp' in summary
+            
+            # Verify counts
+            assert summary['total_auto_approvals'] == 2
+            assert summary['total_errors_recovered'] == 1
+            assert summary['session_id'] == main_controller.session_id
+            
+            # Verify real components are accessible
+            assert isinstance(main_controller.memory_manager, MemoryManager)
+            assert isinstance(main_controller.shell_executor, ShellExecutor)
+    
+    @pytest.mark.integration
+    def test_session_persistence_auto_approve_data(self, temp_workspace, real_llm_config):
+        """Test that auto-approve data persists across sessions with real components."""
+        # Create first controller and add auto-approve data
+        controller1 = MainController(temp_workspace)
+        
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            controller1.initialize_framework(real_llm_config)
+            
+            # Add auto-approve data
+            controller1.should_auto_approve("requirements", True)
+            controller1.error_recovery_attempts["design"] = 2
+            controller1.workflow_summary['errors_recovered'].append({
+                'phase': 'design',
+                'error': 'Test persistence error',
+                'strategy': 'fallback'
+            })
+            
+            # Save session state
+            controller1._save_session_state()
+            session_id = controller1.session_id
+        
+        # Create second controller and load session
+        controller2 = MainController(temp_workspace)
+        controller2._load_or_create_session()
+        
+        # Verify auto-approve data was persisted
+        assert controller2.session_id == session_id
+        assert len(controller2.approval_log) == 1
+        assert controller2.approval_log[0]['phase'] == 'requirements'
+        assert controller2.error_recovery_attempts == {'design': 2}
+        assert len(controller2.workflow_summary['errors_recovered']) == 1
+        assert controller2.workflow_summary['errors_recovered'][0]['phase'] == 'design'
+    
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_auto_approve_workflow_simulation(self, main_controller, temp_workspace, real_llm_config):
+        """Test a simulated auto-approve workflow with real components."""
+        # Mock only the agent coordination to avoid AutoGen dependencies
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            # Mock agent coordination to simulate workflow phases
+            async def mock_coordinate_workflow(task_type, context):
+                work_path = Path(temp_workspace) / "test_work"
+                if task_type == "requirements_generation":
+                    return {
+                        "success": True,
+                        "work_directory": str(work_path),
+                        "requirements_path": str(work_path / "requirements.md")
+                    }
+                elif task_type == "design_generation":
+                    return {
+                        "success": True,
+                        "design_path": str(work_path / "design.md")
+                    }
+                elif task_type == "task_execution":
+                    return {
+                        "success": True,
+                        "tasks_file": str(work_path / "tasks.md")
+                    }
+                else:
+                    return {"success": False, "error": "Unknown task type"}
+            
+            mock_agent_instance.coordinate_agents = AsyncMock(side_effect=mock_coordinate_workflow)
+            
+            # Initialize framework
+            main_controller.initialize_framework(real_llm_config)
+            
+            # Create work directory to avoid file not found errors
+            work_dir = Path(temp_workspace) / "test_work"
+            work_dir.mkdir(exist_ok=True)
+            
+            # Mock task parsing and file operations
+            with patch.object(main_controller, '_parse_tasks_from_file') as mock_parse:
+                mock_parse.return_value = []  # No tasks to execute
+                
+                with patch.object(main_controller, '_update_tasks_file_with_completion'):
+                    # Process request with auto_approve enabled
+                    result = await main_controller.process_request(
+                        "Create a test application with auto-approve",
+                        auto_approve=True
+                    )
+            
+            # Verify the workflow completed successfully
+            assert result["success"] is True
+            assert result["auto_approve_enabled"] is True
+            
+            # Verify auto-approvals were logged
+            assert len(main_controller.workflow_summary['auto_approvals']) >= 3
+            
+            # Verify real components were used
+            assert isinstance(main_controller.memory_manager, MemoryManager)
+            assert isinstance(main_controller.shell_executor, ShellExecutor)
+            
+            # Verify memory manager can save workflow results
+            main_controller.memory_manager.save_memory(
+                "auto_approve_workflow_test",
+                f"Auto-approve workflow completed successfully: {result['workflow_id']}",
+                "global"
+            )
+            
+            # Verify memory was saved
+            memory_content = main_controller.memory_manager.load_memory()
+            assert "global" in memory_content
+            global_memory = memory_content["global"]
+            assert any("auto_approve_workflow_test" in key for key in global_memory.keys())
+    
+    @pytest.mark.integration
+    def test_error_recovery_with_real_components(self, main_controller, temp_workspace, real_llm_config):
+        """Test error recovery functionality with real components."""
+        # Mock only the agent setup to avoid AutoGen dependencies
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            # Initialize framework
+            main_controller.initialize_framework(real_llm_config)
+            
+            # Test error recovery with different error types
+            timeout_error = Exception("Connection timeout occurred")
+            memory_error = Exception("Memory limit exceeded")
+            format_error = Exception("Parse error in format")
+            
+            # Test parameter modification for different error types
+            timeout_context = main_controller._modify_parameters_for_retry(
+                timeout_error, "requirements", {"timeout": 30}
+            )
+            assert timeout_context["timeout"] == 60
+            assert timeout_context["max_retries"] == 3
+            
+            memory_context = main_controller._modify_parameters_for_retry(
+                memory_error, "design", {"complexity": "high"}
+            )
+            assert memory_context["max_complexity"] == "low"
+            assert memory_context["simplified_mode"] is True
+            
+            format_context = main_controller._modify_parameters_for_retry(
+                format_error, "tasks", {"format": "flexible"}
+            )
+            assert format_context["strict_format"] is True
+            assert format_context["use_templates"] is True
+            
+            # Test non-critical step identification
+            req_steps = main_controller._identify_non_critical_steps("requirements", timeout_error)
+            assert len(req_steps) > 0
+            assert "detailed_examples" in req_steps
+            
+            design_steps = main_controller._identify_non_critical_steps("design", memory_error)
+            assert len(design_steps) > 0
+            assert "detailed_diagrams" in design_steps
+            
+            # Test simplified context creation
+            simplified_context = main_controller._create_simplified_context(
+                {"original": "value"}, ["step1", "step2"]
+            )
+            assert simplified_context["skip_steps"] == ["step1", "step2"]
+            assert simplified_context["simplified_execution"] is True
+            
+            # Test fallback implementations
+            assert main_controller._fallback_requirements_generation({"test": "context"}) is True
+            assert main_controller._fallback_design_generation({"test": "context"}) is True
+            assert main_controller._fallback_tasks_generation({"test": "context"}) is True
+            assert main_controller._fallback_implementation_execution({"test": "context"}) is True
+            
+            # Verify real components are still accessible and functional
+            assert isinstance(main_controller.memory_manager, MemoryManager)
+            assert isinstance(main_controller.shell_executor, ShellExecutor)
+            
+            # Test that memory manager can save error recovery information
+            main_controller.memory_manager.save_memory(
+                "error_recovery_test",
+                f"Error recovery test completed with {len(req_steps)} non-critical steps identified",
+                "global"
+            )
+            
+            # Verify memory was saved
+            memory_content = main_controller.memory_manager.load_memory()
+            assert "global" in memory_content
+            global_memory = memory_content["global"]
+            assert any("error_recovery_test" in key for key in global_memory.keys())
+    
+    @pytest.mark.integration
+    def test_error_recovery_attempt_tracking_with_persistence(self, temp_workspace, real_llm_config):
+        """Test error recovery attempt tracking with session persistence."""
+        # Create first controller
+        controller1 = MainController(temp_workspace)
+        
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
+            mock_agent_instance = mock_agent.return_value
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory.return_value = None
+            
+            controller1.initialize_framework(real_llm_config)
+            
+            # Simulate error recovery attempts
+            with patch.object(controller1, '_get_error_recovery_max_attempts', return_value=3):
+                with patch.object(controller1, '_retry_with_modified_parameters', return_value=True):
+                    error = Exception("Test integration error")
+                    
+                    # First recovery attempt
+                    result1 = controller1.handle_error_recovery(error, "requirements", {"test": "context"})
+                    assert result1 is True
+                    assert controller1.error_recovery_attempts["requirements"] == 1
+                    
+                    # Second recovery attempt
+                    result2 = controller1.handle_error_recovery(error, "design", {"test": "context"})
+                    assert result2 is True
+                    assert controller1.error_recovery_attempts["design"] == 1
+                    
+                    # Verify recovery logging
+                    assert len(controller1.workflow_summary['errors_recovered']) == 2
+            
+            # Save session state
+            controller1._save_session_state()
+            session_id = controller1.session_id
+        
+        # Create second controller and load session
+        controller2 = MainController(temp_workspace)
+        
+        # Initialize the second controller to set up components
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent2:
+            mock_agent_instance2 = mock_agent2.return_value
+            mock_agent_instance2.setup_agents.return_value = True
+            mock_agent_instance2.update_agent_memory.return_value = None
+            
+            controller2.initialize_framework(real_llm_config)
+        
+        # Verify error recovery data was persisted
+        assert controller2.session_id == session_id
+        assert controller2.error_recovery_attempts == {"requirements": 1, "design": 1}
+        assert len(controller2.workflow_summary['errors_recovered']) == 2
+        
+        # Verify real components are functional after session reload
+        assert isinstance(controller2.memory_manager, MemoryManager)
+        assert isinstance(controller2.shell_executor, ShellExecutor)
+        
+        # Test that we can continue error recovery from persisted state
+        with patch.object(controller2, '_get_error_recovery_max_attempts', return_value=3):
+            with patch.object(controller2, '_skip_non_critical_steps', return_value=True):
+                error = Exception("Another test error")
+                
+                # Third recovery attempt (should increment from persisted state)
+                result3 = controller2.handle_error_recovery(error, "requirements", {"test": "context"})
+                assert result3 is True
+                assert controller2.error_recovery_attempts["requirements"] == 2  # Incremented from 1
+                
+                # Verify total recovery count
+                assert len(controller2.workflow_summary['errors_recovered']) == 3```
+
+### tests/unit/test_main_controller_auto_approve.py - Main Branch Version:
+```python
+"""
+Unit tests for MainController auto-approve functionality.
+
+This module contains unit tests specifically for the auto-approve features
+added to the MainController class. These tests focus on:
+
+- Auto-approve parameter handling in process_request method
+- should_auto_approve method logic with critical checkpoint respect
+- Comprehensive workflow summary tracking for all phases and tasks
+- Approval logging functionality for audit trail
+- Error recovery mechanisms for auto-approve mode
+
+All external dependencies are mocked to ensure fast, reliable unit tests.
+"""
+
+import pytest
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from datetime import datetime
+
+from autogen_framework.main_controller import MainController, UserApprovalStatus
+from autogen_framework.models import LLMConfig, WorkflowPhase, WorkflowState
+
+
+class TestMainControllerAutoApprove:
+    """Test cases for MainController auto-approve functionality."""
+    
+    @pytest.fixture
+    def main_controller(self, temp_workspace):
+        """Create a MainController instance for testing."""
+        return MainController(temp_workspace)
+    
+    @pytest.fixture
+    def initialized_controller(self, main_controller, llm_config):
+        """Create an initialized MainController for testing."""
+        with patch('autogen_framework.main_controller.MemoryManager') as mock_memory, \
+             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
+             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
+            
+            # Mock component instances
+            mock_memory_instance = Mock()
+            mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
+            mock_memory.return_value = mock_memory_instance
+            
+            mock_agent_instance = Mock()
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory = Mock()
+            mock_agent.return_value = mock_agent_instance
+            
+            mock_shell_instance = Mock()
+            mock_shell.return_value = mock_shell_instance
+            
+            # Initialize framework
+            main_controller.initialize_framework(llm_config)
+            
+            return main_controller
+    
+    def test_auto_approve_initialization(self, main_controller):
+        """Test that auto-approve related fields are initialized correctly."""
+        assert main_controller.approval_log == []
+        assert main_controller.error_recovery_attempts == {}
+        assert main_controller.workflow_summary == {
+            'phases_completed': [],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [],
+            'errors_recovered': []
+        }
+    
+    def test_should_auto_approve_with_manual_approval(self, main_controller):
+        """Test should_auto_approve when phase is already manually approved."""
+        # Manually approve requirements phase
+        main_controller.user_approval_status["requirements"] = UserApprovalStatus.APPROVED
+        
+        # Should return True regardless of auto_approve flag
+        assert main_controller.should_auto_approve("requirements", False) is True
+        assert main_controller.should_auto_approve("requirements", True) is True
+    
+    def test_should_auto_approve_disabled(self, main_controller):
+        """Test should_auto_approve when auto_approve is disabled."""
+        # Should return False when auto_approve is disabled
+        assert main_controller.should_auto_approve("requirements", False) is False
+        assert main_controller.should_auto_approve("design", False) is False
+        assert main_controller.should_auto_approve("tasks", False) is False
+        
+        # Verify no approval status was set
+        assert "requirements" not in main_controller.user_approval_status
+        assert "design" not in main_controller.user_approval_status
+        assert "tasks" not in main_controller.user_approval_status
+    
+    def test_should_auto_approve_enabled(self, main_controller):
+        """Test should_auto_approve when auto_approve is enabled."""
+        # Should return True and set approval status
+        assert main_controller.should_auto_approve("requirements", True) is True
+        assert main_controller.user_approval_status["requirements"] == UserApprovalStatus.APPROVED
+        
+        assert main_controller.should_auto_approve("design", True) is True
+        assert main_controller.user_approval_status["design"] == UserApprovalStatus.APPROVED
+        
+        assert main_controller.should_auto_approve("tasks", True) is True
+        assert main_controller.user_approval_status["tasks"] == UserApprovalStatus.APPROVED
+        
+        # Verify approval logging
+        assert len(main_controller.approval_log) == 3
+        assert len(main_controller.workflow_summary['auto_approvals']) == 3
+        
+        # Verify workflow summary tracking
+        assert len(main_controller.workflow_summary['phases_completed']) == 3
+        for phase_info in main_controller.workflow_summary['phases_completed']:
+            assert phase_info['auto_approved'] is True
+            assert 'timestamp' in phase_info
+    
+    @patch.dict(os.environ, {'AUTO_APPROVE_CRITICAL_CHECKPOINTS': 'requirements,design'})
+    def test_should_auto_approve_critical_checkpoints(self, main_controller):
+        """Test should_auto_approve respects critical checkpoints."""
+        # Critical checkpoints should not be auto-approved
+        assert main_controller.should_auto_approve("requirements", True) is False
+        assert main_controller.should_auto_approve("design", True) is False
+        
+        # Non-critical phases should be auto-approved
+        assert main_controller.should_auto_approve("tasks", True) is True
+        
+        # Verify approval logging for critical checkpoints
+        critical_approvals = [log for log in main_controller.approval_log if not log['decision']]
+        assert len(critical_approvals) == 2
+        for approval in critical_approvals:
+            assert "Critical checkpoint" in approval['reason']
+    
+    def test_log_auto_approval(self, main_controller):
+        """Test approval logging functionality."""
+        # Log some approval decisions
+        main_controller.log_auto_approval("requirements", True, "Auto-approved in auto-approve mode")
+        main_controller.log_auto_approval("design", False, "Critical checkpoint requires explicit approval")
+        
+        # Verify approval log
+        assert len(main_controller.approval_log) == 2
+        
+        approval1 = main_controller.approval_log[0]
+        assert approval1['phase'] == "requirements"
+        assert approval1['decision'] is True
+        assert approval1['reason'] == "Auto-approved in auto-approve mode"
+        assert 'timestamp' in approval1
+        
+        approval2 = main_controller.approval_log[1]
+        assert approval2['phase'] == "design"
+        assert approval2['decision'] is False
+        assert approval2['reason'] == "Critical checkpoint requires explicit approval"
+        assert 'timestamp' in approval2
+        
+        # Verify workflow summary tracking
+        assert len(main_controller.workflow_summary['auto_approvals']) == 2
+        assert main_controller.workflow_summary['auto_approvals'] == main_controller.approval_log
+    
+    @pytest.mark.asyncio
+    async def test_process_request_auto_approve_enabled(self, initialized_controller):
+        """Test process_request with auto_approve enabled."""
+        # Mock agent coordination to return successful results
+        requirements_result = {
+            "success": True,
+            "work_directory": "/test/work",
+            "requirements_path": "/test/work/requirements.md"
+        }
+        
+        design_result = {
+            "success": True,
+            "design_path": "/test/work/design.md"
+        }
+        
+        tasks_result = {
+            "success": True,
+            "tasks_file": "/test/work/tasks.md"
+        }
+        
+        implementation_result = {
+            "success": True,
+            "execution_completed": True
+        }
+        
+        async def mock_coordinate_workflow(task_type, context):
+            if task_type == "requirements_generation":
+                return requirements_result
+            elif task_type == "design_generation":
+                return design_result
+            elif task_type == "task_execution":
+                return tasks_result
+            elif task_type == "execute_multiple_tasks":
+                return implementation_result
+            else:
+                return {"success": False, "error": "Unknown task type"}
+        
+        initialized_controller.agent_manager.coordinate_agents = AsyncMock(side_effect=mock_coordinate_workflow)
+        
+        # Mock task parsing to avoid file system dependencies
+        with patch.object(initialized_controller, '_parse_tasks_from_file') as mock_parse:
+            mock_parse.return_value = [Mock(id="1", title="Test task", completed=False)]
+            
+            with patch.object(initialized_controller, '_update_tasks_file_with_completion'):
+                # Process request with auto_approve enabled
+                result = await initialized_controller.process_request("Create a test application", auto_approve=True)
+        
+        # Should complete all phases automatically
+        assert result["success"] is True
+        assert result["auto_approve_enabled"] is True
+        assert result["current_phase"] == "implementation"
+        assert "requirements" in result["phases"]
+        assert "design" in result["phases"]
+        assert "tasks" in result["phases"]
+        assert "implementation" in result["phases"]
+        
+        # Verify all phases were auto-approved (check workflow summary since workflow is completed)
+        auto_approvals = initialized_controller.workflow_summary['auto_approvals']
+        assert len(auto_approvals) == 3
+        
+        phases_approved = [approval['phase'] for approval in auto_approvals if approval['decision']]
+        assert 'requirements' in phases_approved
+        assert 'design' in phases_approved
+        assert 'tasks' in phases_approved
+        
+        # Verify workflow summary
+        assert len(initialized_controller.workflow_summary['phases_completed']) == 3
+        assert len(initialized_controller.workflow_summary['auto_approvals']) == 3
+        
+        # Verify workflow was completed and cleared
+        assert initialized_controller.current_workflow is None
+    
+    @pytest.mark.asyncio
+    async def test_process_request_auto_approve_disabled(self, initialized_controller):
+        """Test process_request with auto_approve disabled (default behavior)."""
+        # Mock agent coordination
+        requirements_result = {
+            "success": True,
+            "work_directory": "/test/work",
+            "requirements_path": "/test/work/requirements.md"
+        }
+        
+        initialized_controller.agent_manager.coordinate_agents = AsyncMock(return_value=requirements_result)
+        
+        # Process request with auto_approve disabled
+        result = await initialized_controller.process_request("Create a test application", auto_approve=False)
+        
+        # Should stop at requirements phase waiting for approval
+        assert result["success"] is False
+        assert result["auto_approve_enabled"] is False
+        assert result["requires_user_approval"] is True
+        assert result["approval_needed_for"] == "requirements"
+        assert result["current_phase"] == "requirements"
+        
+        # Verify no auto-approvals occurred
+        assert len(initialized_controller.workflow_summary['auto_approvals']) == 0
+        assert "requirements" not in initialized_controller.user_approval_status
+    
+    @pytest.mark.asyncio
+    async def test_backward_compatibility_process_user_request(self, initialized_controller):
+        """Test that process_user_request method maintains backward compatibility."""
+        # Mock the new process_request method
+        with patch.object(initialized_controller, 'process_request') as mock_process:
+            mock_process.return_value = {"success": True}
+            
+            # Call the old method
+            result = await initialized_controller.process_user_request("test request")
+            
+            # Should call new method with auto_approve=False
+            mock_process.assert_called_once_with("test request", auto_approve=False)
+    
+    def test_handle_error_recovery_max_attempts_exceeded(self, main_controller):
+        """Test error recovery when maximum attempts are exceeded."""
+        # Set up error recovery attempts
+        main_controller.error_recovery_attempts["requirements"] = 3
+        
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=3):
+            error = Exception("Test error")
+            result = main_controller.handle_error_recovery(error, "requirements", {})
+            
+            assert result is False
+            # Attempts should not be incremented when max is exceeded
+            assert main_controller.error_recovery_attempts["requirements"] == 3
+    
+    def test_handle_error_recovery_successful_strategy(self, main_controller):
+        """Test successful error recovery."""
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=3):
+            with patch.object(main_controller, '_retry_with_modified_parameters', return_value=True):
+                error = Exception("Test error")
+                result = main_controller.handle_error_recovery(error, "requirements", {"test": "context"})
+                
+                assert result is True
+                assert main_controller.error_recovery_attempts["requirements"] == 1
+                
+                # Verify recovery was logged
+                assert len(main_controller.workflow_summary['errors_recovered']) == 1
+                recovery_log = main_controller.workflow_summary['errors_recovered'][0]
+                assert recovery_log['phase'] == "requirements"
+                assert recovery_log['error'] == "Test error"
+                assert "_retry_with_modified_parameters" in str(recovery_log['strategy'])
+                assert recovery_log['attempt'] == 1
+    
+    def test_handle_error_recovery_all_strategies_fail(self, main_controller):
+        """Test error recovery when all strategies fail."""
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=3):
+            with patch.object(main_controller, '_retry_with_modified_parameters', return_value=False):
+                with patch.object(main_controller, '_skip_non_critical_steps', return_value=False):
+                    with patch.object(main_controller, '_use_fallback_implementation', return_value=False):
+                        error = Exception("Test error")
+                        result = main_controller.handle_error_recovery(error, "requirements", {})
+                        
+                        assert result is False
+                        assert main_controller.error_recovery_attempts["requirements"] == 1
+                        
+                        # No recovery should be logged since all strategies failed
+                        assert len(main_controller.workflow_summary['errors_recovered']) == 0
+    
+    def test_get_comprehensive_summary(self, main_controller):
+        """Test comprehensive summary generation."""
+        # Add some test data
+        main_controller.workflow_summary = {
+            'phases_completed': [{'phase': 'requirements', 'auto_approved': True}],
+            'tasks_completed': [{'task': 'task1', 'completed': True}],
+            'token_usage': {'total': 1000},
+            'compression_events': [{'event': 'compressed'}],
+            'auto_approvals': [{'phase': 'requirements', 'decision': True}],
+            'errors_recovered': [{'phase': 'design', 'strategy': 'retry'}]
+        }
+        main_controller.approval_log = [{'phase': 'requirements', 'decision': True}]
+        main_controller.error_recovery_attempts = {'design': 1}
+        main_controller.session_id = "test-session-123"
+        
+        summary = main_controller.get_comprehensive_summary()
+        
+        # Verify summary structure
+        assert 'workflow_summary' in summary
+        assert 'approval_log' in summary
+        assert 'error_recovery_attempts' in summary
+        assert 'total_phases_completed' in summary
+        assert 'total_tasks_completed' in summary
+        assert 'total_auto_approvals' in summary
+        assert 'total_errors_recovered' in summary
+        assert 'session_id' in summary
+        assert 'timestamp' in summary
+        
+        # Verify counts
+        assert summary['total_phases_completed'] == 1
+        assert summary['total_tasks_completed'] == 1
+        assert summary['total_auto_approvals'] == 1
+        assert summary['total_errors_recovered'] == 1
+        assert summary['session_id'] == "test-session-123"
+    
+    def test_session_state_persistence_auto_approve_data(self, main_controller, temp_workspace):
+        """Test that auto-approve data is persisted in session state."""
+        # Add some auto-approve data
+        main_controller.approval_log = [{'phase': 'requirements', 'decision': True}]
+        main_controller.error_recovery_attempts = {'design': 2}
+        main_controller.workflow_summary = {
+            'phases_completed': [{'phase': 'requirements'}],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [{'phase': 'requirements'}],
+            'errors_recovered': []
+        }
+        main_controller.session_id = "test-session"
+        
+        # Save session state
+        main_controller._save_session_state()
+        
+        # Create new controller and load session
+        new_controller = MainController(temp_workspace)
+        new_controller._load_or_create_session()
+        
+        # Verify auto-approve data was loaded
+        assert new_controller.approval_log == [{'phase': 'requirements', 'decision': True}]
+        assert new_controller.error_recovery_attempts == {'design': 2}
+        assert new_controller.workflow_summary['phases_completed'] == [{'phase': 'requirements'}]
+        assert new_controller.workflow_summary['auto_approvals'] == [{'phase': 'requirements'}]
+    
+    def test_reset_framework_clears_auto_approve_data(self, main_controller, llm_config):
+        """Test that reset_framework clears all auto-approve data."""
+        # Initialize framework and add some data
+        with patch('autogen_framework.main_controller.MemoryManager'), \
+             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
+             patch('autogen_framework.main_controller.ShellExecutor'):
+            
+            mock_agent_instance = Mock()
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory = Mock()
+            mock_agent.return_value = mock_agent_instance
+            
+            main_controller.initialize_framework(llm_config)
+        
+        # Add some auto-approve data
+        main_controller.approval_log = [{'phase': 'requirements', 'decision': True}]
+        main_controller.error_recovery_attempts = {'design': 2}
+        main_controller.workflow_summary['auto_approvals'] = [{'phase': 'requirements'}]
+        
+        # Reset framework
+        result = main_controller.reset_framework()
+        
+        assert result is True
+        assert main_controller.approval_log == []
+        assert main_controller.error_recovery_attempts == {}
+        assert main_controller.workflow_summary == {
+            'phases_completed': [],
+            'tasks_completed': [],
+            'token_usage': {},
+            'compression_events': [],
+            'auto_approvals': [],
+            'errors_recovered': []
+        }
+    
+    @patch.dict(os.environ, {'AUTO_APPROVE_ERROR_RECOVERY_ATTEMPTS': '5'})
+    def test_get_error_recovery_max_attempts_from_env(self, main_controller):
+        """Test that error recovery max attempts can be configured via environment."""
+        max_attempts = main_controller._get_error_recovery_max_attempts()
+        assert max_attempts == 5
+    
+    def test_get_error_recovery_max_attempts_default(self, main_controller):
+        """Test default error recovery max attempts."""
+        with patch.dict(os.environ, {}, clear=True):
+            max_attempts = main_controller._get_error_recovery_max_attempts()
+            assert max_attempts == 3  # Default value
+    
+    def test_get_critical_checkpoints_from_env(self, main_controller):
+        """Test that critical checkpoints can be configured via environment."""
+        with patch.dict(os.environ, {'AUTO_APPROVE_CRITICAL_CHECKPOINTS': 'requirements,tasks'}):
+            checkpoints = main_controller._get_critical_checkpoints()
+            assert checkpoints == ['requirements', 'tasks']
+    
+    def test_get_critical_checkpoints_default(self, main_controller):
+        """Test default critical checkpoints (empty list)."""
+        with patch.dict(os.environ, {}, clear=True):
+            checkpoints = main_controller._get_critical_checkpoints()
+            assert checkpoints == []
+    
+    def test_modify_parameters_for_retry_timeout_error(self, main_controller):
+        """Test parameter modification for timeout errors."""
+        error = Exception("Connection timeout occurred")
+        context = {"timeout": 30}
+        
+        modified_context = main_controller._modify_parameters_for_retry(error, "requirements", context)
+        
+        assert modified_context is not None
+        assert modified_context["timeout"] == 60  # Doubled
+        assert modified_context["max_retries"] == 3
+        assert modified_context["retry_delay"] == 5
+    
+    def test_modify_parameters_for_retry_memory_error(self, main_controller):
+        """Test parameter modification for memory errors."""
+        error = Exception("Memory limit exceeded")
+        context = {"complexity": "high"}
+        
+        modified_context = main_controller._modify_parameters_for_retry(error, "design", context)
+        
+        assert modified_context is not None
+        assert modified_context["max_complexity"] == "low"
+        assert modified_context["simplified_mode"] is True
+        assert modified_context["reduce_detail"] is True
+    
+    def test_modify_parameters_for_retry_format_error(self, main_controller):
+        """Test parameter modification for format errors."""
+        error = Exception("Parse error in format")
+        context = {"format": "flexible"}
+        
+        modified_context = main_controller._modify_parameters_for_retry(error, "tasks", context)
+        
+        assert modified_context is not None
+        assert modified_context["strict_format"] is True
+        assert modified_context["use_templates"] is True
+        assert modified_context["validate_output"] is True
+    
+    def test_modify_parameters_for_retry_permission_error(self, main_controller):
+        """Test parameter modification for permission errors."""
+        error = Exception("Permission denied access")
+        context = {"path": "/restricted/path"}
+        
+        modified_context = main_controller._modify_parameters_for_retry(error, "implementation", context)
+        
+        assert modified_context is not None
+        assert modified_context["use_alternative_path"] is True
+        assert modified_context["fallback_mode"] is True
+    
+    def test_modify_parameters_for_retry_unknown_error(self, main_controller):
+        """Test parameter modification for unknown errors."""
+        error = Exception("Unknown error occurred")
+        context = {"setting": "value"}
+        
+        modified_context = main_controller._modify_parameters_for_retry(error, "requirements", context)
+        
+        assert modified_context is not None
+        assert modified_context["safe_mode"] is True
+        assert modified_context["verbose_logging"] is True
+        assert modified_context["error_recovery"] is True
+    
+    def test_retry_requirements_generation_success(self, main_controller):
+        """Test successful requirements generation retry."""
+        context = {"safe_mode": True}
+        
+        result = main_controller._retry_requirements_generation(context)
+        
+        assert result is True
+        assert context["simplified_prompt"] is True
+        assert context["basic_requirements_only"] is True
+    
+    def test_retry_design_generation_success(self, main_controller):
+        """Test successful design generation retry."""
+        context = {"simplified_mode": True}
+        
+        result = main_controller._retry_design_generation(context)
+        
+        assert result is True
+        assert context["basic_design_only"] is True
+        assert context["skip_advanced_patterns"] is True
+    
+    def test_retry_tasks_generation_success(self, main_controller):
+        """Test successful tasks generation retry."""
+        context = {"reduce_detail": True}
+        
+        result = main_controller._retry_tasks_generation(context)
+        
+        assert result is True
+        assert context["simple_tasks_only"] is True
+        assert context["minimal_descriptions"] is True
+    
+    def test_retry_implementation_execution_success(self, main_controller):
+        """Test successful implementation execution retry."""
+        context = {"fallback_mode": True}
+        
+        result = main_controller._retry_implementation_execution(context)
+        
+        assert result is True
+        assert context["safe_execution"] is True
+        assert context["skip_risky_operations"] is True
+    
+    def test_identify_non_critical_steps_requirements(self, main_controller):
+        """Test identification of non-critical steps for requirements phase."""
+        error = Exception("Timeout error")
+        
+        steps = main_controller._identify_non_critical_steps("requirements", error)
+        
+        assert len(steps) > 0
+        assert "detailed_examples" in steps
+        assert "edge_case_analysis" in steps
+        assert "performance_requirements" in steps
+        assert "advanced_validation" in steps
+        # Should include timeout-specific steps
+        assert "comprehensive_analysis" in steps
+        assert "detailed_validation" in steps
+    
+    def test_identify_non_critical_steps_design(self, main_controller):
+        """Test identification of non-critical steps for design phase."""
+        error = Exception("Memory error")
+        
+        steps = main_controller._identify_non_critical_steps("design", error)
+        
+        assert len(steps) > 0
+        assert "detailed_diagrams" in steps
+        assert "performance_optimization" in steps
+        assert "advanced_patterns" in steps
+        assert "comprehensive_error_handling" in steps
+    
+    def test_identify_non_critical_steps_tasks(self, main_controller):
+        """Test identification of non-critical steps for tasks phase."""
+        error = Exception("Format error")
+        
+        steps = main_controller._identify_non_critical_steps("tasks", error)
+        
+        assert len(steps) > 0
+        assert "detailed_descriptions" in steps
+        assert "dependency_analysis" in steps
+        assert "time_estimates" in steps
+        assert "risk_assessment" in steps
+    
+    def test_identify_non_critical_steps_implementation(self, main_controller):
+        """Test identification of non-critical steps for implementation phase."""
+        error = Exception("Connection error")
+        
+        steps = main_controller._identify_non_critical_steps("implementation", error)
+        
+        assert len(steps) > 0
+        assert "comprehensive_testing" in steps
+        assert "performance_optimization" in steps
+        assert "advanced_error_handling" in steps
+        assert "detailed_logging" in steps
+    
+    def test_create_simplified_context(self, main_controller):
+        """Test creation of simplified context."""
+        original_context = {"setting1": "value1", "setting2": "value2"}
+        skip_steps = ["step1", "step2", "step3"]
+        
+        simplified_context = main_controller._create_simplified_context(original_context, skip_steps)
+        
+        # Should preserve original context
+        assert simplified_context["setting1"] == "value1"
+        assert simplified_context["setting2"] == "value2"
+        
+        # Should add simplification settings
+        assert simplified_context["skip_steps"] == skip_steps
+        assert simplified_context["simplified_execution"] is True
+        assert simplified_context["focus_on_essentials"] is True
+    
+    def test_execute_simplified_requirements_success(self, main_controller):
+        """Test successful simplified requirements execution."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._execute_simplified_requirements(context)
+        
+        assert result is True
+        assert context["core_requirements_only"] is True
+        assert context["minimal_detail"] is True
+    
+    def test_execute_simplified_design_success(self, main_controller):
+        """Test successful simplified design execution."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._execute_simplified_design(context)
+        
+        assert result is True
+        assert context["basic_architecture_only"] is True
+        assert context["skip_complex_patterns"] is True
+    
+    def test_execute_simplified_tasks_success(self, main_controller):
+        """Test successful simplified tasks execution."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._execute_simplified_tasks(context)
+        
+        assert result is True
+        assert context["essential_tasks_only"] is True
+        assert context["basic_descriptions"] is True
+    
+    def test_execute_simplified_implementation_success(self, main_controller):
+        """Test successful simplified implementation execution."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._execute_simplified_implementation(context)
+        
+        assert result is True
+        assert context["core_functionality_only"] is True
+        assert context["skip_advanced_features"] is True
+    
+    def test_fallback_requirements_generation_success(self, main_controller):
+        """Test successful fallback requirements generation."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._fallback_requirements_generation(context)
+        
+        assert result is True
+        assert context["use_basic_template"] is True
+        assert context["minimal_requirements"] is True
+        assert context["no_advanced_features"] is True
+    
+    def test_fallback_design_generation_success(self, main_controller):
+        """Test successful fallback design generation."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._fallback_design_generation(context)
+        
+        assert result is True
+        assert context["use_standard_patterns"] is True
+        assert context["basic_architecture"] is True
+        assert context["no_custom_solutions"] is True
+    
+    def test_fallback_tasks_generation_success(self, main_controller):
+        """Test successful fallback tasks generation."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._fallback_tasks_generation(context)
+        
+        assert result is True
+        assert context["use_basic_tasks"] is True
+        assert context["standard_workflow"] is True
+        assert context["no_complex_dependencies"] is True
+    
+    def test_fallback_implementation_execution_success(self, main_controller):
+        """Test successful fallback implementation execution."""
+        context = {"original_setting": "value"}
+        
+        result = main_controller._fallback_implementation_execution(context)
+        
+        assert result is True
+        assert context["safe_execution_only"] is True
+        assert context["basic_implementation"] is True
+        assert context["no_risky_operations"] is True
+    
+    def test_error_recovery_comprehensive_logging(self, main_controller):
+        """Test comprehensive error recovery logging."""
+        # Set up successful recovery on second strategy
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=3):
+            with patch.object(main_controller, '_retry_with_modified_parameters', return_value=False):
+                with patch.object(main_controller, '_skip_non_critical_steps', return_value=True):
+                    error = Exception("Test comprehensive error")
+                    context = {"test": "context"}
+                    
+                    result = main_controller.handle_error_recovery(error, "design", context)
+                    
+                    assert result is True
+                    assert main_controller.error_recovery_attempts["design"] == 1
+                    
+                    # Verify comprehensive logging
+                    assert len(main_controller.workflow_summary['errors_recovered']) == 1
+                    recovery_log = main_controller.workflow_summary['errors_recovered'][0]
+                    
+                    assert recovery_log['phase'] == "design"
+                    assert recovery_log['error'] == "Test comprehensive error"
+                    assert "_skip_non_critical_steps" in str(recovery_log['strategy'])
+                    assert recovery_log['attempt'] == 1
+                    assert 'timestamp' in recovery_log
+    
+    def test_error_recovery_multiple_phases_tracking(self, main_controller):
+        """Test error recovery tracking across multiple phases."""
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=3):
+            with patch.object(main_controller, '_retry_with_modified_parameters', return_value=True):
+                
+                # First error in requirements
+                error1 = Exception("Requirements error")
+                result1 = main_controller.handle_error_recovery(error1, "requirements", {})
+                assert result1 is True
+                assert main_controller.error_recovery_attempts["requirements"] == 1
+                
+                # Second error in design
+                error2 = Exception("Design error")
+                result2 = main_controller.handle_error_recovery(error2, "design", {})
+                assert result2 is True
+                assert main_controller.error_recovery_attempts["design"] == 1
+                
+                # Third error in requirements (should increment)
+                error3 = Exception("Another requirements error")
+                result3 = main_controller.handle_error_recovery(error3, "requirements", {})
+                assert result3 is True
+                assert main_controller.error_recovery_attempts["requirements"] == 2
+                
+                # Verify comprehensive tracking
+                assert len(main_controller.workflow_summary['errors_recovered']) == 3
+                phases_recovered = [log['phase'] for log in main_controller.workflow_summary['errors_recovered']]
+                assert phases_recovered.count("requirements") == 2
+                assert phases_recovered.count("design") == 1
+    
+    def test_error_recovery_status_reporting(self, main_controller):
+        """Test comprehensive error status reporting."""
+        with patch.object(main_controller, '_get_error_recovery_max_attempts', return_value=2):
+            with patch.object(main_controller, '_retry_with_modified_parameters', return_value=False):
+                with patch.object(main_controller, '_skip_non_critical_steps', return_value=False):
+                    with patch.object(main_controller, '_use_fallback_implementation', return_value=False):
+                        
+                        error = Exception("Unrecoverable error")
+                        
+                        # First attempt should fail
+                        result1 = main_controller.handle_error_recovery(error, "tasks", {})
+                        assert result1 is False
+                        assert main_controller.error_recovery_attempts["tasks"] == 1
+                        
+                        # Second attempt should fail and hit max attempts
+                        result2 = main_controller.handle_error_recovery(error, "tasks", {})
+                        assert result2 is False
+                        assert main_controller.error_recovery_attempts["tasks"] == 2
+                        
+                        # Third attempt should be rejected due to max attempts
+                        result3 = main_controller.handle_error_recovery(error, "tasks", {})
+                        assert result3 is False
+                        assert main_controller.error_recovery_attempts["tasks"] == 2  # Should not increment
+                        
+                        # No successful recoveries should be logged
+                        assert len(main_controller.workflow_summary['errors_recovered']) == 0    
+
+    @pytest.mark.asyncio
+    async def test_error_recovery_in_normal_mode(self, initialized_controller):
+        """Test that error recovery works in normal (non-auto-approve) mode."""
+        # Mock agent coordination to fail first, then succeed after recovery
+        call_count = 0
+        
+        async def mock_coordinate_failing_then_success(task_type, context):
+            nonlocal call_count
+            call_count += 1
+            
+            if call_count == 1:
+                # First call fails
+                raise Exception("Simulated agent coordination failure")
+            else:
+                # Second call (after recovery) succeeds
+                if task_type == "requirements_generation":
+                    return {
+                        "success": True,
+                        "work_directory": "/test/work",
+                        "requirements_path": "/test/work/requirements.md"
+                    }
+                return {"success": True}
+        
+        initialized_controller.agent_manager.coordinate_agents = AsyncMock(side_effect=mock_coordinate_failing_then_success)
+        
+        # Mock successful error recovery
+        with patch.object(initialized_controller, '_retry_with_modified_parameters', return_value=True):
+            # Process request in normal mode (auto_approve=False)
+            result = await initialized_controller.process_request("Create a test application", auto_approve=False)
+        
+        # Should succeed after error recovery
+        assert result["success"] is False  # Still false because it stops at requirements approval
+        assert result["requires_user_approval"] is True
+        assert result["approval_needed_for"] == "requirements"
+        assert "requirements" in result["phases"]
+        assert result["phases"]["requirements"]["success"] is True  # Requirements phase succeeded after recovery
+        
+        # Verify error recovery was attempted and successful
+        assert initialized_controller.error_recovery_attempts["requirements"] == 1
+        assert len(initialized_controller.workflow_summary['errors_recovered']) == 1
+        
+        recovery_log = initialized_controller.workflow_summary['errors_recovered'][0]
+        assert recovery_log['phase'] == "requirements"
+        assert "Simulated agent coordination failure" in recovery_log['error']
+        assert "_retry_with_modified_parameters" in str(recovery_log['strategy'])
+        
+        # Verify agent coordination was called twice (original + retry)
+        assert call_count == 2
+    
+    @pytest.mark.asyncio
+    async def test_error_recovery_failure_in_normal_mode(self, initialized_controller):
+        """Test error recovery failure in normal mode."""
+        # Mock agent coordination to always fail
+        async def mock_coordinate_always_fail(task_type, context):
+            raise Exception("Persistent agent coordination failure")
+        
+        initialized_controller.agent_manager.coordinate_agents = AsyncMock(side_effect=mock_coordinate_always_fail)
+        
+        # Mock all error recovery strategies to fail
+        with patch.object(initialized_controller, '_retry_with_modified_parameters', return_value=False):
+            with patch.object(initialized_controller, '_skip_non_critical_steps', return_value=False):
+                with patch.object(initialized_controller, '_use_fallback_implementation', return_value=False):
+                    # Process request in normal mode
+                    result = await initialized_controller.process_request("Create a test application", auto_approve=False)
+        
+        # Should fail completely
+        assert result["success"] is False
+        assert "error" in result
+        assert "Persistent agent coordination failure" in result["error"]
+        
+        # Verify error recovery was attempted but failed
+        assert initialized_controller.error_recovery_attempts["requirements"] == 1
+        assert len(initialized_controller.workflow_summary['errors_recovered']) == 0  # No successful recoveries
+    
+    @pytest.mark.asyncio
+    async def test_error_recovery_across_phases_normal_mode(self, initialized_controller):
+        """Test error recovery across multiple phases in normal mode."""
+        call_counts = {"requirements": 0, "design": 0, "tasks": 0}
+        
+        async def mock_coordinate_with_phase_failures(task_type, context):
+            if task_type == "requirements_generation":
+                call_counts["requirements"] += 1
+                if call_counts["requirements"] == 1:
+                    raise Exception("Requirements generation failure")
+                return {
+                    "success": True,
+                    "work_directory": "/test/work",
+                    "requirements_path": "/test/work/requirements.md"
+                }
+            elif task_type == "design_generation":
+                call_counts["design"] += 1
+                if call_counts["design"] == 1:
+                    raise Exception("Design generation failure")
+                return {
+                    "success": True,
+                    "design_path": "/test/work/design.md"
+                }
+            elif task_type == "task_execution":
+                call_counts["tasks"] += 1
+                if call_counts["tasks"] == 1:
+                    raise Exception("Task execution failure")
+                return {
+                    "success": True,
+                    "tasks_file": "/test/work/tasks.md"
+                }
+            return {"success": True}
+        
+        initialized_controller.agent_manager.coordinate_agents = AsyncMock(side_effect=mock_coordinate_with_phase_failures)
+        
+        # Mock successful error recovery for all phases
+        with patch.object(initialized_controller, '_retry_with_modified_parameters', return_value=True):
+            # Pre-approve all phases to test all phases
+            initialized_controller.user_approval_status["requirements"] = UserApprovalStatus.APPROVED
+            initialized_controller.user_approval_status["design"] = UserApprovalStatus.APPROVED
+            initialized_controller.user_approval_status["tasks"] = UserApprovalStatus.APPROVED
+            
+            # Mock task parsing to avoid file system dependencies
+            with patch.object(initialized_controller, '_parse_tasks_from_file') as mock_parse:
+                mock_parse.return_value = []  # No tasks to execute
+                
+                with patch.object(initialized_controller, '_update_tasks_file_with_completion'):
+                    # Process request in normal mode
+                    result = await initialized_controller.process_request("Create a test application", auto_approve=False)
+        
+        # Should succeed after error recovery in all phases
+        assert result["success"] is True
+        assert "requirements" in result["phases"]
+        assert "design" in result["phases"]
+        assert "tasks" in result["phases"]
+        
+        # Verify error recovery was attempted for all phases
+        assert initialized_controller.error_recovery_attempts["requirements"] == 1
+        assert initialized_controller.error_recovery_attempts["design"] == 1
+        assert initialized_controller.error_recovery_attempts["tasks"] == 1
+        
+        # Verify all recoveries were logged
+        assert len(initialized_controller.workflow_summary['errors_recovered']) == 3
+        
+        phases_recovered = [log['phase'] for log in initialized_controller.workflow_summary['errors_recovered']]
+        assert "requirements" in phases_recovered
+        assert "design" in phases_recovered
+        assert "tasks" in phases_recovered
+        
+        # Verify each phase was called twice (original + retry)
+        assert call_counts["requirements"] == 2
+        assert call_counts["design"] == 2
+        assert call_counts["tasks"] == 2```
+
+
+## Resolution Summary
+
+All conflicts have been resolved by keeping the refactor/work_flow_mgmt branch changes and discarding the main branch changes. The complete content of the discarded files from main branch is preserved above for reference.
+
+**Resolution completed on:** Wed Aug  6 12:09:41 CST 2025
+**Merge commit:** f32e63e0958adb15993c19967c2291346c3a2f40
