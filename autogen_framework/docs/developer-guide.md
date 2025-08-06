@@ -22,21 +22,26 @@ graph TB
     end
     
     subgraph "Control Layer"
-        MC[MainController]
-        AM[AgentManager]
-        WF[WorkflowManager]
+        MC[MainController - Thin I/O Layer]
+        WM[WorkflowManager - Orchestration]
+        SM[SessionManager - Persistence]
+    end
+    
+    subgraph "Agent Coordination Layer"
+        AM[AgentManager - Agent Factory]
     end
     
     subgraph "Agent Layer"
-        PA[PlanAgent]
-        DA[DesignAgent]
-        IA[ImplementAgent]
+        PA[PlanAgent - Requirements]
+        DA[DesignAgent - Design]
+        TA[TasksAgent - Task Generation]
+        IA[ImplementAgent - Task Execution]
     end
     
     subgraph "Service Layer"
         MM[MemoryManager]
         SE[ShellExecutor]
-        SM[SessionManager]
+        TM[TokenManager]
     end
     
     subgraph "Data Layer"
@@ -47,70 +52,71 @@ graph TB
     
     CLI --> MC
     API --> MC
-    MC --> AM
-    MC --> WF
+    MC --> WM
+    MC --> SM
+    WM --> AM
     AM --> PA
     AM --> DA
+    AM --> TA
     AM --> IA
     PA --> MM
     DA --> MM
+    TA --> MM
     IA --> SE
+    IA --> MM
     MM --> MEM
     SE --> FS
-    WF --> LOG
+    SM --> FS
+    WM --> LOG
 ```
 
 ## 📦 Core Component Details
 
-### 1. MainController
+### 1. MainController (Refactored)
 
-**Responsibilities**: The main entry point of the framework, responsible for initializing and coordinating all components.
+**Responsibilities**: Thin input/output layer that delegates to specialized managers.
 
 ```python
 class MainController:
     """
-    The main controller is responsible for:
+    The main controller is now a thin delegation layer responsible for:
     - Framework initialization
-    - User request handling
-    - Session management
-    - Component coordination
+    - Translating user commands to manager calls
+    - Result formatting and presentation
     """
     
     def __init__(self, workspace_path: str, llm_config: LLMConfig):
         self.workspace_path = Path(workspace_path)
         self.llm_config = llm_config
-        self.session_manager = SessionManager()
+        self.session_manager = SessionManager(workspace_path)
         self.agent_manager = AgentManager(llm_config)
-        self.memory_manager = MemoryManager()
-        self.shell_executor = ShellExecutor()
+        self.workflow_manager = WorkflowManager(self.agent_manager, self.session_manager)
     
     async def initialize_framework(self) -> bool:
         """Initializes the framework components."""
-        # Implement initialization logic
+        # Delegate to managers
         pass
     
-    async def process_user_request(self, request: str) -> Dict[str, Any]:
-        """Main entry point for handling user requests."""
-        # Implement request handling logic
-        pass
+    async def process_request(self, request: str, auto_approve: bool = False) -> Dict[str, Any]:
+        """Delegates request processing to WorkflowManager."""
+        return await self.workflow_manager.process_request(request, auto_approve)
 ```
 
 **Key Methods**:
-- `initialize_framework()`: Initializes all components.
-- `process_user_request()`: Handles user requests.
-- `get_workflow_status()`: Gets the workflow status.
-- `approve_phase()`: Approves a workflow phase.
-- `apply_phase_revision()`: Applies a phase revision.
+- `initialize_framework()`: Initializes top-level managers.
+- `process_request()`: Delegates to WorkflowManager.
+- `approve_phase()`: Delegates to WorkflowManager.
+- `apply_phase_revision()`: Delegates to WorkflowManager.
 
-### 2. AgentManager
+### 2. AgentManager (Updated)
 
-**Responsibilities**: Manages and coordinates the work of all AI agents.
+**Responsibilities**: Agent factory and coordination, now includes TasksAgent.
 
 ```python
 class AgentManager:
     """
     The agent manager is responsible for:
-    - Agent initialization
+    - Agent initialization (including new TasksAgent)
     - Inter-agent coordination
     - Task distribution
     - Result aggregation
@@ -121,13 +127,27 @@ class AgentManager:
         self.agents: Dict[str, BaseLLMAgent] = {}
     
     async def setup_agents(self) -> None:
-        """Sets up all agents."""
+        """Sets up all agents including the new TasksAgent."""
         self.agents["plan"] = PlanAgent(
             name="PlanAgent",
             llm_config=self.llm_config,
             system_message=self._get_plan_agent_system_message()
         )
-        # Set up other agents...
+        self.agents["design"] = DesignAgent(
+            name="DesignAgent", 
+            llm_config=self.llm_config,
+            system_message=self._get_design_agent_system_message()
+        )
+        self.agents["tasks"] = TasksAgent(
+            name="TasksAgent",
+            llm_config=self.llm_config,
+            system_message=self._get_tasks_agent_system_message()
+        )
+        self.agents["implement"] = ImplementAgent(
+            name="ImplementAgent",
+            llm_config=self.llm_config,
+            system_message=self._get_implement_agent_system_message()
+        )
     
     async def coordinate_agents(
         self, 
@@ -135,7 +155,7 @@ class AgentManager:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Coordinates agents to execute tasks."""
-        # Implement coordination logic
+        # Routes task generation to TasksAgent, execution to ImplementAgent
         pass
 ```
 
@@ -179,7 +199,74 @@ class BaseLLMAgent:
         self.context.update(new_context)
 ```
 
-### 4. Specialized Agent Implementations
+### 3. SessionManager (New Component)
+
+**Responsibilities**: Dedicated session persistence and management.
+
+```python
+class SessionManager:
+    """
+    The session manager is responsible for:
+    - Session state persistence
+    - Session loading and creation
+    - Session reset operations
+    - Session ID management
+    """
+    
+    def __init__(self, workspace_path: str):
+        self.workspace_path = Path(workspace_path)
+        self.session_file = self.workspace_path / "memory" / "session_state.json"
+    
+    def load_or_create_session(self) -> Dict[str, Any]:
+        """Loads existing session or creates new one."""
+        pass
+    
+    def save_session_state(self, session_data: Dict[str, Any]) -> bool:
+        """Saves session state to disk."""
+        pass
+    
+    def reset_session(self) -> bool:
+        """Resets session data."""
+        pass
+```
+
+### 4. WorkflowManager (New Component)
+
+**Responsibilities**: Central workflow orchestration and business logic.
+
+```python
+class WorkflowManager:
+    """
+    The workflow manager is responsible for:
+    - Workflow orchestration
+    - Phase management and approvals
+    - State transitions
+    - Auto approve mode handling
+    """
+    
+    def __init__(self, agent_manager: AgentManager, session_manager: SessionManager):
+        self.agent_manager = agent_manager
+        self.session_manager = session_manager
+        self.workflow_state = None
+    
+    async def process_request(self, user_request: str, auto_approve: bool = False) -> Dict[str, Any]:
+        """Processes user request through the workflow."""
+        pass
+    
+    async def continue_workflow(self) -> Dict[str, Any]:
+        """Continues existing workflow."""
+        pass
+    
+    def approve_phase(self, phase: str, approved: bool = True) -> Dict[str, Any]:
+        """Approves or rejects a workflow phase."""
+        pass
+    
+    async def apply_phase_revision(self, phase: str, revision_feedback: str) -> Dict[str, Any]:
+        """Applies revision feedback to a phase."""
+        pass
+```
+
+### 5. Specialized Agent Implementations
 
 #### PlanAgent
 ```python
@@ -230,23 +317,40 @@ class DesignAgent(BaseLLMAgent):
         pass
 ```
 
-#### ImplementAgent
+#### TasksAgent (New Agent)
 ```python
-class ImplementAgent:
+class TasksAgent(BaseLLMAgent):
     """
-    The implement agent is responsible for:
-    - Task decomposition
-    - Code generation
-    - Task execution
+    The tasks agent is responsible for:
+    - Task decomposition from design documents
+    - Task list generation (tasks.md)
+    - Task planning and sequencing
     """
     
     async def generate_task_list(
         self, 
-        design: str, 
+        design_path: str,
+        requirements_path: str, 
         work_dir: str
     ) -> str:
-        """Generates a task list."""
+        """Generates a task list from design document."""
         pass
+    
+    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        """Processes task generation requests."""
+        pass
+```
+
+#### ImplementAgent (Refactored)
+```python
+class ImplementAgent(BaseLLMAgent):
+    """
+    The implement agent is now a pure executor responsible for:
+    - Task execution only (no task generation)
+    - Code generation and implementation
+    - Patch strategy application
+    - Error recovery and retry mechanisms
+    """
     
     async def execute_task(
         self, 
@@ -254,6 +358,14 @@ class ImplementAgent:
         work_dir: str
     ) -> Dict[str, Any]:
         """Executes a specific task."""
+        pass
+    
+    async def execute_multiple_tasks(
+        self, 
+        tasks_file: str, 
+        work_dir: str
+    ) -> Dict[str, Any]:
+        """Executes multiple tasks from tasks.md."""
         pass
     
     async def execute_with_patch_strategy(
