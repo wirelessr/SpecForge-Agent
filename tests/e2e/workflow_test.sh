@@ -10,6 +10,7 @@ set -e  # Exit on any error
 # 設置測試環境變數
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=ERROR  # 只顯示錯誤信息
 
 echo "=== Task 18: Correct Workflow End-to-End Test ==="
 echo "開始時間: $(date)"
@@ -138,11 +139,14 @@ cat req_revise_1_output.txt
 echo ""
 
 # 檢查 revise 是否生效
+REQUIREMENTS_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/requirements.md" ]; then
     if ! diff -q "$WORK_DIR/requirements.md.original" "$WORK_DIR/requirements.md" > /dev/null 2>&1; then
         echo "✓ Requirements 第一次 Revise 成功，內容已更新"
+        REQUIREMENTS_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Requirements 第一次 Revise 可能沒有生效"
+        echo "❌ Requirements 第一次 Revise 失敗，內容沒有變化"
+        REQUIREMENTS_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/requirements.md" "$WORK_DIR/requirements.md.after_revise_1"
 fi
@@ -160,11 +164,14 @@ cat req_revise_2_output.txt
 echo ""
 
 # 檢查第二次 revise 是否生效
+REQUIREMENTS_REVISE_2_SUCCESS=false
 if [ -f "$WORK_DIR/requirements.md" ] && [ -f "$WORK_DIR/requirements.md.after_revise_1" ]; then
     if ! diff -q "$WORK_DIR/requirements.md.after_revise_1" "$WORK_DIR/requirements.md" > /dev/null 2>&1; then
         echo "✓ Requirements 第二次 Revise 成功，內容已更新"
+        REQUIREMENTS_REVISE_2_SUCCESS=true
     else
-        echo "⚠️ Requirements 第二次 Revise 可能沒有生效"
+        echo "❌ Requirements 第二次 Revise 失敗，內容沒有變化"
+        REQUIREMENTS_REVISE_2_SUCCESS=false
     fi
 fi
 echo ""
@@ -207,11 +214,14 @@ cat design_revise_1_output.txt
 echo ""
 
 # 檢查 design revise 是否生效
+DESIGN_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/design.md" ]; then
     if ! diff -q "$WORK_DIR/design.md.original" "$WORK_DIR/design.md" > /dev/null 2>&1; then
         echo "✓ Design 第一次 Revise 成功，內容已更新"
+        DESIGN_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Design 第一次 Revise 可能沒有生效"
+        echo "❌ Design 第一次 Revise 失敗，內容沒有變化"
+        DESIGN_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/design.md" "$WORK_DIR/design.md.after_revise_1"
 fi
@@ -229,11 +239,14 @@ cat design_revise_2_output.txt
 echo ""
 
 # 檢查第二次 design revise 是否生效
+DESIGN_REVISE_2_SUCCESS=false
 if [ -f "$WORK_DIR/design.md" ] && [ -f "$WORK_DIR/design.md.after_revise_1" ]; then
     if ! diff -q "$WORK_DIR/design.md.after_revise_1" "$WORK_DIR/design.md" > /dev/null 2>&1; then
         echo "✓ Design 第二次 Revise 成功，內容已更新"
+        DESIGN_REVISE_2_SUCCESS=true
     else
-        echo "⚠️ Design 第二次 Revise 可能沒有生效"
+        echo "❌ Design 第二次 Revise 失敗，內容沒有變化"
+        DESIGN_REVISE_2_SUCCESS=false
     fi
 fi
 echo ""
@@ -276,11 +289,14 @@ cat tasks_revise_1_output.txt
 echo ""
 
 # 檢查 tasks revise 是否生效
+TASKS_REVISE_1_SUCCESS=false
 if [ -f "$WORK_DIR/tasks.md" ]; then
     if ! diff -q "$WORK_DIR/tasks.md.original" "$WORK_DIR/tasks.md" > /dev/null 2>&1; then
         echo "✓ Tasks 第一次 Revise 成功，內容已更新"
+        TASKS_REVISE_1_SUCCESS=true
     else
-        echo "⚠️ Tasks 第一次 Revise 可能沒有生效"
+        echo "❌ Tasks 第一次 Revise 失敗，內容沒有變化"
+        TASKS_REVISE_1_SUCCESS=false
     fi
     cp "$WORK_DIR/tasks.md" "$WORK_DIR/tasks.md.after_revise_1"
 fi
@@ -408,7 +424,7 @@ echo "   1.2 ✓ Requirements 第二次 Revise"
 echo "2. ✓ Design 生成 (DesignAgent)"
 echo "   2.1 ✓ Design 第一次 Revise"
 echo "   2.2 ✓ Design 第二次 Revise"
-echo "3. ✓ Tasks 生成 (ImplementAgent)"
+echo "3. ✓ Tasks 生成 (TasksAgent)"
 echo "   3.1 ✓ Tasks 第一次 Revise"
 echo "   3.2 ✓ Tasks 第二次 Revise"
 echo "4. ✓ Implementation 執行 (ImplementAgent)"

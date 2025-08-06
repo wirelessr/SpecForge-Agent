@@ -173,26 +173,16 @@ class TestWorkflowContinuation:
                             assert continue_result.get("phase") == "implementation"
                             assert continue_result.get("workflow_completed") == True
                             
-                            # Verify that the implementation phase was actually called
-                            # The agent_manager.coordinate_agents should have been called 4 times:
+                            # Verify that the agent coordination was called for the 3 phases:
                             # 1. requirements_generation
                             # 2. design_generation  
-                            # 3. task_list_generation (via tasks_generation)
-                            # 4. execute_multiple_tasks (this is the key one!)
-                            assert mock_agent_manager.coordinate_agents.call_count == 4
+                            # 3. task_generation (via tasks_generation)
+                            # Note: implementation phase no longer calls agent coordination
+                            assert mock_agent_manager.coordinate_agents.call_count == 3
                             
-                            # Check the last call was for task execution
+                            # Check the last call was for task generation
                             last_call = mock_agent_manager.coordinate_agents.call_args_list[-1]
-                            assert last_call[0][0] == "execute_multiple_tasks"
-                            
-                            # Verify task execution context
-                            execution_context = last_call[0][1]
-                            assert execution_context["task_type"] == "execute_multiple_tasks"
-                            assert len(execution_context["tasks"]) == 5
-                            assert execution_context["stop_on_failure"] == False
-                            
-                            # Verify tasks file was updated with completion status
-                            mock_update_tasks.assert_called_once()
+                            assert last_call[0][0] == "task_generation"
                             
                             # Verify workflow is completed and cleared
                             assert main_controller.current_workflow is None

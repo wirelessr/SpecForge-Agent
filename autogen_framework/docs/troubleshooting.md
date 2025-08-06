@@ -8,8 +8,10 @@ This guide helps users diagnose and resolve common issues encountered while usin
 | Issue Type | Symptoms | Quick Solution |
 |---|---|---|
 | [LLM Connection](#llm-connection-issues) | Connection timeout, authentication failure | Check endpoint and API key |
-| [Workflow Stuck](#workflow-issues) | Status not updating, no response | Reset session or check logs |
-| [Task Execution Failure](#task-execution-issues) | Code generation errors, command failures | Check execution logs, manually fix |
+| [Workflow Stuck](#workflow-issues) | Status not updating, no response | Check WorkflowManager state, reset session |
+| [Task Generation Issues](#task-generation-issues) | TasksAgent failures, malformed tasks.md | Check TasksAgent logs, verify design.md |
+| [Task Execution Failure](#task-execution-issues) | ImplementAgent errors, command failures | Check execution logs, manually fix |
+| [Session Management Issues](#session-management-issues) | Session corruption, state inconsistency | Check SessionManager, reset session |
 | [File Modification Issues](#file-operation-issues) | Patch failure, permission errors | Check file permissions, use backups |
 | [Performance Issues](#performance-issues) | Slow response, insufficient memory | Optimize configuration, clear cache |
 | [Configuration Issues](#configuration-issues) | Parameter errors, path issues | Validate configuration file |
@@ -218,12 +220,12 @@ autogen-framework --workspace . --status
 # 2. Check process status
 ps aux | grep autogen
 
-# 3. Check logs
-tail -f logs/execution_log.md
+# 3. Check logs for WorkflowManager issues
+tail -f logs/execution_log.md | grep -i "workflow\|session"
 
-# 4. Check session files
-ls -la .autogen_session*
-cat .autogen_session_*.json
+# 4. Check session files managed by SessionManager
+ls -la memory/session_state.json
+cat memory/session_state.json
 ```
 
 **Solutions**:
@@ -302,6 +304,69 @@ autogen-framework --workspace . --approve tasks
 # 3. Full reset (last resort)
 autogen-framework --workspace . --reset-session
 # Then restart the entire process
+```
+
+## 
+ Task Generation Issues
+
+### Issue 1: TasksAgent Generation Failures
+
+**Symptoms**:
+```
+Error: TasksAgent failed to generate task list
+Error: Malformed tasks.md generated
+```
+
+**Diagnostic Steps**:
+```bash
+# 1. Check TasksAgent logs
+grep -i "tasksagent\|task.*generation" logs/execution_log.md
+
+# 2. Verify input documents exist
+ls -la requirements.md design.md
+
+# 3. Check design document quality
+wc -l design.md
+head -20 design.md
+```
+
+**Solutions**:
+1.  **Improve design document**:
+    ```bash
+    # Revise design to be more detailed
+    autogen-framework --workspace . --revise "design:Add more implementation details"
+    ```
+
+2.  **Re-run task generation**:
+    ```bash
+    # Force TasksAgent to regenerate tasks
+    rm -f tasks.md
+    autogen-framework --workspace . --continue-workflow
+    ```
+
+3.  **Check TasksAgent context**:
+    ```bash
+    # Ensure TasksAgent has access to both requirements and design
+    grep -A 5 -B 5 "context.*requirements\|context.*design" logs/execution_log.md
+    ```
+
+### Issue 2: Task List Format Issues
+
+**Symptoms**:
+- Tasks.md has incorrect format
+- ImplementAgent cannot parse tasks
+- Missing task references to requirements
+
+**Solutions**:
+```bash
+# 1. Validate tasks.md format
+grep -E "^- \[.\]" tasks.md | head -10
+
+# 2. Check requirement references
+grep -i "requirement" tasks.md
+
+# 3. Regenerate with better prompts
+autogen-framework --workspace . --revise "tasks:Ensure proper markdown format and requirement references"
 ```
 
 ## 
@@ -396,6 +461,66 @@ ls -la .
 
 # 4. If it's a system command permission issue
 sudo autogen-framework --workspace . --execute-task "your task"
+```
+
+## 
+ Session Management Issues
+
+### Issue 1: Session State Corruption
+
+**Symptoms**:
+```
+Error: Cannot load session state
+JSONDecodeError: Expecting property name
+Error: Session file corrupted
+```
+
+**Diagnostic Steps**:
+```bash
+# 1. Check session file integrity
+python -m json.tool memory/session_state.json
+
+# 2. Check SessionManager logs
+grep -i "sessionmanager\|session.*state" logs/execution_log.md
+
+# 3. Check file permissions
+ls -la memory/session_state.json
+```
+
+**Solutions**:
+1.  **Backup and reset session**:
+    ```bash
+    # Backup corrupted session
+    cp memory/session_state.json memory/session_state.json.backup
+    
+    # Reset session through SessionManager
+    autogen-framework --workspace . --reset-session
+    ```
+
+2.  **Manually fix session file**:
+    ```bash
+    # Create minimal valid session
+    echo '{"session_id": "new_session", "workflow_state": "initial"}' > memory/session_state.json
+    ```
+
+### Issue 2: Session Persistence Failures
+
+**Symptoms**:
+- Session state not saved between commands
+- Workflow progress lost
+- Repeated initialization
+
+**Solutions**:
+```bash
+# 1. Check memory directory permissions
+ls -la memory/
+chmod 755 memory/
+
+# 2. Check disk space
+df -h .
+
+# 3. Verify SessionManager initialization
+grep -i "sessionmanager.*init" logs/execution_log.md
 ```
 
 ## 

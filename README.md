@@ -6,7 +6,8 @@ A Python-based multi-agent collaboration framework using AutoGen for project dev
 
 ## Features
 
-- **Multi-Agent Collaboration**: Plan Agent, Design Agent, and Implement Agent working together
+- **Multi-Agent Collaboration**: Plan Agent, Design Agent, Tasks Agent, and Implement Agent working together
+- **Modular Architecture**: Dedicated components for session management, workflow orchestration, and task execution
 - **Shell Execution**: Complete shell command execution capabilities
 - **Memory System**: Persistent memory storage in workspace/memory folder
 - **Pure Text Interface**: Command-line interface for user interaction
@@ -39,10 +40,18 @@ uv run autogen-framework --workspace /path/to/workspace --verbose
 ```
 autogen_framework/
 ├── agents/          # AI agent implementations
+│   ├── plan_agent.py      # Requirements analysis
+│   ├── design_agent.py    # Technical design
+│   ├── tasks_agent.py     # Task generation
+│   └── implement_agent.py # Task execution
 ├── models/          # Data models and schemas
 ├── utils/           # Utility functions
+├── session_manager.py     # Session persistence
+├── workflow_manager.py    # Workflow orchestration
+├── agent_manager.py       # Agent coordination
+├── main_controller.py     # Main entry point
 ├── tests/           # Test files
-└── main.py          # Main entry point
+└── main.py          # CLI entry point
 ```
 
 ## Development

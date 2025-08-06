@@ -17,6 +17,7 @@ from .agents.base_agent import BaseLLMAgent
 from .agents.plan_agent import PlanAgent
 from .agents.design_agent import DesignAgent
 from .agents.implement_agent import ImplementAgent
+from .agents.tasks_agent import TasksAgent
 from .models import LLMConfig, WorkflowState, WorkflowPhase, AgentContext
 from .memory_manager import MemoryManager
 from .shell_executor import ShellExecutor
@@ -52,6 +53,7 @@ class AgentManager:
         # Agent instances (initialized later)
         self.plan_agent: Optional[PlanAgent] = None
         self.design_agent: Optional[DesignAgent] = None
+        self.tasks_agent: Optional[TasksAgent] = None
         self.implement_agent: Optional[ImplementAgent] = None
         
         # Agent registry for dynamic access
@@ -107,6 +109,13 @@ class AgentManager:
                 memory_context=memory_context
             )
             self.agents["design"] = self.design_agent
+            
+            # Initialize Tasks Agent
+            self.tasks_agent = TasksAgent(
+                llm_config=llm_config,
+                memory_manager=self.memory_manager
+            )
+            self.agents["tasks"] = self.tasks_agent
             
             # Initialize Implement Agent
             implement_system_message = self._build_implement_agent_system_message()
@@ -199,6 +208,8 @@ class AgentManager:
                 return await self._coordinate_requirements_generation(context, coordination_id)
             elif task_type == "design_generation":
                 return await self._coordinate_design_generation(context, coordination_id)
+            elif task_type == "task_generation":
+                return await self._coordinate_task_generation(context, coordination_id)
             elif task_type == "task_execution":
                 return await self._coordinate_task_execution(context, coordination_id)
             elif task_type == "execute_multiple_tasks":
@@ -308,7 +319,7 @@ class AgentManager:
             workflow_results["current_phase"] = "task_generation"
             
             task_generation_result = await self._execute_agent_task(
-                agent_name="implement",
+                agent_name="tasks",
                 task_input={
                     "task_type": "generate_task_list",
                     "design_path": design_path,
@@ -409,6 +420,23 @@ class AgentManager:
             coordination_id=coordination_id
         )
     
+    async def _coordinate_task_generation(self, context: Dict[str, Any], coordination_id: str) -> Dict[str, Any]:
+        """
+        Coordinate task generation using the Tasks Agent.
+        
+        Args:
+            context: Context containing task generation parameters (design_path, requirements_path, work_dir)
+            coordination_id: Unique identifier for this coordination session
+            
+        Returns:
+            Dictionary containing task generation results
+        """
+        return await self._execute_agent_task(
+            agent_name="tasks",
+            task_input=context,
+            coordination_id=coordination_id
+        )
+    
     async def _coordinate_task_execution(self, context: Dict[str, Any], coordination_id: str) -> Dict[str, Any]:
         """
         Coordinate task execution using the Implement Agent.
@@ -469,7 +497,7 @@ class AgentManager:
         agent_mapping = {
             "requirements": "plan",
             "design": "design", 
-            "tasks": "implement"
+            "tasks": "tasks"  # Fixed: tasks revision should use TasksAgent, not ImplementAgent
         }
         
         agent_name = agent_mapping.get(phase)

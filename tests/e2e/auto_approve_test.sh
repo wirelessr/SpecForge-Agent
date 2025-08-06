@@ -8,6 +8,7 @@ set -e  # Exit on any error
 # Set test environment variables
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=ERROR  # 只顯示錯誤信息
 
 echo "=== Auto-Approve End-to-End Test ==="
 echo "Start time: $(date)"

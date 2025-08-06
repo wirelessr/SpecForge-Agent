@@ -22,6 +22,8 @@ from .memory_manager import MemoryManager
 from .agent_manager import AgentManager
 from .shell_executor import ShellExecutor
 from .config_manager import ConfigManager, ConfigurationError
+from .session_manager import SessionManager
+from .workflow_manager import WorkflowManager
 
 
 class UserApprovalStatus(Enum):
@@ -59,26 +61,19 @@ class MainController:
         self.memory_manager: Optional[MemoryManager] = None
         self.agent_manager: Optional[AgentManager] = None
         self.shell_executor: Optional[ShellExecutor] = None
+        self.session_manager: Optional[SessionManager] = None
+        self.workflow_manager: Optional[WorkflowManager] = None
         
         # Framework configuration
         self.llm_config: Optional[LLMConfig] = None
         self.is_initialized = False
         
-        # Session management
+        # Session-related properties (delegated to SessionManager after initialization)
         self.session_id: Optional[str] = None
-        self.session_file = self.workspace_path / "memory" / "session_state.json"
-        
-        # Workflow state management
         self.current_workflow: Optional[WorkflowState] = None
         self.user_approval_status: Dict[str, UserApprovalStatus] = {}
-        
-        # Framework execution log
-        self.execution_log: List[Dict[str, Any]] = []
-        
-        # Phase results storage
         self.phase_results: Dict[str, Dict[str, Any]] = {}
-        
-        # Auto-approve functionality
+        self.execution_log: List[Dict[str, Any]] = []
         self.approval_log: List[Dict[str, Any]] = []
         self.error_recovery_attempts: Dict[str, int] = {}
         self.workflow_summary: Dict[str, Any] = {
@@ -184,137 +179,13 @@ class MainController:
         if not self.is_initialized:
             raise RuntimeError("Framework not initialized. Call initialize_framework() first.")
         
-        # Check if there's already an active workflow
-        if self.current_workflow is not None:
-            return {
-                "success": False,
-                "error": "Active workflow in progress. Please complete current workflow first.",
-                "current_workflow": {
-                    "phase": self.current_workflow.phase.value,
-                    "work_directory": self.current_workflow.work_directory
-                }
-            }
+        # Delegate to WorkflowManager
+        result = await self.workflow_manager.process_request(user_request, auto_approve)
         
-        self.logger.info(f"Processing user request: {user_request[:100]}...")
+        # Sync workflow state back to MainController for backward compatibility
+        self._sync_workflow_state_from_manager()
         
-        if auto_approve:
-            self.logger.info("Auto-approve mode enabled - proceeding through all phases automatically")
-        
-        # Initialize workflow state
-        workflow_id = self._generate_workflow_id()
-        self.current_workflow = WorkflowState(
-            phase=WorkflowPhase.PLANNING,
-            work_directory=""
-        )
-        
-        # Reset workflow summary for new workflow
-        self.workflow_summary = {
-            'phases_completed': [],
-            'tasks_completed': [],
-            'token_usage': {},
-            'compression_events': [],
-            'auto_approvals': [],
-            'errors_recovered': []
-        }
-        
-        # Save session state after workflow initialization
-        self._save_session_state()
-        
-        # Note: approval status is managed separately and persists across requests
-        # This allows for pre-approval of phases in testing scenarios
-        
-        workflow_result = {
-            "workflow_id": workflow_id,
-            "user_request": user_request,
-            "phases": {},
-            "current_phase": None,
-            "success": False,
-            "requires_user_approval": False,
-            "approval_needed_for": None,
-            "auto_approve_enabled": auto_approve
-        }
-        
-        try:
-            # Phase 1: Requirements Generation
-            requirements_result = await self._execute_requirements_phase(user_request, workflow_id)
-            workflow_result["phases"]["requirements"] = requirements_result
-            workflow_result["current_phase"] = "requirements"
-            
-            if not requirements_result.get("success", False):
-                error_msg = requirements_result.get("error", "Requirements generation failed")
-                raise RuntimeError(error_msg)
-            
-            # Check if user approval is needed for requirements
-            requirements_approved = self.should_auto_approve("requirements", auto_approve)
-            if not requirements_approved:
-                workflow_result["requires_user_approval"] = True
-                workflow_result["approval_needed_for"] = "requirements"
-                workflow_result["requirements_path"] = requirements_result.get("requirements_path")
-                return workflow_result
-            
-            # Phase 2: Design Generation (only if requirements approved)
-            design_result = await self._execute_design_phase(requirements_result, workflow_id)
-            workflow_result["phases"]["design"] = design_result
-            workflow_result["current_phase"] = "design"
-            
-            if not design_result.get("success", False):
-                error_msg = design_result.get("error", "Design generation failed")
-                raise RuntimeError(error_msg)
-            
-            # Check if user approval is needed for design
-            design_approved = self.should_auto_approve("design", auto_approve)
-            if not design_approved:
-                workflow_result["requires_user_approval"] = True
-                workflow_result["approval_needed_for"] = "design"
-                workflow_result["design_path"] = design_result.get("design_path")
-                return workflow_result
-            
-            # Phase 3: Task Generation (only if design approved)
-            tasks_result = await self._execute_tasks_phase(design_result, requirements_result, workflow_id)
-            workflow_result["phases"]["tasks"] = tasks_result
-            workflow_result["current_phase"] = "tasks"
-            
-            if not tasks_result.get("success", False):
-                error_msg = tasks_result.get("error", "Task generation failed")
-                raise RuntimeError(error_msg)
-            
-            # Check if user approval is needed for tasks
-            tasks_approved = self.should_auto_approve("tasks", auto_approve)
-            if not tasks_approved:
-                workflow_result["requires_user_approval"] = True
-                workflow_result["approval_needed_for"] = "tasks"
-                workflow_result["tasks_path"] = tasks_result.get("tasks_file")
-                return workflow_result
-            
-            # Phase 4: Implementation Preparation (only if tasks approved)
-            implementation_result = await self._execute_implementation_phase(tasks_result, workflow_id)
-            workflow_result["phases"]["implementation"] = implementation_result
-            workflow_result["current_phase"] = "implementation"
-            
-            # Mark workflow as completed
-            self.current_workflow.phase = WorkflowPhase.COMPLETED
-            workflow_result["success"] = True
-            
-            # Complete and clear the workflow
-            self.complete_workflow()
-            
-            self.logger.info(f"User request processed successfully: {workflow_id}")
-            return workflow_result
-            
-        except Exception as e:
-            self.logger.error(f"Error processing user request: {e}")
-            workflow_result["error"] = str(e)
-            
-            self._record_execution_event(
-                event_type="workflow_error",
-                details={
-                    "workflow_id": workflow_id,
-                    "error": str(e),
-                    "failed_phase": workflow_result.get("current_phase")
-                }
-            )
-            
-            return workflow_result
+        return result
     
     async def process_user_request(self, user_request: str) -> Dict[str, Any]:
         """
@@ -342,65 +213,11 @@ class MainController:
         Returns:
             Dictionary containing approval status and next steps
         """
-        # Validate phase name
-        valid_phases = ["requirements", "design", "tasks"]
-        if phase not in valid_phases:
-            return {
-                "success": False,
-                "error": f"Invalid phase '{phase}'. Valid phases are: {', '.join(valid_phases)}"
-            }
+        # Delegate to WorkflowManager
+        result = self.workflow_manager.approve_phase(phase, approved)
         
-        # Check if there's an active workflow
-        if not self.current_workflow:
-            return {
-                "success": False,
-                "error": "No active workflow found. Please submit a request first using --request."
-            }
-        
-        # Check if the phase exists and can be approved
-        phase_file_map = {
-            "requirements": "requirements.md",
-            "design": "design.md", 
-            "tasks": "tasks.md"
-        }
-        
-        if self.current_workflow.work_directory:
-            phase_file = Path(self.current_workflow.work_directory) / phase_file_map[phase]
-            if not phase_file.exists():
-                return {
-                    "success": False,
-                    "error": f"Cannot approve {phase} phase. The {phase_file_map[phase]} file does not exist. Please ensure the phase has been generated first."
-                }
-        
-        status = UserApprovalStatus.APPROVED if approved else UserApprovalStatus.REJECTED
-        self.user_approval_status[phase] = status
-        
-        self.logger.info(f"Phase '{phase}' {'approved' if approved else 'rejected'} by user")
-        
-        # Record approval event
-        self._record_execution_event(
-            event_type="phase_approval",
-            details={
-                "phase": phase,
-                "approved": approved,
-                "workflow_id": self._get_current_workflow_id()
-            }
-        )
-        
-        # Save session state after approval
-        self._save_session_state()
-        
-        result = {
-            "phase": phase,
-            "approved": approved,
-            "status": status.value,
-            "can_proceed": approved
-        }
-        
-        if approved:
-            result["message"] = f"Phase '{phase}' approved. Ready to proceed to next phase."
-        else:
-            result["message"] = f"Phase '{phase}' rejected. Please revise and resubmit."
+        # Sync workflow state back to MainController for backward compatibility
+        self._sync_workflow_state_from_manager()
         
         return result
     
@@ -411,79 +228,13 @@ class MainController:
         Returns:
             Dictionary containing the next phase results or completion status
         """
-        if not self.current_workflow:
-            raise RuntimeError("No active workflow to continue")
+        # Delegate to WorkflowManager
+        result = await self.workflow_manager.continue_workflow()
         
-        workflow_id = self._get_current_workflow_id()
+        # Sync workflow state back to MainController for backward compatibility
+        self._sync_workflow_state_from_manager()
         
-        # Determine next phase based on current state and approvals
-        if (self.current_workflow.phase == WorkflowPhase.PLANNING and 
-            self._is_phase_approved("requirements")):
-            
-            # Continue to design phase
-            requirements_result = self._get_last_phase_result("requirements")
-            design_result = await self._execute_design_phase(requirements_result, workflow_id)
-            
-            # Update workflow phase after successful execution
-            if design_result.get("success"):
-                self.current_workflow.phase = WorkflowPhase.DESIGN
-            
-            # Save session state after phase update
-            self._save_session_state()
-            
-            return {
-                "phase": "design",
-                "result": design_result,
-                "requires_approval": not self._is_phase_approved("design")
-            }
-            
-        elif (self.current_workflow.phase == WorkflowPhase.DESIGN and 
-              self._is_phase_approved("design")):
-            
-            # Continue to tasks phase
-            design_result = self._get_last_phase_result("design")
-            requirements_result = self._get_last_phase_result("requirements")
-            tasks_result = await self._execute_tasks_phase(design_result, requirements_result, workflow_id)
-            
-            # Update workflow phase after successful execution
-            if tasks_result.get("success"):
-                self.current_workflow.phase = WorkflowPhase.TASK_GENERATION
-            
-            # Save session state after phase update
-            self._save_session_state()
-            
-            return {
-                "phase": "tasks",
-                "result": tasks_result,
-                "requires_approval": not self._is_phase_approved("tasks")
-            }
-            
-        elif (self.current_workflow.phase == WorkflowPhase.TASK_GENERATION and 
-              self._is_phase_approved("tasks")):
-            
-            # Continue to implementation phase
-            tasks_result = self._get_last_phase_result("tasks")
-            implementation_result = await self._execute_implementation_phase(tasks_result, workflow_id)
-            
-            # Mark workflow as completed and clean up
-            self.current_workflow.phase = WorkflowPhase.COMPLETED
-            self.complete_workflow()
-            
-            # Save session state after completion
-            self._save_session_state()
-            
-            return {
-                "phase": "implementation",
-                "result": implementation_result,
-                "workflow_completed": True
-            }
-        
-        else:
-            return {
-                "error": "Cannot continue workflow. Check approval status and current phase.",
-                "current_phase": self.current_workflow.phase.value,
-                "approval_status": {k: v.value for k, v in self.user_approval_status.items()}
-            }
+        return result
     
     def get_framework_status(self) -> Dict[str, Any]:
         """
@@ -531,69 +282,13 @@ class MainController:
         Returns:
             Dictionary containing revision results
         """
-        if phase not in ["requirements", "design", "tasks"]:
-            return {"success": False, "error": f"Invalid phase: {phase}"}
+        # Delegate to WorkflowManager
+        result = await self.workflow_manager.apply_phase_revision(phase, revision_feedback)
         
-        if not self.current_workflow:
-            return {"success": False, "error": "No active workflow"}
+        # Sync workflow state back to MainController for backward compatibility
+        self._sync_workflow_state_from_manager()
         
-        try:
-            self.logger.info(f"Applying revision to {phase} phase: {revision_feedback[:100]}...")
-            
-            # Get the current phase result
-            phase_result = self._get_last_phase_result(phase)
-            if not phase_result:
-                return {"success": False, "error": f"No {phase} result found"}
-            
-            # Prepare revision context
-            revision_context = {
-                "phase": phase,
-                "revision_feedback": revision_feedback,
-                "current_result": phase_result,
-                "work_directory": self.current_workflow.work_directory
-            }
-            
-            # Apply revision through agent coordination
-            revision_result = await self.agent_manager.coordinate_agents(
-                f"{phase}_revision",
-                revision_context
-            )
-            
-            if revision_result.get("success"):
-                # Update the phase result
-                self.phase_results[phase] = revision_result
-                
-                # Reset approval status for this phase
-                if phase in self.user_approval_status:
-                    del self.user_approval_status[phase]
-                
-                # Record revision event
-                self._record_execution_event(
-                    event_type="phase_revision",
-                    details={
-                        "phase": phase,
-                        "feedback": revision_feedback,
-                        "workflow_id": self._get_current_workflow_id()
-                    }
-                )
-                
-                # Save session state after revision
-                self._save_session_state()
-                
-                return {
-                    "success": True,
-                    "message": f"{phase.title()} phase revised successfully",
-                    "updated_path": revision_result.get(f"{phase}_path")
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": revision_result.get("error", "Revision failed")
-                }
-                
-        except Exception as e:
-            self.logger.error(f"Error applying revision to {phase}: {e}")
-            return {"success": False, "error": str(e)}
+        return result
     
     def get_pending_approval(self) -> Optional[Dict[str, Any]]:
         """
@@ -602,31 +297,8 @@ class MainController:
         Returns:
             Dictionary with pending approval info, or None if no approval needed
         """
-        if not self.current_workflow:
-            return None
-        
-        current_phase = self.current_workflow.phase
-        
-        if current_phase == WorkflowPhase.PLANNING and not self._is_phase_approved("requirements"):
-            return {
-                "phase": "requirements",
-                "phase_name": "Requirements",
-                "description": "Requirements document needs approval"
-            }
-        elif current_phase == WorkflowPhase.DESIGN and not self._is_phase_approved("design"):
-            return {
-                "phase": "design", 
-                "phase_name": "Design",
-                "description": "Design document needs approval"
-            }
-        elif current_phase == WorkflowPhase.TASK_GENERATION and not self._is_phase_approved("tasks"):
-            return {
-                "phase": "tasks",
-                "phase_name": "Tasks", 
-                "description": "Task list needs approval"
-            }
-        
-        return None
+        # Delegate to WorkflowManager
+        return self.workflow_manager.get_pending_approval()
     
     def complete_workflow(self) -> bool:
         """
@@ -635,29 +307,13 @@ class MainController:
         Returns:
             True if workflow was completed, False if no active workflow
         """
-        if self.current_workflow is None:
-            return False
+        # Delegate to WorkflowManager
+        result = self.workflow_manager.complete_workflow()
         
-        self.logger.info(f"Completing workflow in phase: {self.current_workflow.phase.value}")
+        # Sync workflow state back to MainController for backward compatibility
+        self._sync_workflow_state_from_manager()
         
-        # Record workflow completion
-        self._record_execution_event(
-            event_type="workflow_completed",
-            details={
-                "final_phase": self.current_workflow.phase.value,
-                "work_directory": self.current_workflow.work_directory,
-                "workflow_id": self._get_current_workflow_id()
-            }
-        )
-        
-        # Clear workflow state
-        self.current_workflow = None
-        self.user_approval_status.clear()
-        
-        # Save session state after completion
-        self._save_session_state()
-        
-        return True
+        return result
     
     def get_execution_log(self) -> List[Dict[str, Any]]:
         """
@@ -716,6 +372,11 @@ class MainController:
     def _initialize_core_components(self) -> bool:
         """Initialize all core framework components."""
         try:
+            # Initialize SessionManager
+            if self.session_manager is None:
+                self.session_manager = SessionManager(str(self.workspace_path))
+                self.logger.info("SessionManager initialized")
+            
             # Initialize MemoryManager
             if self.memory_manager is None:
                 self.memory_manager = MemoryManager(str(self.workspace_path))
@@ -730,6 +391,11 @@ class MainController:
             if self.agent_manager is None:
                 self.agent_manager = AgentManager(str(self.workspace_path))
                 self.logger.info("AgentManager initialized")
+            
+            # Initialize WorkflowManager
+            if self.workflow_manager is None:
+                self.workflow_manager = WorkflowManager(self.agent_manager, self.session_manager)
+                self.logger.info("WorkflowManager initialized")
             
             return True
             
@@ -881,7 +547,7 @@ class MainController:
         
         try:
             result = await self.agent_manager.coordinate_agents(
-                "task_execution",
+                "task_generation",
                 {
                     "task_type": "generate_task_list",
                     "design_path": design_result.get("design_path"),
@@ -925,7 +591,7 @@ class MainController:
                 # Retry the phase after successful recovery
                 try:
                     result = await self.agent_manager.coordinate_agents(
-                        "task_execution", recovery_context
+                        "task_generation", recovery_context
                     )
                     if result.get("success", False):
                         self.phase_results["tasks"] = result
@@ -1627,148 +1293,137 @@ class MainController:
     
     def _load_or_create_session(self):
         """Load existing session or create a new one."""
-        try:
-            if self.session_file.exists():
-                # Load existing session
-                with open(self.session_file, 'r', encoding='utf-8') as f:
-                    session_data = json.load(f)
-                
-                self.session_id = session_data.get('session_id')
-                
-                # Reconstruct workflow object if it exists
-                workflow_data = session_data.get('current_workflow')
-                if workflow_data:
-                    self.current_workflow = WorkflowState(
-                        phase=WorkflowPhase(workflow_data.get('phase')) if workflow_data.get('phase') else WorkflowPhase.PLANNING,
-                        work_directory=workflow_data.get('work_directory', '')
-                    )
-                else:
-                    self.current_workflow = None
-                
-                # Load approval status
-                approval_data = session_data.get('user_approval_status', {})
-                self.user_approval_status = {
-                    k: UserApprovalStatus(v) for k, v in approval_data.items()
-                }
-                
-                self.phase_results = session_data.get('phase_results', {})
-                self.execution_log = session_data.get('execution_log', [])
-                
-                # Load auto-approve related data
-                self.approval_log = session_data.get('approval_log', [])
-                self.error_recovery_attempts = session_data.get('error_recovery_attempts', {})
-                self.workflow_summary = session_data.get('workflow_summary', {
-                    'phases_completed': [],
-                    'tasks_completed': [],
-                    'token_usage': {},
-                    'compression_events': [],
-                    'auto_approvals': [],
-                    'errors_recovered': []
-                })
-                
-                self.logger.info(f"Loaded existing session: {self.session_id}")
-            else:
-                # Create new session
-                self._create_new_session()
-        except Exception as e:
-            self.logger.warning(f"Failed to load session, creating new one: {e}")
-            self._create_new_session()
+        session_data = self.session_manager.load_or_create_session()
+        
+        # Sync session data from SessionManager to MainController
+        self.session_id = self.session_manager.session_id
+        self.current_workflow = self.session_manager.current_workflow
+        
+        # Convert approval status from strings to enum values for backward compatibility
+        self.user_approval_status = {
+            k: UserApprovalStatus(v) for k, v in self.session_manager.user_approval_status.items()
+        }
+        
+        self.phase_results = self.session_manager.phase_results
+        self.execution_log = self.session_manager.execution_log
+        self.approval_log = self.session_manager.approval_log
+        self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+        self.workflow_summary = self.session_manager.workflow_summary
+        
+        # Sync session data to WorkflowManager if it exists
+        if self.workflow_manager:
+            self._sync_workflow_state_to_manager()
     
     def _create_new_session(self):
         """Create a new session with unique ID."""
-        self.session_id = str(uuid.uuid4())
-        self.current_workflow = None
-        self.user_approval_status = {}
-        self.phase_results = {}
-        self.execution_log = []
-        self.approval_log = []
-        self.error_recovery_attempts = {}
-        self.workflow_summary = {
-            'phases_completed': [],
-            'tasks_completed': [],
-            'token_usage': {},
-            'compression_events': [],
-            'auto_approvals': [],
-            'errors_recovered': []
-        }
-        self._save_session_state()
-        self.logger.info(f"Created new session: {self.session_id}")
+        session_data = self.session_manager._create_new_session()
+        
+        # Sync session data from SessionManager to MainController
+        self.session_id = self.session_manager.session_id
+        self.current_workflow = self.session_manager.current_workflow
+        self.user_approval_status = {}  # Empty since it's a new session
+        self.phase_results = self.session_manager.phase_results
+        self.execution_log = self.session_manager.execution_log
+        self.approval_log = self.session_manager.approval_log
+        self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+        self.workflow_summary = self.session_manager.workflow_summary
     
     def _save_session_state(self):
         """Save current session state to disk."""
-        try:
-            # Ensure memory directory exists
-            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+        # Only save if SessionManager is initialized
+        if self.session_manager is None:
+            self.logger.warning("SessionManager not initialized, skipping session save")
+            return False
             
-            session_data = {
-                'session_id': self.session_id,
-                'current_workflow': {
-                    'phase': self.current_workflow.phase.value if self.current_workflow else None,
-                    'work_directory': self.current_workflow.work_directory if self.current_workflow else None
-                } if self.current_workflow else None,
-                'user_approval_status': {k: v.value for k, v in self.user_approval_status.items()},
-                'phase_results': self.phase_results,
-                'execution_log': self.execution_log,
-                'approval_log': self.approval_log,
-                'error_recovery_attempts': self.error_recovery_attempts,
-                'workflow_summary': self.workflow_summary,
-                'last_updated': datetime.now().isoformat()
-            }
+        # Sync MainController state to SessionManager before saving
+        self.session_manager.session_id = self.session_id
+        self.session_manager.current_workflow = self.current_workflow
+        
+        # Convert approval status from enum values to strings for SessionManager
+        self.session_manager.user_approval_status = {
+            k: v.value for k, v in self.user_approval_status.items()
+        }
+        
+        self.session_manager.phase_results = self.phase_results
+        self.session_manager.execution_log = self.execution_log
+        self.session_manager.approval_log = self.approval_log
+        self.session_manager.error_recovery_attempts = self.error_recovery_attempts
+        self.session_manager.workflow_summary = self.workflow_summary
+        
+        # Save through SessionManager
+        return self.session_manager.save_session_state()
+    
+    def _sync_workflow_state_to_manager(self):
+        """Sync workflow state from MainController to WorkflowManager."""
+        if not self.workflow_manager:
+            return
             
-            with open(self.session_file, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, indent=2, ensure_ascii=False)
+        self.workflow_manager.current_workflow = self.current_workflow
+        
+        # Convert approval status from enum values to WorkflowManager enum
+        from .workflow_manager import UserApprovalStatus as WMUserApprovalStatus
+        self.workflow_manager.user_approval_status = {
+            k: WMUserApprovalStatus(v.value) for k, v in self.user_approval_status.items()
+        }
+        
+        self.workflow_manager.phase_results = self.phase_results
+        self.workflow_manager.execution_log = self.execution_log
+        self.workflow_manager.approval_log = self.approval_log
+        self.workflow_manager.error_recovery_attempts = self.error_recovery_attempts
+        self.workflow_manager.workflow_summary = self.workflow_summary
+    
+    def _sync_workflow_state_from_manager(self):
+        """Sync workflow state from WorkflowManager back to MainController."""
+        if not self.workflow_manager:
+            return
             
-            self.logger.debug(f"Session state saved: {self.session_id}")
-        except Exception as e:
-            self.logger.error(f"Failed to save session state: {e}")
+        self.current_workflow = self.workflow_manager.current_workflow
+        
+        # Convert approval status from WorkflowManager enum to MainController enum
+        self.user_approval_status = {
+            k: UserApprovalStatus(v.value) for k, v in self.workflow_manager.user_approval_status.items()
+        }
+        
+        self.phase_results = self.workflow_manager.phase_results
+        self.execution_log = self.workflow_manager.execution_log
+        self.approval_log = self.workflow_manager.approval_log
+        self.error_recovery_attempts = self.workflow_manager.error_recovery_attempts
+        self.workflow_summary = self.workflow_manager.workflow_summary
+        self.session_manager.execution_log = self.execution_log
+        self.session_manager.approval_log = self.approval_log
+        self.session_manager.error_recovery_attempts = self.error_recovery_attempts
+        self.session_manager.workflow_summary = self.workflow_summary
+        
+        # Delegate to SessionManager
+        return self.session_manager.save_session_state()
     
     def get_session_id(self) -> str:
         """Get the current session ID."""
-        return self.session_id
+        if self.session_manager is None:
+            return self.session_id
+        return self.session_manager.get_session_id()
     
     def reset_session(self):
         """Reset the current session and create a new one."""
-        try:
-            self.logger.info("Starting session reset...")
-            
-            # Clear in-memory state first (fast)
-            self.current_workflow = None
-            self.user_approval_status.clear()
-            self.phase_results.clear()
-            self.execution_log.clear()
-            self.approval_log.clear()
-            self.error_recovery_attempts.clear()
-            self.workflow_summary = {
-                'phases_completed': [],
-                'tasks_completed': [],
-                'token_usage': {},
-                'compression_events': [],
-                'auto_approvals': [],
-                'errors_recovered': []
-            }
-            
-            # Remove session file if it exists
-            if self.session_file.exists():
-                self.session_file.unlink()
-                self.logger.info("Removed existing session file")
-            
-            # Create new session
-            self._create_new_session()
-            self.logger.info(f"Session reset completed, new session: {self.session_id}")
-            
-            return {
-                "success": True,
-                "message": f"Session reset successfully. New session ID: {self.session_id}",
-                "session_id": self.session_id
-            }
-            
-        except Exception as e:
-            error_msg = f"Failed to reset session: {e}"
-            self.logger.error(error_msg)
-            return {
-                "success": False,
-                "error": error_msg
-            }
+        # Initialize SessionManager if not already initialized
+        if self.session_manager is None:
+            self.session_manager = SessionManager(str(self.workspace_path))
+        
+        # Delegate to SessionManager
+        result = self.session_manager.reset_session()
+        
+        if result.get("success"):
+            # Sync session data from SessionManager to MainController
+            self.session_id = self.session_manager.session_id
+            self.current_workflow = self.session_manager.current_workflow
+            self.user_approval_status = {}  # Empty since it's a new session
+            self.phase_results = self.session_manager.phase_results
+            self.execution_log = self.session_manager.execution_log
+            self.approval_log = self.session_manager.approval_log
+            self.error_recovery_attempts = self.session_manager.error_recovery_attempts
+            self.workflow_summary = self.session_manager.workflow_summary
+        
+        return result
     
     # Error Recovery Helper Methods
     

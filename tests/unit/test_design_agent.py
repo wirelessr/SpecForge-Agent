@@ -523,6 +523,65 @@ sequenceDiagram
         assert any("Mermaid.js diagrams" in cap for cap in capabilities)
         assert any("component interfaces" in cap for cap in capabilities)
     
+    def test_token_compression_inheritance(self, llm_config):
+        """Test that DesignAgent inherits token compression attributes from BaseLLMAgent."""
+        agent = DesignAgent(llm_config)
+        
+        # Verify that DesignAgent has token management attributes from BaseLLMAgent
+        assert hasattr(agent, 'token_manager')
+        assert hasattr(agent, 'context_compressor')
+        assert hasattr(agent, 'compression_history')
+        assert hasattr(agent, 'compression_stats')
+        
+        # Verify that token compression methods are available
+        assert hasattr(agent, '_perform_context_compression')
+        assert hasattr(agent, 'compress_context')
+        
+        # These should be inherited from BaseLLMAgent
+        assert callable(getattr(agent, '_perform_context_compression'))
+        assert callable(getattr(agent, 'compress_context'))
+        
+        # Verify compression stats structure
+        assert isinstance(agent.compression_stats, dict)
+        assert 'total_compressions' in agent.compression_stats
+        assert 'successful_compressions' in agent.compression_stats
+    
+    @pytest.mark.asyncio
+    async def test_token_compression_functionality(self, llm_config):
+        """Test that DesignAgent can handle token compression functionality."""
+        agent = DesignAgent(llm_config)
+        
+        # Test that compression stats can be updated
+        initial_compressions = agent.compression_stats['total_compressions']
+        
+        # Mock a compression result
+        from autogen_framework.models import CompressionResult
+        mock_compression = CompressionResult(
+            original_size=2000,
+            compressed_size=800,
+            compression_ratio=0.4,
+            compressed_content="Compressed design content",
+            method_used="design_compression",
+            success=True,
+            error=None
+        )
+        
+        # Add compression to history
+        agent.compression_history.append(mock_compression)
+        agent.compression_stats['total_compressions'] += 1
+        agent.compression_stats['successful_compressions'] += 1
+        
+        # Verify compression was recorded
+        assert len(agent.compression_history) == 1
+        assert agent.compression_stats['total_compressions'] == initial_compressions + 1
+        assert agent.compression_stats['successful_compressions'] == 1
+        
+        # Test that compression methods exist and are callable
+        assert hasattr(agent, '_perform_context_compression')
+        assert callable(agent._perform_context_compression)
+        assert hasattr(agent, 'compress_context')
+        assert callable(agent.compress_context)
+    
     def test_get_design_templates(self, llm_config):
         """Test design template retrieval."""
         agent = DesignAgent(llm_config)

@@ -8,6 +8,7 @@ set -e  # Exit on any error
 # 設置測試環境變數
 export INTEGRATION_TESTING=true
 export TESTING=true
+export LOG_LEVEL=ERROR  # 只顯示錯誤信息
 
 echo "=== AutoGen Framework 端到端工作流程測試 ==="
 echo "開始時間: $(date)"
@@ -82,18 +83,17 @@ echo ""
 # 處理初始請求 (Requirements 階段)
 echo "=== 階段 1: 處理初始請求 (生成 Requirements) ==="
 echo "測試任務: $TEST_TASK"
-echo ""
 
 autogen-framework --workspace integration_test_workspace --request "$TEST_TASK" > request_output.txt 2>&1
 REQUEST_EXIT_CODE=$?
 
-echo "初始請求執行結果:"
-cat request_output.txt
-echo ""
-
 if [ $REQUEST_EXIT_CODE -ne 0 ]; then
     echo "❌ 初始請求執行失敗"
+    echo "錯誤詳情:"
+    cat request_output.txt
     exit 1
+else
+    echo "✓ Requirements 生成成功"
 fi
 
 # 查找工作目錄
@@ -136,13 +136,13 @@ echo "=== 階段 2: 批准 Requirements (生成 Design) ==="
 autogen-framework --workspace integration_test_workspace --approve requirements > approve_req_output.txt 2>&1
 APPROVE_REQ_EXIT_CODE=$?
 
-echo "Requirements 批准結果:"
-cat approve_req_output.txt
-echo ""
-
 if [ $APPROVE_REQ_EXIT_CODE -ne 0 ]; then
     echo "❌ Requirements 批准失敗"
+    echo "錯誤詳情:"
+    cat approve_req_output.txt
     exit 1
+else
+    echo "✓ Design 生成成功"
 fi
 
 # 檢查 design.md 是否生成
@@ -240,10 +240,18 @@ if [ -f "$WORK_DIR/tasks.md" ]; then
     TOTAL_TASKS=$(grep -c "^- \[" "$WORK_DIR/tasks.md" 2>/dev/null || echo "0")
     COMPLETED_TASKS=$(grep -c "^- \[x\]" "$WORK_DIR/tasks.md" 2>/dev/null || echo "0")
     
+    # 確保變量是純數字
+    TOTAL_TASKS=$(echo "$TOTAL_TASKS" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    COMPLETED_TASKS=$(echo "$COMPLETED_TASKS" | tr -d '\n\r' | grep -o '[0-9]*' | head -1)
+    
+    # 如果變量為空，設為0
+    TOTAL_TASKS=${TOTAL_TASKS:-0}
+    COMPLETED_TASKS=${COMPLETED_TASKS:-0}
+    
     echo "  總任務數: $TOTAL_TASKS"
     echo "  已完成: $COMPLETED_TASKS"
     
-    if [ "$TOTAL_TASKS" -gt 0 ] && [ "$TOTAL_TASKS" != "0" ]; then
+    if [ "$TOTAL_TASKS" -gt 0 ]; then
         COMPLETION_RATE=$((COMPLETED_TASKS * 100 / TOTAL_TASKS))
         echo "  完成率: $COMPLETION_RATE%"
     fi
@@ -278,7 +286,7 @@ echo ""
 echo "工作流程執行結果:"
 echo "1. ✓ Requirements 生成 (PlanAgent)"
 echo "2. ✓ Design 生成 (DesignAgent)" 
-echo "3. ✓ Tasks 生成 (ImplementAgent)"
+echo "3. ✓ Tasks 生成 (TasksAgent)"
 echo "4. ✓ Implementation 執行 (ImplementAgent)"
 echo ""
 

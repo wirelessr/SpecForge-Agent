@@ -7,7 +7,8 @@ A multi-agent software development framework based on AutoGen that supports end-
 ### 🤖 Intelligent Multi-Agent Collaboration
 - **PlanAgent**: Requirements analysis and document generation
 - **DesignAgent**: Technical design and architecture planning
-- **ImplementAgent**: Code implementation and task execution
+- **TasksAgent**: Task decomposition and planning
+- **ImplementAgent**: Pure task execution and code implementation
 
 ### 🔄 Complete Development Workflow
 - A complete automated process of **Requirements → Design → Tasks → Execution**
@@ -15,10 +16,11 @@ A multi-agent software development framework based on AutoGen that supports end-
 - Revision and feedback loop support
 
 ### 🛠️ Advanced Features
+- **Modular Architecture**: Dedicated components for session management, workflow orchestration, and agent coordination
 - **Patch-First Strategy**: Intelligent file modification, minimizing changes
 - **Memory System**: Context retention and learning capabilities
 - **Shell Integration**: Real system operations and command execution
-- **Session Management**: State persistence across command invocations
+- **Session Management**: Dedicated SessionManager for state persistence across command invocations
 
 ## 🚀 Quick Start
 
@@ -143,42 +145,40 @@ autogen-framework --workspace . --revise "design:Include database schema diagram
 ### Core Components
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   PlanAgent     │    │  DesignAgent    │    │ ImplementAgent  │
-│                 │    │                 │    │                 │
-│ • Requirements Analysis │    │ • Technical Design │    │ • Task Decomposition │
-│ • Document Generation │    │ • Architecture Planning │    │ • Code Implementation │
-│ • Workspace Management │    │ • Mermaid Diagrams │    │ • Patch Strategy    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-                    ┌─────────────────┐
-                    │  AgentManager   │
-                    │                 │
-                    │ • Agent Coordination │
-                    │ • Workflow Management │
-                    │ • State Synchronization │
-                    └─────────────────┘
-                                 │
-                    ┌─────────────────┐
-                    │ MainController  │
-                    │                 │
-                    │ • Framework Initialization │
-                    │ • Request Handling │
-                    │ • Session Management │
-                    └─────────────────┘
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  MainController │────│ WorkflowManager  │────│ SessionManager  │
+│  (Thin I/O)     │    │ (Orchestration)  │    │ (Persistence)   │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                │
+                                ▼
+                       ┌──────────────────┐
+                       │  AgentManager    │
+                       │  (Agent Factory) │
+                       └──────────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+        │  PlanAgent   │ │  DesignAgent │ │  TasksAgent  │
+        │ (Requirements)│ │  (Design)    │ │ (Task Gen)   │
+        └──────────────┘ └──────────────┘ └──────────────┘
+                                                   │
+                                                   ▼
+                                          ┌──────────────┐
+                                          │ ImplementAgent│
+                                          │ (Execution)  │
+                                          └──────────────┘
 ```
 
 ### Support Systems
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ MemoryManager   │    │ ShellExecutor   │    │ WorkflowState   │
+│ MemoryManager   │    │ ShellExecutor   │    │ TokenManager    │
 │                 │    │                 │    │                 │
-│ • Context Retention │    │ • Command Execution │    │ • State Management │
-│ • Learning Log    │    │ • Error Handling │    │ • Persistence      │
-│ • Knowledge Accumulation │    │ • Retry Mechanism │    │ • Recovery Mechanism │
+│ • Context Retention │    │ • Command Execution │    │ • Context Compression │
+│ • Learning Log    │    │ • Error Handling │    │ • Token Optimization │
+│ • Knowledge Accumulation │    │ • Retry Mechanism │    │ • Memory Management │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
