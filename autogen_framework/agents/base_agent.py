@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..token_manager import TokenManager
     from ..context_compressor import ContextCompressor
+    from ..context_manager import ContextManager
 
 
 class BaseLLMAgent(ABC):
@@ -69,6 +70,7 @@ class BaseLLMAgent(ABC):
         self.context: AgentContext = {}
         self.memory_context: Dict[str, Any] = {}
         self.conversation_history: List[Dict[str, Any]] = []
+        self.context_manager: Optional['ContextManager'] = None
         
         # Token management and context compression
         self.token_manager = token_manager
@@ -231,6 +233,16 @@ class BaseLLMAgent(ABC):
                 self.logger.debug(f"Reinitialized AutoGen agent with updated memory context for {self.name}")
             except Exception as e:
                 self.logger.warning(f"Failed to reinitialize AutoGen agent with memory context: {e}")
+    
+    def set_context_manager(self, context_manager: 'ContextManager') -> None:
+        """
+        Set the ContextManager for this agent.
+        
+        Args:
+            context_manager: ContextManager instance to be used by this agent
+        """
+        self.context_manager = context_manager
+        self.logger.info(f"ContextManager set for {self.name} agent")
     
     def add_to_conversation_history(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """

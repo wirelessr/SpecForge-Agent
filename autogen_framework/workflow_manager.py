@@ -16,6 +16,9 @@ from enum import Enum
 
 from .models import WorkflowState, WorkflowPhase
 from .session_manager import SessionManager
+from .context_manager import ContextManager
+from .memory_manager import MemoryManager
+from .context_compressor import ContextCompressor
 
 
 class UserApprovalStatus(Enum):
@@ -39,16 +42,22 @@ class WorkflowManager:
     - Coordinating workflow progression and state transitions
     """
     
-    def __init__(self, agent_manager, session_manager: SessionManager):
+    def __init__(self, agent_manager, session_manager: SessionManager, 
+                 memory_manager: MemoryManager, context_compressor: ContextCompressor):
         """
         Initialize the Workflow Manager.
         
         Args:
             agent_manager: AgentManager instance for coordinating agents
             session_manager: SessionManager instance for session persistence
+            memory_manager: MemoryManager instance for historical patterns
+            context_compressor: ContextCompressor instance for token management
         """
         self.agent_manager = agent_manager
         self.session_manager = session_manager
+        self.memory_manager = memory_manager
+        self.context_compressor = context_compressor
+        self.context_manager: Optional[ContextManager] = None
         self.logger = logging.getLogger(__name__)
         
         # Workflow state (managed through SessionManager)
@@ -541,6 +550,9 @@ class WorkflowManager:
             if result.get("success", False):
                 # Update workflow state
                 self.current_workflow.work_directory = result.get("work_directory", "")
+                
+                # Initialize ContextManager with the work directory
+                await self._initialize_context_manager()
                 
                 # Store phase result
                 self.phase_results["requirements"] = result
@@ -1202,3 +1214,29 @@ class WorkflowManager:
         self.approval_log = self.session_manager.approval_log
         self.error_recovery_attempts = self.session_manager.error_recovery_attempts
         self.workflow_summary = self.session_manager.workflow_summary
+    
+    async def _initialize_context_manager(self) -> None:
+        """Initialize ContextManager with the current work directory."""
+        if not self.current_workflow or not self.current_workflow.work_directory:
+            self.logger.warning("Cannot initialize ContextManager: no work directory available")
+            return
+        
+        try:
+            self.context_manager = ContextManager(
+                work_dir=self.current_workflow.work_directory,
+                memory_manager=self.memory_manager,
+                context_compressor=self.context_compressor
+            )
+            
+            # Initialize the context manager
+            await self.context_manager.initialize()
+            
+            self.logger.info(f"ContextManager initialized for work directory: {self.current_workflow.work_directory}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize ContextManager: {e}")
+            self.context_manager = None
+    
+    def get_context_manager(self) -> Optional[ContextManager]:
+        """Get the current ContextManager instance."""
+        return self.context_manager

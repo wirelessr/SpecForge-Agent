@@ -253,6 +253,34 @@ class CompressionResult:
             self.timestamp = datetime.now().isoformat()
 
 
+# Context-related models are defined in context_manager.py
+# They are imported there to avoid circular dependencies
+# Import them here for convenience when the module is fully loaded
+def _import_context_models():
+    """Import context models after module initialization to avoid circular imports."""
+    try:
+        from ..context_manager import (
+            ProjectStructure, RequirementsDocument, DesignDocument, TasksDocument,
+            MemoryPattern, PlanContext, DesignContext, TasksContext, ImplementationContext
+        )
+        return {
+            'ProjectStructure': ProjectStructure,
+            'RequirementsDocument': RequirementsDocument,
+            'DesignDocument': DesignDocument,
+            'TasksDocument': TasksDocument,
+            'MemoryPattern': MemoryPattern,
+            'PlanContext': PlanContext,
+            'DesignContext': DesignContext,
+            'TasksContext': TasksContext,
+            'ImplementationContext': ImplementationContext
+        }
+    except ImportError:
+        return {}
+
+# Make context models available at module level
+_context_models = _import_context_models()
+globals().update(_context_models)
+
 # Type aliases for better code readability
 AgentContext = Dict[str, Any]
 MemoryContent = Dict[str, str]
