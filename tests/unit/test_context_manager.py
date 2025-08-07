@@ -57,9 +57,58 @@ class TestContextManager:
         return mock
     
     @pytest.fixture
-    def context_manager(self, temp_work_dir, mock_memory_manager, mock_context_compressor):
+    def mock_llm_config(self):
+        """Create a mock LLMConfig."""
+        from autogen_framework.models import LLMConfig
+        return LLMConfig(
+            base_url="http://test.local:8888/openai/v1",
+            model="models/gemini-2.0-flash",
+            api_key="test-key",
+            temperature=0.7,
+            max_output_tokens=8192,
+            timeout=60
+        )
+    
+    @pytest.fixture
+    def mock_token_manager(self):
+        """Create a mock TokenManager."""
+        mock = Mock()
+        mock.get_model_limit = Mock(return_value=1048576)  # Gemini 2.0 Flash limit
+        mock.check_token_limit = Mock(return_value=Mock(
+            current_tokens=1000,
+            model_limit=1048576,
+            percentage_used=0.001,
+            needs_compression=False
+        ))
+        mock.current_context_size = 0
+        mock.usage_stats = {'compressions_performed': 0}
+        return mock
+    
+    @pytest.fixture
+    def mock_config_manager(self):
+        """Create a mock ConfigManager."""
+        mock = Mock()
+        mock.get_token_config = Mock(return_value={
+            'default_token_limit': 8192,
+            'compression_threshold': 0.9,
+            'compression_enabled': True,
+            'compression_target_ratio': 0.5,
+            'verbose_logging': False
+        })
+        return mock
+    
+    @pytest.fixture
+    def context_manager(self, temp_work_dir, mock_memory_manager, mock_context_compressor, 
+                       mock_llm_config, mock_token_manager, mock_config_manager):
         """Create a ContextManager instance for testing."""
-        return ContextManager(temp_work_dir, mock_memory_manager, mock_context_compressor)
+        return ContextManager(
+            work_dir=temp_work_dir,
+            memory_manager=mock_memory_manager,
+            context_compressor=mock_context_compressor,
+            llm_config=mock_llm_config,
+            token_manager=mock_token_manager,
+            config_manager=mock_config_manager
+        )
     
     @pytest.fixture
     def sample_requirements_content(self):
@@ -496,11 +545,18 @@ The system follows a modular architecture with clear separation of concerns.
     async def test_context_compression(self, context_manager, mock_context_compressor):
         """Test context compression when token threshold is exceeded."""
         # Create large context that should trigger compression
-        # Default threshold is 8192, so we need > 8192 * 4 = 32768 characters
         large_content = "x" * 40000  # Large content to exceed threshold
         context = PlanContext(
             user_request=large_content,
             memory_patterns=[]
+        )
+        
+        # Configure TokenManager to indicate compression is needed
+        context_manager.token_manager.check_token_limit.return_value = Mock(
+            current_tokens=10000,  # Large token count
+            model_limit=8192,      # Smaller limit to trigger compression
+            percentage_used=1.2,   # Over 100% usage
+            needs_compression=True
         )
         
         # Test compression
