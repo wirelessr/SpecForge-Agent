@@ -49,7 +49,7 @@ class TestTokenManagementIntegration:
     def test_agent(self, test_llm_config, token_manager, mock_context_compressor):
         """Create a test agent with token management."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+            async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
             
             def get_agent_capabilities(self) -> list:
@@ -72,7 +72,7 @@ class TestTokenManagementIntegration:
     def test_agent_initialization_without_token_manager(self, test_llm_config):
         """Test that agent initializes correctly without token manager."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+            async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
             
             def get_agent_capabilities(self) -> list:
@@ -165,7 +165,7 @@ class TestTokenManagementIntegration:
         """Test fallback truncation when no context compressor is available."""
         # Create agent without context compressor
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+            async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
             
             def get_agent_capabilities(self) -> list:
@@ -366,7 +366,7 @@ class TestTokenManagementEdgeCases:
     def test_agent(self, test_llm_config, token_manager, mock_context_compressor):
         """Create a test agent with token management."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+            async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
             
             def get_agent_capabilities(self) -> list:
@@ -384,7 +384,7 @@ class TestTokenManagementEdgeCases:
     def test_agent_minimal(self, test_llm_config):
         """Create a minimal test agent without token management."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+            async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
             
             def get_agent_capabilities(self) -> list:

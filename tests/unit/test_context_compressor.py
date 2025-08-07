@@ -156,7 +156,7 @@ class TestContextCompressor:
         """Test compressing contexts from multiple agents."""
         # Create mock agents
         class MockAgent(BaseLLMAgent):
-            async def process_task(self, task_input):
+            async def _process_task_impl(self, task_input):
                 return {"result": "test"}
             
             def get_agent_capabilities(self):
@@ -203,7 +203,7 @@ class TestBaseLLMAgentCompression:
     def mock_agent(self, test_llm_config):
         """Create mock BaseLLMAgent for testing."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input):
+            async def _process_task_impl(self, task_input):
                 return {"result": "test"}
             
             def get_agent_capabilities(self):
