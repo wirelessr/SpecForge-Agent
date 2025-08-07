@@ -96,9 +96,17 @@ class TestContextManagementVerification:
         return ContextCompressor(test_llm_config)
     
     @pytest.fixture
-    def workflow_manager(self, agent_manager, session_manager, real_memory_manager, real_context_compressor):
+    def real_token_manager(self):
+        """Create a real TokenManager instance."""
+        from autogen_framework.token_manager import TokenManager
+        from autogen_framework.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        return TokenManager(config_manager)
+    
+    @pytest.fixture
+    def workflow_manager(self, agent_manager, session_manager, real_memory_manager, real_context_compressor, real_token_manager):
         """Create WorkflowManager instance."""
-        return WorkflowManager(agent_manager, session_manager, real_memory_manager, real_context_compressor)
+        return WorkflowManager(agent_manager, session_manager, real_memory_manager, real_context_compressor, real_token_manager)
     
     @pytest.fixture
     def sample_context_files(self, temp_workspace):

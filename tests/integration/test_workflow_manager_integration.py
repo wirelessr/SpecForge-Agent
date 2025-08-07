@@ -54,9 +54,19 @@ class TestWorkflowManagerIntegration:
         return mock
     
     @pytest.fixture
-    def workflow_manager(self, mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor):
+    def mock_token_manager(self):
+        """Create a mock TokenManager."""
+        mock = Mock()
+        mock.get_model_limit = Mock(return_value=8192)
+        mock.check_token_limit = Mock()
+        mock.current_context_size = 0
+        mock.usage_stats = {'compressions_performed': 0}
+        return mock
+    
+    @pytest.fixture
+    def workflow_manager(self, mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
         """Create a WorkflowManager instance for testing."""
-        return WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor)
+        return WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
     
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -115,7 +125,7 @@ class TestWorkflowManagerIntegration:
     
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_workflow_state_persistence_through_session_manager(self, workflow_manager, session_manager, mock_agent_manager, mock_memory_manager, mock_context_compressor):
+    async def test_workflow_state_persistence_through_session_manager(self, workflow_manager, session_manager, mock_agent_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
         """Test that workflow state persists through SessionManager."""
         # Initialize session first
         session_manager.load_or_create_session()
@@ -146,7 +156,7 @@ class TestWorkflowManagerIntegration:
         assert session_data["current_workflow"]["work_directory"] == "/test/work"
         
         # Create new WorkflowManager instance with same SessionManager
-        new_workflow_manager = WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor)
+        new_workflow_manager = WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
         
         # Verify workflow state was loaded from session
         assert new_workflow_manager.current_workflow is not None

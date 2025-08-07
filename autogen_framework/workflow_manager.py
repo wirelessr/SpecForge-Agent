@@ -20,6 +20,11 @@ from .context_manager import ContextManager
 from .memory_manager import MemoryManager
 from .context_compressor import ContextCompressor
 
+# Forward declaration for type hints
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .token_manager import TokenManager
+
 
 class UserApprovalStatus(Enum):
     """Status of user approval for workflow phases."""
@@ -43,7 +48,8 @@ class WorkflowManager:
     """
     
     def __init__(self, agent_manager, session_manager: SessionManager, 
-                 memory_manager: MemoryManager, context_compressor: ContextCompressor):
+                 memory_manager: MemoryManager, context_compressor: ContextCompressor,
+                 token_manager: 'TokenManager'):
         """
         Initialize the Workflow Manager.
         
@@ -52,11 +58,13 @@ class WorkflowManager:
             session_manager: SessionManager instance for session persistence
             memory_manager: MemoryManager instance for historical patterns
             context_compressor: ContextCompressor instance for token management
+            token_manager: TokenManager instance for actual token tracking
         """
         self.agent_manager = agent_manager
         self.session_manager = session_manager
         self.memory_manager = memory_manager
         self.context_compressor = context_compressor
+        self.token_manager = token_manager
         self.context_manager: Optional[ContextManager] = None
         self.logger = logging.getLogger(__name__)
         
@@ -1229,6 +1237,8 @@ class WorkflowManager:
                 work_dir=self.current_workflow.work_directory,
                 memory_manager=self.memory_manager,
                 context_compressor=self.context_compressor,
+                llm_config=self.agent_manager.llm_config,
+                token_manager=self.token_manager,
                 config_manager=config_manager
             )
             

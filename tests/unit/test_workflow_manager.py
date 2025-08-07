@@ -63,9 +63,19 @@ class TestWorkflowManager:
         return mock
     
     @pytest.fixture
-    def workflow_manager(self, mock_agent_manager, mock_session_manager, mock_memory_manager, mock_context_compressor):
+    def mock_token_manager(self):
+        """Create a mock TokenManager."""
+        mock = Mock()
+        mock.get_model_limit = Mock(return_value=8192)
+        mock.check_token_limit = Mock()
+        mock.current_context_size = 0
+        mock.usage_stats = {'compressions_performed': 0}
+        return mock
+    
+    @pytest.fixture
+    def workflow_manager(self, mock_agent_manager, mock_session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
         """Create a WorkflowManager instance with mocked dependencies."""
-        return WorkflowManager(mock_agent_manager, mock_session_manager, mock_memory_manager, mock_context_compressor)
+        return WorkflowManager(mock_agent_manager, mock_session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
     
     def test_initialization(self, workflow_manager, mock_agent_manager, mock_session_manager):
         """Test WorkflowManager initialization."""
@@ -459,9 +469,19 @@ class TestWorkflowManagerIntegration:
         return mock
     
     @pytest.fixture
-    def workflow_manager_with_real_session(self, mock_agent_manager, real_session_manager, mock_memory_manager, mock_context_compressor):
+    def mock_token_manager(self):
+        """Create a mock TokenManager."""
+        mock = Mock()
+        mock.get_model_limit = Mock(return_value=8192)
+        mock.check_token_limit = Mock()
+        mock.current_context_size = 0
+        mock.usage_stats = {'compressions_performed': 0}
+        return mock
+    
+    @pytest.fixture
+    def workflow_manager_with_real_session(self, mock_agent_manager, real_session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
         """Create WorkflowManager with real SessionManager."""
-        return WorkflowManager(mock_agent_manager, real_session_manager, mock_memory_manager, mock_context_compressor)
+        return WorkflowManager(mock_agent_manager, real_session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
     
     def test_session_persistence(self, workflow_manager_with_real_session):
         """Test that workflow state persists across sessions."""
@@ -479,7 +499,7 @@ class TestWorkflowManagerIntegration:
         
         # Create new WorkflowManager with same SessionManager
         new_workflow_manager = WorkflowManager(
-            Mock(), workflow_manager_with_real_session.session_manager, Mock(), Mock()
+            Mock(), workflow_manager_with_real_session.session_manager, Mock(), Mock(), Mock()
         )
         
         # Verify state was loaded

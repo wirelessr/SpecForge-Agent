@@ -23,6 +23,11 @@ from .context_compressor import ContextCompressor
 from .config_manager import ConfigManager
 from .models import LLMConfig, TaskDefinition, ExecutionResult
 
+# Forward declaration for type hints
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .token_manager import TokenManager
+
 
 @dataclass
 class ProjectStructure:
@@ -204,7 +209,8 @@ class ContextManager:
     """
     
     def __init__(self, work_dir: str, memory_manager: MemoryManager, 
-                 context_compressor: ContextCompressor, config_manager: Optional[ConfigManager] = None):
+                 context_compressor: ContextCompressor, llm_config: LLMConfig,
+                 token_manager: 'TokenManager', config_manager: Optional[ConfigManager] = None):
         """
         Initialize the ContextManager.
         
@@ -212,11 +218,15 @@ class ContextManager:
             work_dir: Working directory containing project files
             memory_manager: MemoryManager instance for historical patterns
             context_compressor: ContextCompressor instance for token management
+            llm_config: LLM configuration containing model information
+            token_manager: TokenManager instance for actual token tracking
             config_manager: ConfigManager instance for global configuration (optional)
         """
         self.work_dir = Path(work_dir)
         self.memory_manager = memory_manager
         self.context_compressor = context_compressor
+        self.llm_config = llm_config
+        self.token_manager = token_manager
         self.config_manager = config_manager or ConfigManager()
         
         # Set up logging
@@ -224,7 +234,10 @@ class ContextManager:
         
         # Load token configuration from global config
         self.token_config = self.config_manager.get_token_config()
-        self.token_threshold = self.token_config.get('default_token_limit', 8192)
+        
+        # Get model-specific token limit from TokenManager
+        self.model_token_limit = self.token_manager.get_model_limit(self.llm_config.model)
+        self.compression_threshold = self.token_config.get('compression_threshold', 0.9)
         
         # Initialize context data
         self.requirements: Optional[RequirementsDocument] = None
@@ -240,7 +253,7 @@ class ContextManager:
         self._last_structure_analysis: Optional[datetime] = None
         
         self.logger.info(f"ContextManager initialized for work_dir: {work_dir}")
-        self.logger.info(f"Token threshold: {self.token_threshold}")
+        self.logger.info(f"Model: {self.llm_config.model}, Token limit: {self.model_token_limit}, Compression threshold: {self.compression_threshold:.1%}")
     
     async def initialize(self) -> None:
         """Load all available project context."""
@@ -690,22 +703,33 @@ class ContextManager:
     
     async def _compress_if_needed(self, context: Union[PlanContext, DesignContext, TasksContext, ImplementationContext], 
                                  context_type: str) -> Union[PlanContext, DesignContext, TasksContext, ImplementationContext]:
-        """Compress context if it exceeds token thresholds."""
+        """Compress context if it exceeds token thresholds using TokenManager."""
         try:
             # Estimate token count (rough approximation: 1 token ≈ 4 characters)
             context_str = self._context_to_string(context)
             estimated_tokens = len(context_str) // 4
             
-            threshold = self.token_threshold
+            # Update TokenManager with estimated context size
+            self.token_manager.current_context_size = estimated_tokens
             
-            if estimated_tokens > threshold:
-                self.logger.info(f"Context size ({estimated_tokens} tokens) exceeds threshold ({threshold}), compressing...")
+            # Check if compression is needed using TokenManager
+            token_check = self.token_manager.check_token_limit(self.llm_config.model)
+            
+            if token_check.needs_compression:
+                self.logger.info(
+                    f"Context size ({token_check.current_tokens} tokens) exceeds threshold "
+                    f"({token_check.percentage_used:.1%} of {token_check.model_limit}), compressing..."
+                )
                 
                 # Convert context to dictionary for compression
                 context_dict = self._context_to_dict(context)
                 
-                # Calculate target reduction
-                target_reduction = 1 - (threshold / estimated_tokens)
+                # Calculate target reduction to get below threshold
+                target_tokens = int(token_check.model_limit * self.compression_threshold)
+                target_reduction = 1 - (target_tokens / token_check.current_tokens)
+                target_reduction = max(0.1, min(0.8, target_reduction))  # Clamp between 10% and 80%
+                
+                self.logger.info(f"Target reduction: {target_reduction:.1%} (target: {target_tokens} tokens)")
                 
                 # Compress using ContextCompressor
                 compression_result = await self.context_compressor.compress_context(context_dict, target_reduction)
@@ -716,10 +740,24 @@ class ContextManager:
                     compressed_context.compressed = True
                     compressed_context.compression_ratio = compression_result.compression_ratio
                     
-                    self.logger.info(f"Context compressed successfully. Ratio: {compression_result.compression_ratio:.2f}")
+                    # Update TokenManager with new compressed size
+                    compressed_tokens = int(token_check.current_tokens * (1 - compression_result.compression_ratio))
+                    self.token_manager.current_context_size = compressed_tokens
+                    self.token_manager.usage_stats['compressions_performed'] += 1
+                    
+                    self.logger.info(
+                        f"Context compressed successfully. "
+                        f"Ratio: {compression_result.compression_ratio:.2f}, "
+                        f"New size: {compressed_tokens} tokens"
+                    )
                     return compressed_context
                 else:
                     self.logger.warning(f"Context compression failed: {compression_result.error}")
+            else:
+                self.logger.debug(
+                    f"Context size ({token_check.current_tokens} tokens, {token_check.percentage_used:.1%}) "
+                    f"within limits for model {self.llm_config.model}"
+                )
             
             return context
             
