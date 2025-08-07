@@ -2,7 +2,7 @@
 
 ## Overview
 
-The ContextManager now uses global token configuration from the ConfigManager instead of hardcoded values. This allows for flexible, environment-specific token threshold management.
+The ContextManager now uses global token configuration from the ConfigManager instead of hardcoded values. This provides a unified, configurable token threshold for all agents.
 
 ## Configuration Options
 
@@ -11,7 +11,7 @@ The ContextManager now uses global token configuration from the ConfigManager in
 The following environment variables control token management:
 
 ```bash
-# Base token limit for all agents (default: 8192)
+# Unified token limit for all agents (default: 8192)
 DEFAULT_TOKEN_LIMIT=8192
 
 # Token compression threshold (0.0-1.0, default: 0.9)
@@ -27,36 +27,15 @@ COMPRESSION_TARGET_RATIO=0.5
 VERBOSE_TOKEN_LOGGING=false
 ```
 
-### Agent-Specific Token Thresholds
+### Unified Token Threshold
 
-You can override token thresholds for specific agent types:
-
-```bash
-# Custom token thresholds for each agent type
-CONTEXT_TOKEN_THRESHOLD_PLAN=4000
-CONTEXT_TOKEN_THRESHOLD_DESIGN=6000
-CONTEXT_TOKEN_THRESHOLD_TASKS=5000
-CONTEXT_TOKEN_THRESHOLD_IMPLEMENTATION=8000
-```
-
-### Default Behavior
-
-If no agent-specific thresholds are set, the system uses these multipliers of `DEFAULT_TOKEN_LIMIT`:
-
-- **PlanAgent**: 0.5x (50% of base limit)
-- **DesignAgent**: 0.75x (75% of base limit)
-- **TasksAgent**: 0.625x (62.5% of base limit)
-- **ImplementAgent**: 1.0x (100% of base limit)
+All agents (PlanAgent, DesignAgent, TasksAgent, ImplementAgent) use the same token threshold defined by `DEFAULT_TOKEN_LIMIT`. This ensures consistent behavior across all agent types.
 
 ## Example Configuration
 
 ### Development Environment (.env.development)
 ```bash
 DEFAULT_TOKEN_LIMIT=4096
-CONTEXT_TOKEN_THRESHOLD_PLAN=2000
-CONTEXT_TOKEN_THRESHOLD_DESIGN=3000
-CONTEXT_TOKEN_THRESHOLD_TASKS=2500
-CONTEXT_TOKEN_THRESHOLD_IMPLEMENTATION=4000
 TOKEN_COMPRESSION_THRESHOLD=0.8
 VERBOSE_TOKEN_LOGGING=true
 ```
@@ -64,7 +43,6 @@ VERBOSE_TOKEN_LOGGING=true
 ### Production Environment (.env.production)
 ```bash
 DEFAULT_TOKEN_LIMIT=8192
-CONTEXT_TOKEN_THRESHOLD_IMPLEMENTATION=8000
 TOKEN_COMPRESSION_THRESHOLD=0.9
 CONTEXT_COMPRESSION_ENABLED=true
 COMPRESSION_TARGET_RATIO=0.6
@@ -73,10 +51,6 @@ COMPRESSION_TARGET_RATIO=0.6
 ### High-Performance Environment (.env.high-performance)
 ```bash
 DEFAULT_TOKEN_LIMIT=16384
-CONTEXT_TOKEN_THRESHOLD_PLAN=8000
-CONTEXT_TOKEN_THRESHOLD_DESIGN=12000
-CONTEXT_TOKEN_THRESHOLD_TASKS=10000
-CONTEXT_TOKEN_THRESHOLD_IMPLEMENTATION=16000
 TOKEN_COMPRESSION_THRESHOLD=0.95
 ```
 
@@ -113,25 +87,25 @@ token_config = context_manager.token_config
 print(f"Default token limit: {token_config['default_token_limit']}")
 print(f"Compression enabled: {token_config['compression_enabled']}")
 
-# Get current thresholds
-thresholds = context_manager.token_thresholds
-print(f"Agent thresholds: {thresholds}")
+# Get current threshold
+threshold = context_manager.token_threshold
+print(f"Token threshold: {threshold}")
 ```
 
 ## Benefits
 
 1. **Flexibility**: Different environments can have different token limits
-2. **Performance Tuning**: Adjust thresholds based on available resources
+2. **Performance Tuning**: Adjust threshold based on available resources
 3. **Cost Control**: Lower limits in development, higher in production
-4. **Agent-Specific Optimization**: Fine-tune each agent's context size
+4. **Consistency**: All agents use the same token threshold for predictable behavior
 5. **Runtime Configuration**: No code changes needed for threshold adjustments
 
 ## Migration from Hardcoded Values
 
-The old hardcoded `TOKEN_THRESHOLDS` dictionary has been replaced with dynamic configuration:
+The old hardcoded `TOKEN_THRESHOLDS` dictionary has been replaced with unified configuration:
 
 ```python
-# OLD (hardcoded)
+# OLD (hardcoded, agent-specific)
 TOKEN_THRESHOLDS = {
     "plan": 4000,
     "design": 6000,
@@ -139,11 +113,8 @@ TOKEN_THRESHOLDS = {
     "implementation": 8000
 }
 
-# NEW (configurable)
-def _get_token_thresholds(self) -> Dict[str, int]:
-    base_limit = self.token_config.get('default_token_limit', 8192)
-    # Dynamic calculation based on environment variables
-    # Falls back to multipliers if no specific values set
+# NEW (configurable, unified)
+self.token_threshold = self.token_config.get('default_token_limit', 8192)
 ```
 
 ## Troubleshooting

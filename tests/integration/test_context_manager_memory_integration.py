@@ -223,23 +223,14 @@ The system uses memory patterns to inform design decisions.
         """Test automatic context compression based on agent-specific thresholds."""
         await context_manager.initialize()
         
-        # Test different agent type thresholds
-        thresholds = context_manager.token_thresholds
-        assert "plan" in thresholds
-        assert "design" in thresholds
-        assert "tasks" in thresholds
-        assert "implementation" in thresholds
+        # Test unified token threshold
+        threshold = context_manager.token_threshold
+        assert threshold > 0
+        assert isinstance(threshold, int)
         
-        # Verify thresholds are reasonable
-        assert thresholds["plan"] > 0
-        assert thresholds["design"] > 0
-        assert thresholds["tasks"] > 0
-        assert thresholds["implementation"] > 0
-        
-        # Implementation should have highest threshold
-        assert thresholds["implementation"] >= thresholds["design"]
-        assert thresholds["implementation"] >= thresholds["tasks"]
-        assert thresholds["implementation"] >= thresholds["plan"]
+        # Verify threshold is reasonable (should be default or configured value)
+        assert threshold >= 1000  # Minimum reasonable threshold
+        assert threshold <= 100000  # Maximum reasonable threshold
     
     @pytest.mark.asyncio
     async def test_memory_search_with_different_queries(self, context_manager, real_memory_manager):
