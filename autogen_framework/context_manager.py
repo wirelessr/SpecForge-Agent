@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 from .memory_manager import MemoryManager
 from .context_compressor import ContextCompressor
+from .config_manager import ConfigManager
 from .models import LLMConfig, TaskDefinition, ExecutionResult
 
 
@@ -202,16 +203,8 @@ class ContextManager:
     for different agent types and integrates with MemoryManager and ContextCompressor.
     """
     
-    # Token thresholds for different agent types
-    TOKEN_THRESHOLDS = {
-        "plan": 4000,
-        "design": 6000,
-        "tasks": 5000,
-        "implementation": 8000
-    }
-    
     def __init__(self, work_dir: str, memory_manager: MemoryManager, 
-                 context_compressor: ContextCompressor):
+                 context_compressor: ContextCompressor, config_manager: Optional[ConfigManager] = None):
         """
         Initialize the ContextManager.
         
@@ -219,13 +212,19 @@ class ContextManager:
             work_dir: Working directory containing project files
             memory_manager: MemoryManager instance for historical patterns
             context_compressor: ContextCompressor instance for token management
+            config_manager: ConfigManager instance for global configuration (optional)
         """
         self.work_dir = Path(work_dir)
         self.memory_manager = memory_manager
         self.context_compressor = context_compressor
+        self.config_manager = config_manager or ConfigManager()
         
         # Set up logging
         self.logger = logging.getLogger(__name__)
+        
+        # Load token configuration from global config
+        self.token_config = self.config_manager.get_token_config()
+        self.token_thresholds = self._get_token_thresholds()
         
         # Initialize context data
         self.requirements: Optional[RequirementsDocument] = None
@@ -241,6 +240,43 @@ class ContextManager:
         self._last_structure_analysis: Optional[datetime] = None
         
         self.logger.info(f"ContextManager initialized for work_dir: {work_dir}")
+        self.logger.info(f"Token thresholds: {self.token_thresholds}")
+    
+    def _get_token_thresholds(self) -> Dict[str, int]:
+        """
+        Get token thresholds for different agent types from configuration.
+        
+        Returns:
+            Dictionary mapping agent types to token thresholds
+        """
+        # Get base token limit from config
+        base_limit = self.token_config.get('default_token_limit', 8192)
+        
+        # Define agent-specific multipliers (can be overridden by environment variables)
+        default_multipliers = {
+            "plan": 0.5,        # PlanAgent needs less context
+            "design": 0.75,     # DesignAgent needs moderate context  
+            "tasks": 0.625,     # TasksAgent needs moderate context
+            "implementation": 1.0  # ImplementAgent needs full context
+        }
+        
+        thresholds = {}
+        for agent_type, multiplier in default_multipliers.items():
+            # Check for agent-specific environment variable first
+            env_var = f'CONTEXT_TOKEN_THRESHOLD_{agent_type.upper()}'
+            env_value = os.getenv(env_var)
+            
+            if env_value:
+                try:
+                    thresholds[agent_type] = int(env_value)
+                    self.logger.info(f"Using custom token threshold for {agent_type}: {env_value}")
+                except ValueError:
+                    self.logger.warning(f"Invalid token threshold for {agent_type}: {env_value}, using default")
+                    thresholds[agent_type] = int(base_limit * multiplier)
+            else:
+                thresholds[agent_type] = int(base_limit * multiplier)
+        
+        return thresholds
     
     async def initialize(self) -> None:
         """Load all available project context."""
@@ -696,7 +732,7 @@ class ContextManager:
             context_str = self._context_to_string(context)
             estimated_tokens = len(context_str) // 4
             
-            threshold = self.TOKEN_THRESHOLDS.get(context_type, 6000)
+            threshold = self.token_thresholds.get(context_type, self.token_config.get('default_token_limit', 8192))
             
             if estimated_tokens > threshold:
                 self.logger.info(f"Context size ({estimated_tokens} tokens) exceeds threshold ({threshold}), compressing...")

@@ -19,10 +19,19 @@ from ..models import LLMConfig, AgentContext, SystemInstructions, CompressionRes
 
 # Forward declarations for type hints
 from typing import TYPE_CHECKING
+from dataclasses import dataclass
+
 if TYPE_CHECKING:
     from ..token_manager import TokenManager
     from ..context_compressor import ContextCompressor
     from ..context_manager import ContextManager
+
+
+@dataclass
+class ContextSpec:
+    """Specification for context requirements."""
+    context_type: str  # 'plan', 'design', 'tasks', 'implementation'
+    required_params: Optional[Dict[str, Any]] = None
 
 
 class BaseLLMAgent(ABC):
@@ -545,59 +554,118 @@ class BaseLLMAgent(ABC):
             task_input: Dictionary containing task parameters
         """
         try:
-            agent_name = self.name.lower()
+            # Let each agent define what context it needs
+            context_spec = self.get_context_requirements(task_input)
+            if not context_spec:
+                return
             
-            if agent_name == "planagent" and task_input.get("user_request"):
-                plan_context = await self.context_manager.get_plan_context(task_input["user_request"])
-                self.update_context({
-                    "plan_context": plan_context,
-                    "project_structure": plan_context.project_structure,
-                    "memory_patterns": plan_context.memory_patterns,
-                    "compressed": plan_context.compressed
-                })
-                self.logger.info("Retrieved PlanContext from ContextManager")
-                
-            elif agent_name == "designagent" and task_input.get("user_request"):
-                design_context = await self.context_manager.get_design_context(task_input["user_request"])
-                self.update_context({
-                    "design_context": design_context,
-                    "requirements": design_context.requirements,
-                    "project_structure": design_context.project_structure,
-                    "memory_patterns": design_context.memory_patterns,
-                    "compressed": design_context.compressed
-                })
-                self.logger.info("Retrieved DesignContext from ContextManager")
-                
-            elif agent_name == "tasksagent" and task_input.get("user_request"):
-                tasks_context = await self.context_manager.get_tasks_context(task_input["user_request"])
-                self.update_context({
-                    "tasks_context": tasks_context,
-                    "requirements": tasks_context.requirements,
-                    "design": tasks_context.design,
-                    "memory_patterns": tasks_context.memory_patterns,
-                    "compressed": tasks_context.compressed
-                })
-                self.logger.info("Retrieved TasksContext from ContextManager")
-                
-            elif "implement" in agent_name and task_input.get("task"):
-                implementation_context = await self.context_manager.get_implementation_context(task_input["task"])
-                self.update_context({
-                    "implementation_context": implementation_context,
-                    "task": implementation_context.task,
-                    "requirements": implementation_context.requirements,
-                    "design": implementation_context.design,
-                    "tasks": implementation_context.tasks,
-                    "project_structure": implementation_context.project_structure,
-                    "execution_history": implementation_context.execution_history,
-                    "related_tasks": implementation_context.related_tasks,
-                    "memory_patterns": implementation_context.memory_patterns,
-                    "compressed": implementation_context.compressed
-                })
-                self.logger.info("Retrieved ImplementationContext from ContextManager")
+            # Get context based on specification
+            context = await self._get_context_by_spec(context_spec, task_input)
+            if context:
+                # Format context for agent consumption
+                formatted_context = self._format_context_for_agent(context, context_spec.context_type)
+                self.update_context(formatted_context)
+                self.logger.info(f"Retrieved {context_spec.context_type}Context from ContextManager")
                 
         except Exception as e:
             self.logger.warning(f"Failed to retrieve context from ContextManager: {e}")
             # Continue without context - agents should handle missing context gracefully
+    
+    async def _get_context_by_spec(self, context_spec: 'ContextSpec', task_input: Dict[str, Any]) -> Optional[Any]:
+        """
+        Get context based on context specification.
+        
+        Args:
+            context_spec: Context specification from agent
+            task_input: Task input parameters
+            
+        Returns:
+            Context object or None if retrieval fails
+        """
+        context_type = context_spec.context_type
+        method_name = f'get_{context_type}_context'
+        
+        if not hasattr(self.context_manager, method_name):
+            self.logger.warning(f"ContextManager does not have method: {method_name}")
+            return None
+        
+        context_method = getattr(self.context_manager, method_name)
+        
+        # Call appropriate context method based on type
+        if context_type in ['plan', 'design', 'tasks']:
+            user_request = task_input.get('user_request')
+            if not user_request:
+                self.logger.warning(f"{context_type} context requires user_request")
+                return None
+            return await context_method(user_request)
+        elif context_type == 'implementation':
+            task = task_input.get('task')
+            if not task:
+                self.logger.warning("implementation context requires task")
+                return None
+            return await context_method(task)
+        else:
+            self.logger.warning(f"Unknown context type: {context_type}")
+            return None
+    
+    def _format_context_for_agent(self, context: Any, context_type: str) -> Dict[str, Any]:
+        """
+        Format context object for agent consumption.
+        
+        Args:
+            context: Context object from ContextManager
+            context_type: Type of context (plan, design, tasks, implementation)
+            
+        Returns:
+            Dictionary with formatted context data
+        """
+        formatted = {f"{context_type}_context": context}
+        
+        # Add commonly used context attributes
+        if hasattr(context, 'project_structure') and context.project_structure:
+            formatted['project_structure'] = context.project_structure
+        if hasattr(context, 'memory_patterns') and context.memory_patterns:
+            formatted['memory_patterns'] = context.memory_patterns
+        if hasattr(context, 'compressed'):
+            formatted['compressed'] = context.compressed
+        
+        # Add context-specific attributes
+        if context_type == 'design':
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+        elif context_type == 'tasks':
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+            if hasattr(context, 'design') and context.design:
+                formatted['design'] = context.design
+        elif context_type == 'implementation':
+            if hasattr(context, 'task') and context.task:
+                formatted['task'] = context.task
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+            if hasattr(context, 'design') and context.design:
+                formatted['design'] = context.design
+            if hasattr(context, 'tasks') and context.tasks:
+                formatted['tasks'] = context.tasks
+            if hasattr(context, 'execution_history') and context.execution_history:
+                formatted['execution_history'] = context.execution_history
+            if hasattr(context, 'related_tasks') and context.related_tasks:
+                formatted['related_tasks'] = context.related_tasks
+        
+        return formatted
+    
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """
+        Define what context this agent requires.
+        
+        Args:
+            task_input: Task input parameters
+            
+        Returns:
+            ContextSpec defining required context, or None if no context needed
+        """
+        # Default implementation - agents can override this
+        return None
     
     @abstractmethod
     def get_agent_capabilities(self) -> List[str]:

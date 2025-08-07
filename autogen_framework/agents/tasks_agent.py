@@ -80,6 +80,13 @@ You should generate tasks that:
 
 Always maintain the existing task generation logic, prompts, and formatting unchanged."""
     
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """Define context requirements for TasksAgent."""
+        if task_input.get("user_request"):
+            from .base_agent import ContextSpec
+            return ContextSpec(context_type="tasks")
+        return None
+    
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task assigned to the TasksAgent.

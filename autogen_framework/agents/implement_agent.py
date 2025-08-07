@@ -68,6 +68,13 @@ class ImplementAgent(BaseLLMAgent):
         
         self.logger.info(f"ImplementAgent initialized with shell executor")
     
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """Define context requirements for ImplementAgent."""
+        if task_input.get("task"):
+            from .base_agent import ContextSpec
+            return ContextSpec(context_type="implementation")
+        return None
+    
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task assigned to the ImplementAgent.

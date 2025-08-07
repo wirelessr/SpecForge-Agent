@@ -224,7 +224,7 @@ The system uses memory patterns to inform design decisions.
         await context_manager.initialize()
         
         # Test different agent type thresholds
-        thresholds = context_manager.TOKEN_THRESHOLDS
+        thresholds = context_manager.token_thresholds
         assert "plan" in thresholds
         assert "design" in thresholds
         assert "tasks" in thresholds

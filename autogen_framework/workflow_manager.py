@@ -1222,10 +1222,14 @@ class WorkflowManager:
             return
         
         try:
+            # Get config manager from agent manager if available
+            config_manager = getattr(self.agent_manager, 'config_manager', None)
+            
             self.context_manager = ContextManager(
                 work_dir=self.current_workflow.work_directory,
                 memory_manager=self.memory_manager,
-                context_compressor=self.context_compressor
+                context_compressor=self.context_compressor,
+                config_manager=config_manager
             )
             
             # Initialize the context manager
