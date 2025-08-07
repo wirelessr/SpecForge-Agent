@@ -39,7 +39,7 @@ class TestBaseLLMAgentRealAutoGenIntegration:
     def test_agent_class(self):
         """Create a concrete test implementation of BaseLLMAgent."""
         class TestAgent(BaseLLMAgent):
-            async def process_task(self, task_input):
+            async def _process_task_impl(self, task_input):
                 return {"result": "test_result"}
             
             def get_agent_capabilities(self):
