@@ -705,15 +705,16 @@ class ContextManager:
                                  context_type: str) -> Union[PlanContext, DesignContext, TasksContext, ImplementationContext]:
         """Compress context if it exceeds token thresholds using TokenManager."""
         try:
-            # Estimate token count (rough approximation: 1 token ≈ 4 characters)
+            # Estimate token count for static content (rough approximation: 1 token ≈ 4 characters)
             context_str = self._context_to_string(context)
             estimated_tokens = len(context_str) // 4
             
-            # Update TokenManager with estimated context size
-            self.token_manager.current_context_size = estimated_tokens
-            
-            # Check if compression is needed using TokenManager
-            token_check = self.token_manager.check_token_limit(self.llm_config.model)
+            # Check if compression is needed using TokenManager with estimated static tokens
+            # Don't update current_context_size here - let TokenManager handle the logic
+            token_check = self.token_manager.check_token_limit(
+                self.llm_config.model, 
+                estimated_static_tokens=estimated_tokens
+            )
             
             if token_check.needs_compression:
                 self.logger.info(
@@ -740,15 +741,12 @@ class ContextManager:
                     compressed_context.compressed = True
                     compressed_context.compression_ratio = compression_result.compression_ratio
                     
-                    # Update TokenManager with new compressed size
-                    compressed_tokens = int(token_check.current_tokens * (1 - compression_result.compression_ratio))
-                    self.token_manager.current_context_size = compressed_tokens
-                    self.token_manager.usage_stats['compressions_performed'] += 1
+                    # Notify TokenManager about compression (let it handle its own state)
+                    self.token_manager.increment_compression_count()
                     
                     self.logger.info(
                         f"Context compressed successfully. "
-                        f"Ratio: {compression_result.compression_ratio:.2f}, "
-                        f"New size: {compressed_tokens} tokens"
+                        f"Ratio: {compression_result.compression_ratio:.2f}"
                     )
                     return compressed_context
                 else:

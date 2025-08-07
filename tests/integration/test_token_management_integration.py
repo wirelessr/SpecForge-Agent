@@ -106,8 +106,11 @@ class TestTokenManagementIntegration:
             
             response = await test_agent.generate_response("Test prompt")
             
-            # Verify token limit was checked
-            token_manager.check_token_limit.assert_called_once_with(test_agent.llm_config.model)
+            # Verify token limit was checked (may include estimated_static_tokens parameter)
+            token_manager.check_token_limit.assert_called_once()
+            # Check that the first argument is the model
+            call_args = token_manager.check_token_limit.call_args
+            assert call_args[0][0] == test_agent.llm_config.model
             
             # Verify response was generated
             assert response == "Test response"
@@ -147,8 +150,11 @@ class TestTokenManagementIntegration:
             
             response = await test_agent.generate_response("Test prompt")
             
-            # Verify token limit was checked
-            token_manager.check_token_limit.assert_called_once_with(test_agent.llm_config.model)
+            # Verify token limit was checked (may include estimated_static_tokens parameter)
+            token_manager.check_token_limit.assert_called_once()
+            # Check that the first argument is the model
+            call_args = token_manager.check_token_limit.call_args
+            assert call_args[0][0] == test_agent.llm_config.model
             
             # Verify compression was triggered
             mock_context_compressor.compress_context.assert_called_once()

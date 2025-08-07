@@ -302,11 +302,21 @@ class BaseLLMAgent(ABC):
         try:
             # Check token limits before sending request
             if self.token_manager:
-                token_check = self.token_manager.check_token_limit(self.llm_config.model)
+                # Estimate static content tokens if no actual usage yet
+                estimated_static_tokens = None
+                if self.token_manager.usage_stats['requests_made'] == 0:
+                    # Static phase: estimate tokens for current context
+                    estimated_static_tokens = self._estimate_static_content_tokens()
+                
+                token_check = self.token_manager.check_token_limit(
+                    self.llm_config.model, 
+                    estimated_static_tokens
+                )
                 
                 if token_check.needs_compression:
+                    phase = "static" if estimated_static_tokens else "dynamic"
                     self.logger.info(
-                        f"Token limit threshold reached for {self.name}: "
+                        f"Token limit threshold reached for {self.name} ({phase} phase): "
                         f"{token_check.current_tokens}/{token_check.model_limit} "
                         f"({token_check.percentage_used:.1%}). Triggering compression."
                     )
@@ -470,6 +480,50 @@ class BaseLLMAgent(ABC):
         estimated_tokens += 50  # Base overhead for prompt processing
         
         return max(estimated_tokens, 1)  # Ensure at least 1 token is counted
+    
+
+    def _estimate_static_content_tokens(self) -> int:
+        """
+        Estimate token count for static content (system message, context, memory).
+        
+        This is used in the static phase before any LLM calls have been made.
+        
+        Returns:
+            Estimated token count for static content
+        """
+        total_chars = 0
+        
+        # Count system message
+        if self.system_message:
+            total_chars += len(self.system_message)
+        
+        # Count context content
+        for key, value in self.context.items():
+            if isinstance(value, str):
+                total_chars += len(value)
+            elif isinstance(value, (list, dict)):
+                total_chars += len(str(value))
+        
+        # Count memory context
+        for key, value in self.memory_context.items():
+            if isinstance(value, str):
+                total_chars += len(value)
+            elif isinstance(value, (list, dict)):
+                total_chars += len(str(value))
+        
+        # Count conversation history
+        for entry in self.conversation_history:
+            if 'content' in entry:
+                total_chars += len(entry['content'])
+        
+        # Rough estimation: 1 token ≈ 4 characters for most models
+        estimated_tokens = total_chars // 4
+        
+        # Add base overhead for prompt structure
+        estimated_tokens += 100  # Base overhead for prompt formatting
+        
+        self.logger.debug(f"Estimated static content tokens for {self.name}: {estimated_tokens}")
+        return max(estimated_tokens, 1)
     
 
     
