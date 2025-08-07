@@ -93,6 +93,20 @@ class TestContextManagerWorkflowSimulation:
         return ContextCompressor(test_llm_config)
     
     @pytest.fixture
+    def real_token_manager(self):
+        """Create a real TokenManager instance."""
+        from autogen_framework.token_manager import TokenManager
+        from autogen_framework.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        return TokenManager(config_manager)
+    
+    @pytest.fixture
+    def real_config_manager(self):
+        """Create a real ConfigManager instance."""
+        from autogen_framework.config_manager import ConfigManager
+        return ConfigManager()
+    
+    @pytest.fixture
     def project_workspace(self, temp_workspace):
         """Create a complete project workspace for workflow simulation testing."""
         project_dir = Path(temp_workspace) / "simulation_project"
@@ -103,9 +117,17 @@ class TestContextManagerWorkflowSimulation:
         return str(project_dir)
     
     @pytest.fixture
-    def context_manager(self, project_workspace, real_memory_manager, real_context_compressor):
+    def context_manager(self, project_workspace, real_memory_manager, real_context_compressor,
+                       test_llm_config, real_token_manager, real_config_manager):
         """Create a ContextManager for E2E testing."""
-        return ContextManager(project_workspace, real_memory_manager, real_context_compressor)
+        return ContextManager(
+            work_dir=project_workspace,
+            memory_manager=real_memory_manager,
+            context_compressor=real_context_compressor,
+            llm_config=test_llm_config,
+            token_manager=real_token_manager,
+            config_manager=real_config_manager
+        )
     
     @pytest.mark.asyncio
     async def test_complete_workflow_simulation(self, context_manager, project_workspace):
@@ -650,7 +672,8 @@ interface DataRecord {
         assert tasks_ctx.design.content == impl_ctx.design.content
     
     @pytest.mark.asyncio
-    async def test_workflow_state_persistence(self, context_manager, project_workspace):
+    async def test_workflow_state_persistence(self, context_manager, project_workspace, 
+                                             test_llm_config, real_token_manager, real_config_manager):
         """Test that workflow state is properly persisted and can be restored."""
         project_dir = Path(project_workspace)
         
@@ -674,9 +697,12 @@ interface DataRecord {
         
         # Create new context manager instance (simulating restart)
         new_context_manager = ContextManager(
-            project_workspace, 
-            context_manager.memory_manager, 
-            context_manager.context_compressor
+            work_dir=project_workspace,
+            memory_manager=context_manager.memory_manager,
+            context_compressor=context_manager.context_compressor,
+            llm_config=test_llm_config,
+            token_manager=real_token_manager,
+            config_manager=real_config_manager
         )
         
         await new_context_manager.initialize()

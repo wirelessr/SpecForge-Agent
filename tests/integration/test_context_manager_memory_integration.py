@@ -92,6 +92,20 @@ class TestContextManagerMemoryIntegration:
         return ContextCompressor(test_llm_config)
     
     @pytest.fixture
+    def real_token_manager(self):
+        """Create a real TokenManager instance."""
+        from autogen_framework.token_manager import TokenManager
+        from autogen_framework.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        return TokenManager(config_manager)
+    
+    @pytest.fixture
+    def real_config_manager(self):
+        """Create a real ConfigManager instance."""
+        from autogen_framework.config_manager import ConfigManager
+        return ConfigManager()
+    
+    @pytest.fixture
     def work_dir(self, temp_workspace):
         """Create a work directory with test project files."""
         work_dir = Path(temp_workspace) / "test_project"
@@ -121,9 +135,17 @@ The system uses memory patterns to inform design decisions.
         return str(work_dir)
     
     @pytest.fixture
-    def context_manager(self, work_dir, real_memory_manager, real_context_compressor):
+    def context_manager(self, work_dir, real_memory_manager, real_context_compressor,
+                       test_llm_config, real_token_manager, real_config_manager):
         """Create a ContextManager with real dependencies."""
-        return ContextManager(work_dir, real_memory_manager, real_context_compressor)
+        return ContextManager(
+            work_dir=work_dir,
+            memory_manager=real_memory_manager,
+            context_compressor=real_context_compressor,
+            llm_config=test_llm_config,
+            token_manager=real_token_manager,
+            config_manager=real_config_manager
+        )
     
     @pytest.mark.asyncio
     async def test_memory_manager_integration(self, context_manager, real_memory_manager):
@@ -223,14 +245,18 @@ The system uses memory patterns to inform design decisions.
         """Test automatic context compression based on agent-specific thresholds."""
         await context_manager.initialize()
         
-        # Test unified token threshold
-        threshold = context_manager.token_threshold
-        assert threshold > 0
-        assert isinstance(threshold, int)
+        # Test model-specific token limit
+        model_limit = context_manager.model_token_limit
+        assert model_limit > 0
+        assert isinstance(model_limit, int)
         
-        # Verify threshold is reasonable (should be default or configured value)
-        assert threshold >= 1000  # Minimum reasonable threshold
-        assert threshold <= 100000  # Maximum reasonable threshold
+        # Verify limit is reasonable (should be model-specific value)
+        assert model_limit >= 1000  # Minimum reasonable limit
+        assert model_limit <= 10000000  # Maximum reasonable limit (for large models like Gemini)
+        
+        # Test compression threshold
+        compression_threshold = context_manager.compression_threshold
+        assert 0.0 < compression_threshold <= 1.0  # Should be a percentage
     
     @pytest.mark.asyncio
     async def test_memory_search_with_different_queries(self, context_manager, real_memory_manager):

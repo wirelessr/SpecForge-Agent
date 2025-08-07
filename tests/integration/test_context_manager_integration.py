@@ -61,6 +61,20 @@ class TestContextManagerIntegration:
         return ContextCompressor(test_llm_config)
     
     @pytest.fixture
+    def real_token_manager(self):
+        """Create a real TokenManager instance."""
+        from autogen_framework.token_manager import TokenManager
+        from autogen_framework.config_manager import ConfigManager
+        config_manager = ConfigManager()
+        return TokenManager(config_manager)
+    
+    @pytest.fixture
+    def real_config_manager(self):
+        """Create a real ConfigManager instance."""
+        from autogen_framework.config_manager import ConfigManager
+        return ConfigManager()
+    
+    @pytest.fixture
     def work_dir(self, temp_workspace):
         """Create a work directory with test project files."""
         work_dir = Path(temp_workspace) / "test_project"
@@ -190,9 +204,17 @@ The system follows a layered architecture:
         return str(work_dir)
     
     @pytest.fixture
-    def context_manager(self, work_dir, real_memory_manager, real_context_compressor):
+    def context_manager(self, work_dir, real_memory_manager, real_context_compressor, 
+                       test_llm_config, real_token_manager, real_config_manager):
         """Create a ContextManager with real dependencies."""
-        return ContextManager(work_dir, real_memory_manager, real_context_compressor)
+        return ContextManager(
+            work_dir=work_dir,
+            memory_manager=real_memory_manager,
+            context_compressor=real_context_compressor,
+            llm_config=test_llm_config,
+            token_manager=real_token_manager,
+            config_manager=real_config_manager
+        )
     
     @pytest.mark.asyncio
     async def test_full_initialization_with_real_dependencies(self, context_manager):
@@ -529,13 +551,21 @@ The system follows a layered architecture:
         assert context1.project_structure is context2.project_structure
     
     @pytest.mark.asyncio
-    async def test_error_handling_with_missing_files(self, temp_workspace, real_memory_manager, real_context_compressor):
+    async def test_error_handling_with_missing_files(self, temp_workspace, real_memory_manager, real_context_compressor,
+                                                    test_llm_config, real_token_manager, real_config_manager):
         """Test error handling when project files are missing."""
         # Create context manager with empty work directory
         empty_work_dir = Path(temp_workspace) / "empty_project"
         empty_work_dir.mkdir()
         
-        context_manager = ContextManager(str(empty_work_dir), real_memory_manager, real_context_compressor)
+        context_manager = ContextManager(
+            work_dir=str(empty_work_dir),
+            memory_manager=real_memory_manager,
+            context_compressor=real_context_compressor,
+            llm_config=test_llm_config,
+            token_manager=real_token_manager,
+            config_manager=real_config_manager
+        )
         
         # Initialize should not fail even with missing files
         await context_manager.initialize()
