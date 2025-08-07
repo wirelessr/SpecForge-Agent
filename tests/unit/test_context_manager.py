@@ -496,7 +496,8 @@ The system follows a modular architecture with clear separation of concerns.
     async def test_context_compression(self, context_manager, mock_context_compressor):
         """Test context compression when token threshold is exceeded."""
         # Create large context that should trigger compression
-        large_content = "x" * 20000  # Large content to exceed threshold
+        # Default threshold is 8192, so we need > 8192 * 4 = 32768 characters
+        large_content = "x" * 40000  # Large content to exceed threshold
         context = PlanContext(
             user_request=large_content,
             memory_patterns=[]

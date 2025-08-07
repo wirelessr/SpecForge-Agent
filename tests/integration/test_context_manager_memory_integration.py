@@ -166,7 +166,7 @@ The system uses memory patterns to inform design decisions.
         # Create a proper context object with large content
         from autogen_framework.context_manager import PlanContext
         large_context = PlanContext(
-            user_request="x" * 20000,  # Large content to trigger compression
+            user_request="x" * 40000,  # Large content to trigger compression (> 8192 * 4)
             memory_patterns=[]
         )
         
