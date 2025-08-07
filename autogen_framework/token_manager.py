@@ -112,68 +112,94 @@ class TokenManager:
         self.logger.info(f"Loaded model limits with default: {default_limit}")
         return limits
     
-    def update_token_usage(self, model: str, tokens_used: int, operation: str) -> None:
+    def update_token_usage(self, model: str, tokens_used: int, operation: str, is_actual: bool = True) -> None:
         """
-        Update token usage from actual LLM response.
+        Update token usage from LLM response.
         
         Args:
             model: The model name that was used.
-            tokens_used: Actual number of tokens used from LLM response.
+            tokens_used: Number of tokens used (actual from LLM or estimated).
             operation: Description of the operation that used tokens.
+            is_actual: Whether this is actual usage from LLM (True) or estimated (False).
         """
         if tokens_used <= 0:
             self.logger.warning(f"Invalid token count: {tokens_used} for operation: {operation}")
             return
         
-        # Update current context size
-        self.current_context_size += tokens_used
-        
-        # Update usage statistics
-        self.usage_stats['total_tokens_used'] += tokens_used
-        self.usage_stats['requests_made'] += 1
-        
-        # Update peak usage
-        if self.current_context_size > self.usage_stats['peak_token_usage']:
-            self.usage_stats['peak_token_usage'] = self.current_context_size
-        
-        # Calculate average tokens per request
-        if self.usage_stats['requests_made'] > 0:
-            self.usage_stats['average_tokens_per_request'] = (
-                self.usage_stats['total_tokens_used'] / self.usage_stats['requests_made']
-            )
-        
-        # Record usage history entry
-        usage_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'model': model,
-            'tokens_used': tokens_used,
-            'operation': operation,
-            'current_context_size': self.current_context_size
-        }
-        self.usage_stats['usage_history'].append(usage_entry)
-        
-        # Log token usage
-        self.log_token_usage(model, tokens_used, operation)
+        # Only update context size and stats for actual LLM usage
+        if is_actual:
+            # Update current context size
+            self.current_context_size += tokens_used
+            
+            # Update usage statistics
+            self.usage_stats['total_tokens_used'] += tokens_used
+            self.usage_stats['requests_made'] += 1
+            
+            # Update peak usage
+            if self.current_context_size > self.usage_stats['peak_token_usage']:
+                self.usage_stats['peak_token_usage'] = self.current_context_size
+            
+            # Calculate average tokens per request
+            if self.usage_stats['requests_made'] > 0:
+                self.usage_stats['average_tokens_per_request'] = (
+                    self.usage_stats['total_tokens_used'] / self.usage_stats['requests_made']
+                )
+            
+            # Record usage history entry
+            usage_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'model': model,
+                'tokens_used': tokens_used,
+                'operation': operation,
+                'current_context_size': self.current_context_size,
+                'is_actual': is_actual
+            }
+            self.usage_stats['usage_history'].append(usage_entry)
+            
+            # Log token usage
+            self.log_token_usage(model, tokens_used, operation)
+        else:
+            # For estimated usage, just log but don't update persistent stats
+            self.logger.debug(f"Estimated token usage: {tokens_used} for {operation} (not counted in stats)")
     
-    def check_token_limit(self, model: str) -> TokenCheckResult:
+    def check_token_limit(self, model: str, estimated_static_tokens: Optional[int] = None) -> TokenCheckResult:
         """
         Check if current context size exceeds token limits.
         
+        Uses actual token usage when available (dynamic phase), or estimated tokens
+        for static content when no LLM calls have been made yet (static phase).
+        
         Args:
             model: The model name to check limits for.
+            estimated_static_tokens: Estimated tokens for static content (used when no actual usage yet).
             
         Returns:
             TokenCheckResult with current usage and compression recommendation.
         """
         model_limit = self.get_model_limit(model)
-        percentage_used = self.current_context_size / model_limit if model_limit > 0 else 0
+        
+        # Determine current token count based on phase
+        if self.current_context_size > 0:
+            # Dynamic phase: Use actual token usage from LLM calls
+            current_tokens = self.current_context_size
+            phase = "dynamic"
+        elif estimated_static_tokens is not None and estimated_static_tokens > 0:
+            # Static phase: Use estimated tokens for static content
+            current_tokens = estimated_static_tokens
+            phase = "static"
+        else:
+            # No usage data available
+            current_tokens = 0
+            phase = "initial"
+        
+        percentage_used = current_tokens / model_limit if model_limit > 0 else 0
         
         # Check if compression is needed based on threshold
         compression_threshold = self.token_config.get('compression_threshold', 0.9)
         needs_compression = percentage_used >= compression_threshold
         
         result = TokenCheckResult(
-            current_tokens=self.current_context_size,
+            current_tokens=current_tokens,
             model_limit=model_limit,
             percentage_used=percentage_used,
             needs_compression=needs_compression
@@ -181,7 +207,7 @@ class TokenManager:
         
         if needs_compression:
             self.logger.warning(
-                f"Token limit threshold reached: {self.current_context_size}/{model_limit} "
+                f"Token limit threshold reached ({phase} phase): {current_tokens}/{model_limit} "
                 f"({percentage_used:.1%}) for model {model}"
             )
         

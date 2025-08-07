@@ -68,7 +68,14 @@ class ImplementAgent(BaseLLMAgent):
         
         self.logger.info(f"ImplementAgent initialized with shell executor")
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """Define context requirements for ImplementAgent."""
+        if task_input.get("task"):
+            from .base_agent import ContextSpec
+            return ContextSpec(context_type="implementation")
+        return None
+    
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task assigned to the ImplementAgent.
         
@@ -190,6 +197,22 @@ class ImplementAgent(BaseLLMAgent):
         
         # Record task completion regardless of success/failure
         await self.record_task_completion(task, execution_result, work_dir)
+        
+        # Update ContextManager with execution history if available
+        if self.context_manager and execution_result.get("success"):
+            from ..models import ExecutionResult
+            exec_result = ExecutionResult(
+                command=" && ".join(execution_result.get("shell_commands", [])),
+                return_code=0 if execution_result["success"] else 1,
+                stdout="Task completed successfully",
+                stderr="",
+                execution_time=execution_result.get("execution_time", 0),
+                working_directory=work_dir,
+                timestamp=self._get_current_timestamp(),
+                success=execution_result["success"],
+                approach_used=execution_result.get("final_approach", "unknown")
+            )
+            await self.context_manager.update_execution_history(exec_result)
         
         return execution_result
     

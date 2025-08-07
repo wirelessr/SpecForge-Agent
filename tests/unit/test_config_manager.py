@@ -30,33 +30,19 @@ class TestConfigManager:
     
     def test_load_env_file_success(self):
         """Test successful loading of .env file."""
-        # Save original environment values
-        original_test_var = os.getenv('TEST_VAR')
-        original_llm_base_url = os.getenv('LLM_BASE_URL')
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-            f.write("TEST_VAR=test_value\n")
-            f.write("LLM_BASE_URL=http://test.local:8888/openai/v1\n")
-            env_file = f.name
-        
-        try:
-            config_manager = ConfigManager(env_file=env_file)
-            assert os.getenv('TEST_VAR') == 'test_value'
-            assert os.getenv('LLM_BASE_URL') == 'http://test.local:8888/openai/v1'
-        finally:
-            os.unlink(env_file)
-            # Restore original environment values
-            if original_test_var is None:
-                if 'TEST_VAR' in os.environ:
-                    del os.environ['TEST_VAR']
-            else:
-                os.environ['TEST_VAR'] = original_test_var
-                
-            if original_llm_base_url is None:
-                if 'LLM_BASE_URL' in os.environ:
-                    del os.environ['LLM_BASE_URL']
-            else:
-                os.environ['LLM_BASE_URL'] = original_llm_base_url
+        # Clear environment variables first to ensure clean test
+        with patch.dict(os.environ, {}, clear=True):
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
+                f.write("TEST_VAR=test_value\n")
+                f.write("LLM_BASE_URL=http://test.local:8888/openai/v1\n")
+                env_file = f.name
+            
+            try:
+                config_manager = ConfigManager(env_file=env_file)
+                assert os.getenv('TEST_VAR') == 'test_value'
+                assert os.getenv('LLM_BASE_URL') == 'http://test.local:8888/openai/v1'
+            finally:
+                os.unlink(env_file)
     
     def test_get_llm_config_success(self):
         """Test successful LLM configuration retrieval."""

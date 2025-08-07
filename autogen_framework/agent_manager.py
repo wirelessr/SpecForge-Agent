@@ -48,6 +48,7 @@ class AgentManager:
         
         # Core components
         self.memory_manager = MemoryManager(workspace_path)
+        self.context_manager: Optional['ContextManager'] = None
         self.shell_executor = ShellExecutor(str(self.workspace_path))
         
         # Agent instances (initialized later)
@@ -170,6 +171,27 @@ class AgentManager:
         except Exception as e:
             self.logger.error(f"Error setting up agents: {e}")
             return False
+    
+    def set_context_manager(self, context_manager: 'ContextManager') -> None:
+        """
+        Set the ContextManager for all agents.
+        
+        Args:
+            context_manager: ContextManager instance to be used by all agents
+        """
+        self.context_manager = context_manager
+        
+        # Update all agents with the context manager
+        if self.plan_agent:
+            self.plan_agent.set_context_manager(context_manager)
+        if self.design_agent:
+            self.design_agent.set_context_manager(context_manager)
+        if self.tasks_agent:
+            self.tasks_agent.set_context_manager(context_manager)
+        if self.implement_agent:
+            self.implement_agent.set_context_manager(context_manager)
+        
+        self.logger.info("ContextManager set for all agents")
     
     async def coordinate_agents(self, task_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -83,7 +83,7 @@ COMPRESSION FORMAT:
 
 Your response should be the compressed context only, without additional commentary."""
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a compression task assigned to this agent.
         

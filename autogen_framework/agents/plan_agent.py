@@ -101,7 +101,14 @@ You should be thorough, precise, and consider both functional and non-functional
         except Exception as e:
             self.logger.warning(f"Could not load memory context: {e}")
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """Define context requirements for PlanAgent."""
+        if task_input.get("user_request"):
+            from .base_agent import ContextSpec
+            return ContextSpec(context_type="plan")
+        return None
+    
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a planning task.
         

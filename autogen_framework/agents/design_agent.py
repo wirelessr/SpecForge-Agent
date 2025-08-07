@@ -115,7 +115,14 @@ Your design documents should follow this structure:
 
 Remember: Your designs serve as the foundation for implementation. They must be detailed enough for developers to implement without ambiguity while being flexible enough to accommodate reasonable implementation variations."""
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """Define context requirements for DesignAgent."""
+        if task_input.get("user_request"):
+            from .base_agent import ContextSpec
+            return ContextSpec(context_type="design")
+        return None
+    
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a design task assigned to this agent.
         

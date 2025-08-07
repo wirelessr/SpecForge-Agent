@@ -24,6 +24,8 @@ from .shell_executor import ShellExecutor
 from .config_manager import ConfigManager, ConfigurationError
 from .session_manager import SessionManager
 from .workflow_manager import WorkflowManager
+from .context_compressor import ContextCompressor
+from .token_manager import TokenManager
 
 
 class UserApprovalStatus(Enum):
@@ -63,6 +65,8 @@ class MainController:
         self.shell_executor: Optional[ShellExecutor] = None
         self.session_manager: Optional[SessionManager] = None
         self.workflow_manager: Optional[WorkflowManager] = None
+        self.context_compressor: Optional[ContextCompressor] = None
+        self.token_manager: Optional[TokenManager] = None
         
         # Framework configuration
         self.llm_config: Optional[LLMConfig] = None
@@ -181,6 +185,13 @@ class MainController:
         
         # Delegate to WorkflowManager
         result = await self.workflow_manager.process_request(user_request, auto_approve)
+        
+        # After the first phase (requirements), ContextManager should be initialized
+        # Pass it to AgentManager so all agents can use it
+        context_manager = self.workflow_manager.get_context_manager()
+        if context_manager and self.agent_manager:
+            self.agent_manager.set_context_manager(context_manager)
+            self.logger.info("ContextManager passed to AgentManager")
         
         # Sync workflow state back to MainController for backward compatibility
         self._sync_workflow_state_from_manager()
@@ -387,14 +398,31 @@ class MainController:
                 self.shell_executor = ShellExecutor(str(self.workspace_path))
                 self.logger.info("ShellExecutor initialized")
             
+            # Initialize ContextCompressor
+            if self.context_compressor is None:
+                self.context_compressor = ContextCompressor(self.llm_config)
+                self.logger.info("ContextCompressor initialized")
+            
+            # Initialize TokenManager
+            if self.token_manager is None:
+                config_manager = ConfigManager()
+                self.token_manager = TokenManager(config_manager)
+                self.logger.info("TokenManager initialized")
+            
             # Initialize AgentManager
             if self.agent_manager is None:
                 self.agent_manager = AgentManager(str(self.workspace_path))
                 self.logger.info("AgentManager initialized")
             
-            # Initialize WorkflowManager
+            # Initialize WorkflowManager with all required components
             if self.workflow_manager is None:
-                self.workflow_manager = WorkflowManager(self.agent_manager, self.session_manager)
+                self.workflow_manager = WorkflowManager(
+                    self.agent_manager, 
+                    self.session_manager,
+                    self.memory_manager,
+                    self.context_compressor,
+                    self.token_manager
+                )
                 self.logger.info("WorkflowManager initialized")
             
             return True

@@ -20,7 +20,7 @@ from autogen_framework.config_manager import ConfigManager
 class RealTestAgent(BaseLLMAgent):
     """Real test agent for integration testing."""
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         return {"result": "Real integration test completed"}
     
     def get_agent_capabilities(self) -> list:

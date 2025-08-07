@@ -19,7 +19,7 @@ from autogen_framework.context_compressor import ContextCompressor
 class RealTestAgent(BaseLLMAgent):
     """真實測試agent - 遵循steering指導"""
     
-    async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "result": "Real integration test completed",
             "task_input": task_input,

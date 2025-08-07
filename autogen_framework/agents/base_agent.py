@@ -19,9 +19,19 @@ from ..models import LLMConfig, AgentContext, SystemInstructions, CompressionRes
 
 # Forward declarations for type hints
 from typing import TYPE_CHECKING
+from dataclasses import dataclass
+
 if TYPE_CHECKING:
     from ..token_manager import TokenManager
     from ..context_compressor import ContextCompressor
+    from ..context_manager import ContextManager
+
+
+@dataclass
+class ContextSpec:
+    """Specification for context requirements."""
+    context_type: str  # 'plan', 'design', 'tasks', 'implementation'
+    required_params: Optional[Dict[str, Any]] = None
 
 
 class BaseLLMAgent(ABC):
@@ -69,6 +79,7 @@ class BaseLLMAgent(ABC):
         self.context: AgentContext = {}
         self.memory_context: Dict[str, Any] = {}
         self.conversation_history: List[Dict[str, Any]] = []
+        self.context_manager: Optional['ContextManager'] = None
         
         # Token management and context compression
         self.token_manager = token_manager
@@ -232,6 +243,16 @@ class BaseLLMAgent(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to reinitialize AutoGen agent with memory context: {e}")
     
+    def set_context_manager(self, context_manager: 'ContextManager') -> None:
+        """
+        Set the ContextManager for this agent.
+        
+        Args:
+            context_manager: ContextManager instance to be used by this agent
+        """
+        self.context_manager = context_manager
+        self.logger.info(f"ContextManager set for {self.name} agent")
+    
     def add_to_conversation_history(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Add an entry to the conversation history.
@@ -281,11 +302,21 @@ class BaseLLMAgent(ABC):
         try:
             # Check token limits before sending request
             if self.token_manager:
-                token_check = self.token_manager.check_token_limit(self.llm_config.model)
+                # Estimate static content tokens if no actual usage yet
+                estimated_static_tokens = None
+                if self.token_manager.usage_stats['requests_made'] == 0:
+                    # Static phase: estimate tokens for current context
+                    estimated_static_tokens = self._estimate_static_content_tokens()
+                
+                token_check = self.token_manager.check_token_limit(
+                    self.llm_config.model, 
+                    estimated_static_tokens
+                )
                 
                 if token_check.needs_compression:
+                    phase = "static" if estimated_static_tokens else "dynamic"
                     self.logger.info(
-                        f"Token limit threshold reached for {self.name}: "
+                        f"Token limit threshold reached for {self.name} ({phase} phase): "
                         f"{token_check.current_tokens}/{token_check.model_limit} "
                         f"({token_check.percentage_used:.1%}). Triggering compression."
                     )
@@ -451,6 +482,50 @@ class BaseLLMAgent(ABC):
         return max(estimated_tokens, 1)  # Ensure at least 1 token is counted
     
 
+    def _estimate_static_content_tokens(self) -> int:
+        """
+        Estimate token count for static content (system message, context, memory).
+        
+        This is used in the static phase before any LLM calls have been made.
+        
+        Returns:
+            Estimated token count for static content
+        """
+        total_chars = 0
+        
+        # Count system message
+        if self.system_message:
+            total_chars += len(self.system_message)
+        
+        # Count context content
+        for key, value in self.context.items():
+            if isinstance(value, str):
+                total_chars += len(value)
+            elif isinstance(value, (list, dict)):
+                total_chars += len(str(value))
+        
+        # Count memory context
+        for key, value in self.memory_context.items():
+            if isinstance(value, str):
+                total_chars += len(value)
+            elif isinstance(value, (list, dict)):
+                total_chars += len(str(value))
+        
+        # Count conversation history
+        for entry in self.conversation_history:
+            if 'content' in entry:
+                total_chars += len(entry['content'])
+        
+        # Rough estimation: 1 token ≈ 4 characters for most models
+        estimated_tokens = total_chars // 4
+        
+        # Add base overhead for prompt structure
+        estimated_tokens += 100  # Base overhead for prompt formatting
+        
+        self.logger.debug(f"Estimated static content tokens for {self.name}: {estimated_tokens}")
+        return max(estimated_tokens, 1)
+    
+
     
     def get_agent_status(self) -> Dict[str, Any]:
         """
@@ -489,12 +564,32 @@ class BaseLLMAgent(ABC):
         """
         return self.conversation_history.copy()
     
-    @abstractmethod
     async def process_task(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process a task assigned to this agent.
+        Process a task assigned to this agent with automatic context retrieval.
         
-        This is the main method that each specialized agent must implement
+        This method automatically retrieves appropriate context from ContextManager
+        before delegating to the concrete agent implementation.
+        
+        Args:
+            task_input: Dictionary containing task parameters and context
+            
+        Returns:
+            Dictionary containing task results and any relevant metadata
+        """
+        # Automatically retrieve context if ContextManager is available
+        if self.context_manager:
+            await self._retrieve_agent_context(task_input)
+        
+        # Delegate to concrete agent implementation
+        return await self._process_task_impl(task_input)
+    
+    @abstractmethod
+    async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Concrete implementation of task processing for each agent type.
+        
+        This is the method that each specialized agent must implement
         to handle their specific responsibilities.
         
         Args:
@@ -504,6 +599,127 @@ class BaseLLMAgent(ABC):
             Dictionary containing task results and any relevant metadata
         """
         pass
+    
+    async def _retrieve_agent_context(self, task_input: Dict[str, Any]) -> None:
+        """
+        Automatically retrieve appropriate context based on agent type.
+        
+        Args:
+            task_input: Dictionary containing task parameters
+        """
+        try:
+            # Let each agent define what context it needs
+            context_spec = self.get_context_requirements(task_input)
+            if not context_spec:
+                return
+            
+            # Get context based on specification
+            context = await self._get_context_by_spec(context_spec, task_input)
+            if context:
+                # Format context for agent consumption
+                formatted_context = self._format_context_for_agent(context, context_spec.context_type)
+                self.update_context(formatted_context)
+                self.logger.info(f"Retrieved {context_spec.context_type}Context from ContextManager")
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to retrieve context from ContextManager: {e}")
+            # Continue without context - agents should handle missing context gracefully
+    
+    async def _get_context_by_spec(self, context_spec: 'ContextSpec', task_input: Dict[str, Any]) -> Optional[Any]:
+        """
+        Get context based on context specification.
+        
+        Args:
+            context_spec: Context specification from agent
+            task_input: Task input parameters
+            
+        Returns:
+            Context object or None if retrieval fails
+        """
+        context_type = context_spec.context_type
+        method_name = f'get_{context_type}_context'
+        
+        if not hasattr(self.context_manager, method_name):
+            self.logger.warning(f"ContextManager does not have method: {method_name}")
+            return None
+        
+        context_method = getattr(self.context_manager, method_name)
+        
+        # Call appropriate context method based on type
+        if context_type in ['plan', 'design', 'tasks']:
+            user_request = task_input.get('user_request')
+            if not user_request:
+                self.logger.warning(f"{context_type} context requires user_request")
+                return None
+            return await context_method(user_request)
+        elif context_type == 'implementation':
+            task = task_input.get('task')
+            if not task:
+                self.logger.warning("implementation context requires task")
+                return None
+            return await context_method(task)
+        else:
+            self.logger.warning(f"Unknown context type: {context_type}")
+            return None
+    
+    def _format_context_for_agent(self, context: Any, context_type: str) -> Dict[str, Any]:
+        """
+        Format context object for agent consumption.
+        
+        Args:
+            context: Context object from ContextManager
+            context_type: Type of context (plan, design, tasks, implementation)
+            
+        Returns:
+            Dictionary with formatted context data
+        """
+        formatted = {f"{context_type}_context": context}
+        
+        # Add commonly used context attributes
+        if hasattr(context, 'project_structure') and context.project_structure:
+            formatted['project_structure'] = context.project_structure
+        if hasattr(context, 'memory_patterns') and context.memory_patterns:
+            formatted['memory_patterns'] = context.memory_patterns
+        if hasattr(context, 'compressed'):
+            formatted['compressed'] = context.compressed
+        
+        # Add context-specific attributes
+        if context_type == 'design':
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+        elif context_type == 'tasks':
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+            if hasattr(context, 'design') and context.design:
+                formatted['design'] = context.design
+        elif context_type == 'implementation':
+            if hasattr(context, 'task') and context.task:
+                formatted['task'] = context.task
+            if hasattr(context, 'requirements') and context.requirements:
+                formatted['requirements'] = context.requirements
+            if hasattr(context, 'design') and context.design:
+                formatted['design'] = context.design
+            if hasattr(context, 'tasks') and context.tasks:
+                formatted['tasks'] = context.tasks
+            if hasattr(context, 'execution_history') and context.execution_history:
+                formatted['execution_history'] = context.execution_history
+            if hasattr(context, 'related_tasks') and context.related_tasks:
+                formatted['related_tasks'] = context.related_tasks
+        
+        return formatted
+    
+    def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
+        """
+        Define what context this agent requires.
+        
+        Args:
+            task_input: Task input parameters
+            
+        Returns:
+            ContextSpec defining required context, or None if no context needed
+        """
+        # Default implementation - agents can override this
+        return None
     
     @abstractmethod
     def get_agent_capabilities(self) -> List[str]:
