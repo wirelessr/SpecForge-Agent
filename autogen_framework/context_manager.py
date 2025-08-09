@@ -22,6 +22,7 @@ from .memory_manager import MemoryManager
 from .context_compressor import ContextCompressor
 from .config_manager import ConfigManager
 from .models import LLMConfig, TaskDefinition, ExecutionResult
+from .context_utils import agent_context_to_string
 
 # Forward declaration for type hints
 from typing import TYPE_CHECKING
@@ -276,6 +277,54 @@ class ContextManager:
         except Exception as e:
             self.logger.error(f"Error during ContextManager initialization: {e}")
             raise
+
+    @dataclass
+    class PreparedPrompt:
+        system_prompt: str
+        estimated_tokens: int
+
+    async def prepare_system_prompt(self, text: str) -> 'ContextManager.PreparedPrompt':
+        """
+        Prepare a system prompt text by checking token thresholds and compressing if needed.
+        Returns compressed text when over threshold.
+        """
+        # Estimate tokens using centralized heuristic
+        try:
+            estimated = self.token_manager.estimate_tokens_from_text(text, base_overhead=100)
+        except Exception:
+            estimated = max(len(text) // 4 + 100, 1)
+
+        check = self.token_manager.check_token_limit(self.llm_config.model, estimated_static_tokens=estimated)
+
+        if not check.needs_compression:
+            return ContextManager.PreparedPrompt(system_prompt=text, estimated_tokens=estimated)
+
+        # Compute target reduction to go under threshold
+        target_tokens = int(check.model_limit * self.compression_threshold)
+        if check.current_tokens == 0:
+            reduction = 0.2
+        else:
+            reduction = 1 - (target_tokens / check.current_tokens)
+        reduction = max(0.1, min(0.8, reduction))
+
+        # Attempt compression if compressor is available
+        if self.context_compressor:
+            try:
+                payload = {"content": text}
+                result = await self.context_compressor.compress_context(payload, target_reduction=reduction)
+                if result.success:
+                    self.token_manager.increment_compression_count()
+                    return ContextManager.PreparedPrompt(
+                        system_prompt=result.compressed_content,
+                        estimated_tokens=target_tokens,
+                    )
+                else:
+                    self.logger.warning(f"Compression failed: {result.error}")
+            except Exception as e:
+                self.logger.error(f"Compression exception: {e}")
+
+        # No compressor or failed compression: return original
+        return ContextManager.PreparedPrompt(system_prompt=text, estimated_tokens=estimated)
     
     async def _load_requirements(self) -> None:
         """Load and parse requirements.md document."""
@@ -705,9 +754,13 @@ class ContextManager:
                                  context_type: str) -> Union[PlanContext, DesignContext, TasksContext, ImplementationContext]:
         """Compress context if it exceeds token thresholds using TokenManager."""
         try:
-            # Estimate token count for static content (rough approximation: 1 token ≈ 4 characters)
+            # Estimate token count for static content using centralized heuristic
             context_str = self._context_to_string(context)
-            estimated_tokens = len(context_str) // 4
+            try:
+                estimated_tokens = self.token_manager.estimate_tokens_from_text(context_str, base_overhead=100)
+            except Exception:
+                # Conservative fallback
+                estimated_tokens = max(len(context_str) // 4 + 100, 1)
             
             # Check if compression is needed using TokenManager with estimated static tokens
             # Don't update current_context_size here - let TokenManager handle the logic
@@ -764,29 +817,8 @@ class ContextManager:
             return context
     
     def _context_to_string(self, context: Union[PlanContext, DesignContext, TasksContext, ImplementationContext]) -> str:
-        """Convert context to string for token estimation."""
-        parts = []
-        
-        if hasattr(context, 'user_request'):
-            parts.append(context.user_request)
-        
-        if hasattr(context, 'requirements') and context.requirements:
-            parts.append(context.requirements.content)
-        
-        if hasattr(context, 'design') and context.design:
-            parts.append(context.design.content)
-        
-        if hasattr(context, 'tasks') and context.tasks:
-            parts.append(context.tasks.content)
-        
-        if hasattr(context, 'project_structure') and context.project_structure:
-            parts.append(f"Files: {len(context.project_structure.files)}, Dirs: {len(context.project_structure.directories)}")
-        
-        if hasattr(context, 'memory_patterns'):
-            for pattern in context.memory_patterns:
-                parts.append(pattern.content)
-        
-        return ' '.join(parts)
+        """Convert context to string for token estimation (centralized utility)."""
+        return agent_context_to_string(context)
     
     def _context_to_dict(self, context: Union[PlanContext, DesignContext, TasksContext, ImplementationContext]) -> Dict[str, Any]:
         """Convert context to dictionary for compression."""

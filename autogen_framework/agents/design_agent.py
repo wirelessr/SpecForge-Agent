@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import logging
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, AgentContext
 
 
@@ -33,7 +33,7 @@ class DesignAgent(BaseLLMAgent):
     and patterns from previous projects.
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None, token_manager=None, context_manager=None):
         """
         Initialize the Design Agent.
         
@@ -47,7 +47,9 @@ class DesignAgent(BaseLLMAgent):
             name="DesignAgent",
             llm_config=llm_config,
             system_message=system_message,
-            description="AI agent specialized in generating technical design documents from requirements"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description="AI agent specialized in generating technical design documents from requirements",
         )
         
         # Update memory context if provided

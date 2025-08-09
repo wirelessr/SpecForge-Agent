@@ -15,7 +15,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, AgentContext, WorkflowState, WorkflowPhase
 from ..memory_manager import MemoryManager
 
@@ -31,7 +31,7 @@ class PlanAgent(BaseLLMAgent):
     4. Integrating memory context for better understanding
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager):
+    def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager, token_manager, context_manager):
         """
         Initialize the Plan Agent.
         
@@ -45,7 +45,9 @@ class PlanAgent(BaseLLMAgent):
             name="PlanAgent",
             llm_config=llm_config,
             system_message=system_message,
-            description="Plan Agent responsible for parsing user requests and generating requirements"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description="Plan Agent responsible for parsing user requests and generating requirements",
         )
         
         self.memory_manager = memory_manager
@@ -104,7 +106,6 @@ You should be thorough, precise, and consider both functional and non-functional
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for PlanAgent."""
         if task_input.get("user_request"):
-            from .base_agent import ContextSpec
             return ContextSpec(context_type="plan")
         return None
     

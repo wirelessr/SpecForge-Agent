@@ -112,6 +112,39 @@ class TokenManager:
         self.logger.info(f"Loaded model limits with default: {default_limit}")
         return limits
     
+    # --- Estimation and extraction utilities (centralized) ---
+    def estimate_tokens_from_char_count(self, char_count: int, base_overhead: int = 0) -> int:
+        """
+        Estimate token count from character count using a conservative heuristic.
+
+        Args:
+            char_count: Number of characters in the content to estimate.
+            base_overhead: Extra tokens to account for prompt structure/headers.
+
+        Returns:
+            Estimated tokens (at least 1).
+        """
+        if char_count < 0:
+            char_count = 0
+        estimated_tokens = char_count // 4
+        estimated_tokens += max(base_overhead, 0)
+        return max(estimated_tokens, 1)
+
+    def estimate_tokens_from_text(self, text: str, base_overhead: int = 0) -> int:
+        """Estimate tokens directly from a text payload."""
+        if text is None:
+            return max(base_overhead, 1)
+        return self.estimate_tokens_from_char_count(len(text), base_overhead)
+
+    def extract_token_usage_from_response(self, response: str, prompt_overhead: int = 50) -> int:
+        """
+        Extract/estimate token usage from LLM response text.
+
+        If the underlying client can't provide actual token usage, this
+        serves as a single, centralized heuristic for the application.
+        """
+        return self.estimate_tokens_from_text(response, base_overhead=prompt_overhead)
+    
     def update_token_usage(self, model: str, tokens_used: int, operation: str, is_actual: bool = True) -> None:
         """
         Update token usage from LLM response.

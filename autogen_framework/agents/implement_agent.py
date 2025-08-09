@@ -15,7 +15,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from .task_decomposer import TaskDecomposer, ExecutionPlan
 from .error_recovery import ErrorRecovery, CommandResult, RecoveryResult
 from ..models import LLMConfig, TaskDefinition, ExecutionResult, WorkflowState
@@ -39,11 +39,13 @@ class ImplementAgent(BaseLLMAgent):
     """
     
     def __init__(
-        self, 
-        name: str, 
-        llm_config: LLMConfig, 
+        self,
+        name: str,
+        llm_config: LLMConfig,
         system_message: str,
         shell_executor: ShellExecutor,
+        token_manager,
+        context_manager,
         task_decomposer: Optional[TaskDecomposer] = None,
         error_recovery: Optional[ErrorRecovery] = None,
         description: Optional[str] = None
@@ -64,7 +66,9 @@ class ImplementAgent(BaseLLMAgent):
             name=name,
             llm_config=llm_config,
             system_message=system_message,
-            description=description or "Enhanced implementation agent with intelligent task decomposition"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description=description or "Enhanced implementation agent with intelligent task decomposition",
         )
         
         self.shell_executor = shell_executor

@@ -13,7 +13,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, TaskDefinition
 
 
@@ -34,9 +34,11 @@ class TasksAgent(BaseLLMAgent):
     """
     
     def __init__(
-        self, 
-        llm_config: LLMConfig, 
+        self,
+        llm_config: LLMConfig,
         memory_manager=None,
+        token_manager=None,
+        context_manager=None,
         description: Optional[str] = None
     ):
         """
@@ -51,7 +53,9 @@ class TasksAgent(BaseLLMAgent):
             name="TasksAgent",
             llm_config=llm_config,
             system_message=self._build_system_message(),
-            description=description or "Task generation agent for creating implementation plans"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description=description or "Task generation agent for creating implementation plans",
         )
         
         self.memory_manager = memory_manager
