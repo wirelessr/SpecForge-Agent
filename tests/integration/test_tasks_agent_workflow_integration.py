@@ -27,14 +27,8 @@ class TestTasksAgentWorkflowIntegration:
         yield temp_dir
         shutil.rmtree(temp_dir)
     
-    @pytest.fixture
-    def real_llm_config(self):
-        """Create real LLM configuration for integration testing."""
-        return LLMConfig(
-            base_url="http://test.local:8888/openai/v1",
-            model="test-model",
-            api_key="test-key"
-        )
+    # real_llm_config fixture is provided by tests/integration/conftest.py
+    # It loads configuration from .env.integration file for secure testing
     
     @pytest.fixture
     def tasks_agent(self, real_llm_config):
