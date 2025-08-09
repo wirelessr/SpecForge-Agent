@@ -1,53 +1,178 @@
-# Token Management Future Enhancements
+# Token Management and Context Optimization
 
 ## Overview
 
-This document outlines potential improvements to the TokenManager system for more dynamic and intelligent model token limit detection. The current implementation uses hardcoded model limits with fallback to configurable defaults, which works well but could be enhanced for better flexibility and accuracy.
+This document outlines enhancements to token management and context optimization within the autonomous execution framework. With the introduction of ContextManager and ContextCompressor, token management has become more sophisticated and integrated with the overall system architecture.
 
-## Current Implementation
+## Current Architecture
 
-The current TokenManager uses a static dictionary approach:
+The framework now uses a multi-layered approach to token management:
 
-```python
-default_limits = {
-    'models/gemini-2.0-flash': 1048576,
-    'models/gemini-1.5-pro': 2097152,
-    'gpt-4': 8192,
-    'gpt-4-turbo': 128000,
-    # ... more hardcoded values
-}
-```
+1. **ContextManager**: Provides comprehensive project context with automatic compression
+2. **ContextCompressor**: Handles intelligent context compression when token limits are approached
+3. **TokenManager**: Manages model-specific token limits and counting
+4. **Agent-Specific Context**: Each agent receives optimized context for its specific needs
 
-For unknown models, it falls back to a configurable default limit (typically 8192 tokens).
+## Enhancement Opportunities
 
-## Proposed Enhancements
+### 1. Dynamic Context Prioritization
 
-### 1. API-Based Model Limit Discovery
+**Status**: Planned Enhancement  
+**Priority**: High
 
-**Concept**: Query the LLM provider's API to get actual model specifications.
+Implement intelligent context prioritization based on task relevance and execution history.
 
 ```python
-async def get_model_limit_from_api(self, model: str) -> Optional[int]:
-    """Query the API for model specifications."""
-    try:
-        # For OpenAI-compatible APIs
-        response = await self.client.get(f"/models/{model}")
-        return response.get('context_length')
-    except Exception as e:
-        self.logger.debug(f"API query failed for {model}: {e}")
-        return None
+class ContextPrioritizer:
+    """Prioritizes context elements based on relevance and importance."""
+    
+    async def prioritize_context(self, context: ProjectContext, task: TaskDefinition) -> PrioritizedContext:
+        """Ranks context elements by importance for the specific task."""
+        priorities = {
+            'current_task_requirements': 1.0,
+            'related_task_history': 0.8,
+            'project_structure': 0.6,
+            'memory_patterns': 0.4,
+            'general_context': 0.2
+        }
+        
+        return self._apply_priorities(context, priorities, task)
 ```
 
-**Benefits**:
+### 2. Adaptive Token Budgeting
 
-- Always up-to-date with provider changes
-- Supports new models automatically
-- Accurate limits for custom/fine-tuned models
+**Status**: Concept  
+**Priority**: Medium
 
-**Challenges**:
+Implement dynamic token budget allocation based on task complexity and agent needs.
 
-- Requires API support (not all providers expose this)
-- Network dependency
+```python
+class TokenBudgetManager:
+    """Manages token budgets across different context types."""
+    
+    def allocate_budget(self, total_tokens: int, task_complexity: str) -> Dict[str, int]:
+        """Allocates token budget based on task complexity."""
+        if task_complexity == "high":
+            return {
+                'requirements': int(total_tokens * 0.3),
+                'design': int(total_tokens * 0.3),
+                'execution_history': int(total_tokens * 0.25),
+                'memory_patterns': int(total_tokens * 0.15)
+            }
+        # ... other complexity levels
+```
+
+### 3. Context Compression Strategies
+
+**Status**: Partially Implemented  
+**Priority**: High
+
+Enhance the ContextCompressor with more sophisticated compression strategies.
+
+#### Current Compression Methods
+- **Summarization**: LLM-based summarization of large context sections
+- **Relevance Filtering**: Remove context elements not relevant to current task
+- **Hierarchical Compression**: Compress less important sections more aggressively
+
+#### Planned Enhancements
+1. **Semantic Compression**: Preserve semantic meaning while reducing token count
+2. **Progressive Compression**: Multi-level compression based on token pressure
+3. **Context Reconstruction**: Ability to expand compressed context when needed
+
+### 4. Model-Specific Optimization
+
+**Status**: Planning  
+**Priority**: Medium
+
+Optimize context and prompts for specific LLM models and their characteristics.
+
+```python
+class ModelOptimizer:
+    """Optimizes context and prompts for specific models."""
+    
+    def optimize_for_model(self, context: ProjectContext, model: str) -> OptimizedContext:
+        """Optimizes context based on model characteristics."""
+        if model.startswith('gpt-4'):
+            return self._optimize_for_gpt4(context)
+        elif model.startswith('gemini'):
+            return self._optimize_for_gemini(context)
+        # ... other models
+```
+
+## Integration with Autonomous Execution
+
+### Context-Aware Task Decomposition
+
+The TaskDecomposer can use token budget information to optimize task breakdown:
+
+```python
+class TaskDecomposer(BaseLLMAgent):
+    async def decompose_task(self, task: TaskDefinition) -> ExecutionPlan:
+        # Get available token budget
+        token_budget = await self.context_manager.get_token_budget(task)
+        
+        # Optimize decomposition based on available context space
+        if token_budget < 4000:
+            return await self._create_simplified_plan(task)
+        else:
+            return await self._create_detailed_plan(task)
+```
+
+### Error Recovery with Context Optimization
+
+ErrorRecovery can optimize context usage during recovery attempts:
+
+```python
+class ErrorRecovery(BaseLLMAgent):
+    async def recover(self, failed_result: CommandResult, plan: ExecutionPlan) -> RecoveryResult:
+        # Compress context for recovery analysis
+        compressed_context = await self.context_manager.compress_for_recovery(failed_result)
+        
+        # Generate strategies with optimized context
+        strategies = await self._generate_strategies(compressed_context, plan)
+        return await self._execute_strategies(strategies)
+```
+
+## Performance Metrics
+
+### Token Efficiency Metrics
+- **Context Compression Ratio**: Measure compression effectiveness
+- **Token Utilization Rate**: How efficiently tokens are used
+- **Context Relevance Score**: Measure relevance of included context
+- **Compression Quality Score**: Measure information preservation during compression
+
+### Implementation Timeline
+
+#### Phase 1 (Current)
+- ✅ Basic ContextManager and ContextCompressor
+- ✅ Agent-specific context optimization
+- ✅ Automatic compression when approaching token limits
+
+#### Phase 2 (Next Quarter)
+- 🔄 Dynamic context prioritization
+- 🔄 Enhanced compression strategies
+- 🔄 Token budget management
+
+#### Phase 3 (Future)
+- 📋 Model-specific optimization
+- 📋 Advanced semantic compression
+- 📋 Context reconstruction capabilities
+
+## Best Practices
+
+### For Developers
+1. **Use ContextManager**: Always use ContextManager for context retrieval
+2. **Monitor Token Usage**: Check token usage in logs and optimize accordingly
+3. **Test with Compression**: Test agents with compressed context to ensure robustness
+4. **Measure Context Relevance**: Ensure included context is relevant to the task
+
+### For System Administrators
+1. **Configure Token Limits**: Set appropriate token limits for your LLM provider
+2. **Monitor Compression Rates**: Track context compression effectiveness
+3. **Optimize Model Selection**: Choose models with appropriate context windows
+4. **Track Performance Metrics**: Monitor token efficiency and context quality
+
+This enhanced token management system provides a solid foundation for efficient context handling in the autonomous execution framework while maintaining flexibility for future enhancements.
 - Potential rate limiting
 
 ### 2. Configuration File Support

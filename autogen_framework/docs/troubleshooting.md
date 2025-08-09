@@ -11,6 +11,10 @@ This guide helps users diagnose and resolve common issues encountered while usin
 | [Workflow Stuck](#workflow-issues) | Status not updating, no response | Check WorkflowManager state, reset session |
 | [Task Generation Issues](#task-generation-issues) | TasksAgent failures, malformed tasks.md | Check TasksAgent logs, verify design.md |
 | [Task Execution Failure](#task-execution-issues) | ImplementAgent errors, command failures | Check execution logs, manually fix |
+| [TaskDecomposer Issues](#taskdecomposer-issues) | Task breakdown failures, invalid commands | Check task complexity, context availability |
+| [ErrorRecovery Issues](#errorrecovery-issues) | Recovery strategies failing, infinite loops | Check error patterns, strategy generation |
+| [Context Management Issues](#context-management-issues) | Missing context, compression errors | Check ContextManager state, token limits |
+| [Quality Measurement Issues](#quality-measurement-issues) | Quality scores failing, baseline missing | Check quality metrics, establish baseline |
 | [Session Management Issues](#session-management-issues) | Session corruption, state inconsistency | Check SessionManager, reset session |
 | [File Modification Issues](#file-operation-issues) | Patch failure, permission errors | Check file permissions, use backups |
 | [Performance Issues](#performance-issues) | Slow response, insufficient memory | Optimize configuration, clear cache |
@@ -887,3 +891,366 @@ Before contacting support, please complete the following checks:
 **Version**: 1.0.0
 
 If this guide does not resolve your issue, please create an issue on GitHub or contact our support team.
+
+## 🤖 Autonomous Execution Enhancement Issues
+
+### TaskDecomposer Issues
+
+#### Symptoms
+- Task breakdown failures
+- Invalid shell command generation
+- Execution plans with missing steps
+- Context analysis errors
+
+#### Diagnostic Steps
+```bash
+# Check TaskDecomposer logs
+grep "TaskDecomposer" logs/framework.log
+
+# Verify task complexity analysis
+autogen-framework --debug-task-decomposition --task "task_description"
+
+# Check context availability
+ls -la requirements.md design.md tasks.md
+```
+
+#### Common Causes and Solutions
+
+**1. Insufficient Context**
+```bash
+# Problem: Missing requirements.md or design.md
+# Solution: Ensure all context files exist
+ls -la requirements.md design.md
+
+# If missing, regenerate them
+autogen-framework --request "regenerate missing documents"
+```
+
+**2. Task Complexity Too High**
+```python
+# Problem: Task is too complex for single decomposition
+# Solution: Break down manually or simplify task description
+
+# Check task complexity in logs
+grep "complexity.*high" logs/framework.log
+
+# Simplify task description
+# Instead of: "Implement complete authentication system with OAuth, JWT, and user management"
+# Use: "Create basic user login functionality"
+```
+
+**3. LLM Context Limits**
+```bash
+# Problem: Context exceeds token limits
+# Solution: Enable context compression
+export ENABLE_CONTEXT_COMPRESSION=true
+autogen-framework --continue-workflow
+```
+
+### ErrorRecovery Issues
+
+#### Symptoms
+- Recovery strategies consistently failing
+- Infinite retry loops
+- No alternative strategies generated
+- Error categorization failures
+
+#### Diagnostic Steps
+```bash
+# Check ErrorRecovery logs
+grep "ErrorRecovery" logs/framework.log
+
+# View error patterns
+grep "error_type\|recovery_strategy" logs/framework.log
+
+# Check strategy success rates
+grep "strategy.*success\|strategy.*failed" logs/framework.log
+```
+
+#### Common Causes and Solutions
+
+**1. Error Pattern Recognition Failure**
+```python
+# Problem: Unknown error types not being categorized
+# Solution: Add custom error patterns
+
+# Check current error patterns
+grep "ERROR_PATTERNS" autogen_framework/agents/error_recovery.py
+
+# Add custom patterns to error_recovery.py
+ERROR_PATTERNS = {
+    'custom_error': [r'your custom error pattern'],
+    # ... existing patterns
+}
+```
+
+**2. Strategy Generation Issues**
+```bash
+# Problem: No alternative strategies generated
+# Solution: Check LLM connectivity and prompts
+
+# Test LLM connection
+autogen-framework --test-llm-connection
+
+# Check strategy generation prompts
+grep "Generate alternative strategies" logs/framework.log
+```
+
+**3. Infinite Retry Loops**
+```python
+# Problem: Same strategy being retried indefinitely
+# Solution: Check strategy learning and limits
+
+# Verify retry limits in configuration
+grep "max_retry_attempts" autogen_framework/agents/error_recovery.py
+
+# Check if strategies are being recorded
+grep "record_success\|record_failure" logs/framework.log
+```
+
+### Context Management Issues
+
+#### Symptoms
+- Missing project context
+- Context compression errors
+- Agent-specific context failures
+- Memory pattern retrieval issues
+
+#### Diagnostic Steps
+```bash
+# Check ContextManager status
+grep "ContextManager" logs/framework.log
+
+# Verify context files
+ls -la requirements.md design.md tasks.md
+
+# Check memory patterns
+ls -la memory/projects/ memory/global/
+
+# Test context compression
+grep "compress_if_needed" logs/framework.log
+```
+
+#### Common Causes and Solutions
+
+**1. Context Files Missing**
+```bash
+# Problem: Required context files don't exist
+# Solution: Regenerate missing files
+
+# Check which files are missing
+ls -la requirements.md design.md tasks.md
+
+# Regenerate missing files
+autogen-framework --regenerate requirements
+autogen-framework --regenerate design
+```
+
+**2. Context Compression Failures**
+```python
+# Problem: Context compression not working
+# Solution: Check ContextCompressor configuration
+
+# Verify compression settings
+grep "context_compressor" autogen_framework/context_manager.py
+
+# Check token limits
+grep "token.*threshold" logs/framework.log
+
+# Disable compression temporarily if needed
+export DISABLE_CONTEXT_COMPRESSION=true
+```
+
+**3. Memory Pattern Issues**
+```bash
+# Problem: Memory patterns not being retrieved
+# Solution: Check MemoryManager integration
+
+# Verify memory directory structure
+ls -la memory/projects/ memory/global/
+
+# Check memory pattern retrieval
+grep "get_relevant_patterns" logs/framework.log
+
+# Reset memory if corrupted
+rm -rf memory/projects/current_project/
+```
+
+### Quality Measurement Issues
+
+#### Symptoms
+- Quality assessment failures
+- Missing baseline measurements
+- Quality gate failures
+- Metric calculation errors
+
+#### Diagnostic Steps
+```bash
+# Check quality measurement logs
+grep "QualityMetrics\|quality_score" logs/framework.log
+
+# Verify baseline files
+ls -la artifacts/quality-reports/baseline/
+
+# Check quality gate status
+grep "quality_gate" logs/framework.log
+
+# Test quality measurement
+autogen-framework --run-quality-assessment
+```
+
+#### Common Causes and Solutions
+
+**1. Missing Baseline**
+```bash
+# Problem: No baseline measurements for comparison
+# Solution: Establish baseline measurements
+
+# Create baseline directory
+mkdir -p artifacts/quality-reports/baseline/
+
+# Run baseline establishment
+python -m autogen_framework.quality_metrics --establish-baseline
+
+# Verify baseline files
+ls -la artifacts/quality-reports/baseline/
+```
+
+**2. Quality Metric Failures**
+```python
+# Problem: Individual quality metrics failing
+# Solution: Check metric implementations
+
+# Test individual metrics
+python -m autogen_framework.quality_metrics --test-metric functionality
+python -m autogen_framework.quality_metrics --test-metric maintainability
+
+# Check metric configuration
+grep "quality_metrics" autogen_framework/quality_metrics.py
+```
+
+**3. Quality Gate Configuration**
+```bash
+# Problem: Quality gates too strict or too lenient
+# Solution: Adjust quality gate thresholds
+
+# Check current thresholds
+grep "gate_requirements" autogen_framework/quality_metrics.py
+
+# Adjust thresholds in configuration
+# Edit quality gate requirements based on project needs
+```
+
+## 🔧 Advanced Troubleshooting
+
+### Component Integration Issues
+
+#### Symptoms
+- Components not communicating properly
+- Integration test failures
+- Workflow interruptions
+
+#### Diagnostic Approach
+```bash
+# Test component integration
+python -m pytest tests/integration/test_enhanced_execution_flow.py -v
+
+# Check component initialization
+grep "initialize\|setup" logs/framework.log
+
+# Verify component dependencies
+python -c "
+import autogen_framework
+from autogen_framework.agents.task_decomposer import TaskDecomposer
+from autogen_framework.agents.error_recovery import ErrorRecovery
+from autogen_framework.context_manager import ContextManager
+print('All components imported successfully')
+"
+```
+
+### Performance Optimization
+
+#### Memory Usage Issues
+```bash
+# Monitor memory usage
+python -c "
+import psutil
+import os
+process = psutil.Process(os.getpid())
+print(f'Memory usage: {process.memory_info().rss / 1024 / 1024:.2f} MB')
+"
+
+# Clear context cache
+rm -rf memory/cache/
+mkdir -p memory/cache/
+
+# Optimize context compression
+export CONTEXT_COMPRESSION_LEVEL=high
+```
+
+#### Token Limit Issues
+```bash
+# Check token usage
+grep "token.*count\|token.*limit" logs/framework.log
+
+# Enable aggressive compression
+export ENABLE_AGGRESSIVE_COMPRESSION=true
+
+# Use smaller context windows
+export MAX_CONTEXT_SIZE=8000
+```
+
+### Recovery Procedures
+
+#### Complete System Reset
+```bash
+# Full framework reset (use with caution)
+autogen-framework --reset-session
+rm -rf memory/session_state.json
+rm -rf logs/framework.log
+rm -rf artifacts/quality-reports/current/
+
+# Reinitialize framework
+autogen-framework --workspace . --initialize
+```
+
+#### Partial Recovery
+```bash
+# Reset only specific components
+rm -rf memory/projects/current_project/context_cache/
+rm -rf artifacts/quality-reports/current/
+
+# Restart workflow from specific phase
+autogen-framework --restart-from design
+```
+
+## 📞 Getting Help
+
+### Log Collection for Support
+```bash
+# Collect comprehensive logs
+mkdir -p support_logs/
+cp logs/framework.log support_logs/
+cp memory/session_state.json support_logs/
+cp -r artifacts/quality-reports/ support_logs/
+tar -czf support_logs.tar.gz support_logs/
+
+# Include system information
+uv --version > support_logs/system_info.txt
+python --version >> support_logs/system_info.txt
+ls -la requirements.md design.md tasks.md >> support_logs/system_info.txt
+```
+
+### Reporting Issues
+When reporting issues, please include:
+1. Framework version and configuration
+2. Complete error messages and stack traces
+3. Steps to reproduce the issue
+4. System information (OS, Python version, uv version)
+5. Relevant log files (use log collection script above)
+6. Quality measurement results if applicable
+
+### Community Resources
+- GitHub Issues: Report bugs and feature requests
+- Documentation: Check latest documentation for updates
+- Examples: Review example implementations in `autogen_framework/examples/`
