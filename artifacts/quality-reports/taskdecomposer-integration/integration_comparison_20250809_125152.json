@@ -1,0 +1,212 @@
+{
+  "enhanced": [
+    {
+      "task_id": "test_1",
+      "task_title": "Create Python Module with Basic Functionality",
+      "success": true,
+      "attempts": [
+        {
+          "approach": "task_decomposer",
+          "success": true,
+          "commands": [
+            "echo 'Starting task implementation'",
+            "echo 'Task completed'"
+          ],
+          "files_modified": [],
+          "output": "\u2713 Initialize task execution: echo 'Starting task implementation'\n  Output: Starting task implementation\n\u2713 Mark task as completed: echo 'Task completed'\n  Output: Task completed",
+          "execution_time": 0.059440208999149036,
+          "complexity_analysis": {
+            "complexity_level": "simple",
+            "estimated_steps": 4,
+            "required_tools": [
+              "shell",
+              "basic_tools"
+            ],
+            "dependencies": [],
+            "risk_factors": [
+              "execution_failure"
+            ],
+            "confidence_score": 0.6,
+            "analysis_reasoning": "Parsed from text response"
+          },
+          "quality_score": 1.0
+        }
+      ],
+      "final_approach": "task_decomposer",
+      "execution_time": 13.027965624998615,
+      "shell_commands": [
+        "echo 'Starting task implementation'",
+        "echo 'Task completed'"
+      ],
+      "files_modified": [],
+      "learning_outcomes": [],
+      "task_analysis": {},
+      "detailed_log": [
+        "TaskDecomposer analysis completed in 12.97s - Complexity: simple, Commands: 2",
+        "Plan execution completed in 0.06s - Success: True, Commands executed: 2"
+      ],
+      "actual_execution_time": 13.126549749998958,
+      "agent_type": "enhanced"
+    },
+    {
+      "task_id": "test_2",
+      "task_title": "Set up Project Structure",
+      "success": true,
+      "attempts": [
+        {
+          "approach": "task_decomposer",
+          "success": true,
+          "commands": [
+            "echo 'Starting task implementation'",
+            "echo 'Running tests'",
+            "echo 'Task completed'"
+          ],
+          "files_modified": [],
+          "output": "\u2713 Initialize task execution: echo 'Starting task implementation'\n  Output: Starting task implementation\n\u2713 Execute tests: echo 'Running tests'\n  Output: Running tests\n\u2713 Mark task as completed: echo 'Task completed'\n  Output: Task completed",
+          "execution_time": 0.08040808299847413,
+          "complexity_analysis": {
+            "complexity_level": "simple",
+            "estimated_steps": 4,
+            "required_tools": [
+              "shell",
+              "basic_tools"
+            ],
+            "dependencies": [],
+            "risk_factors": [
+              "execution_failure"
+            ],
+            "confidence_score": 0.6,
+            "analysis_reasoning": "Parsed from text response"
+          },
+          "quality_score": 1.0
+        }
+      ],
+      "final_approach": "task_decomposer",
+      "execution_time": 12.625499666995893,
+      "shell_commands": [
+        "echo 'Starting task implementation'",
+        "echo 'Running tests'",
+        "echo 'Task completed'"
+      ],
+      "files_modified": [],
+      "learning_outcomes": [],
+      "task_analysis": {},
+      "detailed_log": [
+        "TaskDecomposer analysis completed in 12.55s - Complexity: simple, Commands: 3",
+        "Plan execution completed in 0.08s - Success: True, Commands executed: 3"
+      ],
+      "actual_execution_time": 12.711507583000639,
+      "agent_type": "enhanced"
+    }
+  ],
+  "original": [
+    {
+      "task_id": "test_1",
+      "task_title": "Create Python Module with Basic Functionality",
+      "success": true,
+      "attempts": [
+        {
+          "approach": "task_decomposer",
+          "success": true,
+          "commands": [
+            "echo 'Starting task implementation'",
+            "echo 'Task completed'"
+          ],
+          "files_modified": [],
+          "output": "\u2713 Initialize task execution: echo 'Starting task implementation'\n  Output: Starting task implementation\n\u2713 Mark task as completed: echo 'Task completed'\n  Output: Task completed",
+          "execution_time": 0.04718320800020592,
+          "complexity_analysis": {
+            "complexity_level": "simple",
+            "estimated_steps": 4,
+            "required_tools": [
+              "shell",
+              "basic_tools"
+            ],
+            "dependencies": [],
+            "risk_factors": [
+              "execution_failure"
+            ],
+            "confidence_score": 0.6,
+            "analysis_reasoning": "Parsed from text response"
+          },
+          "quality_score": 1.0
+        }
+      ],
+      "final_approach": "task_decomposer",
+      "execution_time": 13.521490541003004,
+      "shell_commands": [
+        "echo 'Starting task implementation'",
+        "echo 'Task completed'"
+      ],
+      "files_modified": [],
+      "learning_outcomes": [],
+      "task_analysis": {},
+      "detailed_log": [
+        "TaskDecomposer analysis completed in 13.47s - Complexity: simple, Commands: 2",
+        "Plan execution completed in 0.05s - Success: True, Commands executed: 2"
+      ],
+      "actual_execution_time": 13.623663708000095,
+      "agent_type": "original"
+    },
+    {
+      "task_id": "test_2",
+      "task_title": "Set up Project Structure",
+      "success": true,
+      "attempts": [
+        {
+          "approach": "task_decomposer",
+          "success": true,
+          "commands": [
+            "echo 'Starting task implementation'",
+            "echo 'Running tests'",
+            "echo 'Task completed'"
+          ],
+          "files_modified": [],
+          "output": "\u2713 Initialize task execution: echo 'Starting task implementation'\n  Output: Starting task implementation\n\u2713 Execute tests: echo 'Running tests'\n  Output: Running tests\n\u2713 Mark task as completed: echo 'Task completed'\n  Output: Task completed",
+          "execution_time": 0.07058570799563313,
+          "complexity_analysis": {
+            "complexity_level": "simple",
+            "estimated_steps": 4,
+            "required_tools": [
+              "shell",
+              "basic_tools"
+            ],
+            "dependencies": [],
+            "risk_factors": [
+              "execution_failure"
+            ],
+            "confidence_score": 0.6,
+            "analysis_reasoning": "Parsed from text response"
+          },
+          "quality_score": 1.0
+        }
+      ],
+      "final_approach": "task_decomposer",
+      "execution_time": 13.427014207998582,
+      "shell_commands": [
+        "echo 'Starting task implementation'",
+        "echo 'Running tests'",
+        "echo 'Task completed'"
+      ],
+      "files_modified": [],
+      "learning_outcomes": [],
+      "task_analysis": {},
+      "detailed_log": [
+        "TaskDecomposer analysis completed in 13.36s - Complexity: simple, Commands: 3",
+        "Plan execution completed in 0.07s - Success: True, Commands executed: 3"
+      ],
+      "actual_execution_time": 13.502910499999416,
+      "agent_type": "original"
+    }
+  ],
+  "comparison": {
+    "enhanced_success_rate": 1.0,
+    "original_success_rate": 1.0,
+    "success_rate_improvement": 0.0,
+    "enhanced_avg_execution_time": 12.919028666499798,
+    "original_avg_execution_time": 13.563287103999755,
+    "execution_time_improvement": 0.04750016957983348,
+    "enhanced_avg_quality_score": 0.0,
+    "quality_metrics_available": false
+  }
+}

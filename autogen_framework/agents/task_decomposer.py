@@ -615,9 +615,11 @@ Format your response as JSON array of strings:
     def _parse_command_sequence(self, response: str, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
         """Parse shell command sequence from LLM response."""
         try:
-            # Try to parse as JSON first
-            if response.strip().startswith('['):
-                data = json.loads(response)
+            # Extract JSON from response (handle code blocks)
+            json_content = self._extract_json_from_response(response)
+            
+            if json_content:
+                data = json.loads(json_content)
                 commands = []
                 
                 for cmd_data in data:
@@ -634,14 +636,40 @@ Format your response as JSON array of strings:
                     )
                     commands.append(command)
                 
+                self.logger.info(f"Successfully parsed {len(commands)} commands from LLM JSON response")
                 return commands
             else:
                 # Fallback to text parsing
+                self.logger.warning("No JSON found in response, falling back to text parsing")
                 return self._parse_commands_from_text(response, task, complexity)
                 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # Fallback to text parsing
+            self.logger.warning(f"JSON parsing failed: {e}, falling back to text parsing")
             return self._parse_commands_from_text(response, task, complexity)
+    
+    def _extract_json_from_response(self, response: str) -> Optional[str]:
+        """Extract JSON content from LLM response, handling code blocks."""
+        import re
+        
+        # Try to find JSON in code blocks first
+        json_block_pattern = r'```(?:json)?\s*(\[.*?\])\s*```'
+        match = re.search(json_block_pattern, response, re.DOTALL)
+        if match:
+            return match.group(1)
+        
+        # Try to find JSON array directly
+        json_pattern = r'(\[.*?\])'
+        match = re.search(json_pattern, response, re.DOTALL)
+        if match:
+            return match.group(1)
+        
+        # Check if response starts with [ after stripping
+        stripped = response.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            return stripped
+        
+        return None
     
     def _parse_commands_from_text(self, response: str, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
         """Parse commands from text response."""

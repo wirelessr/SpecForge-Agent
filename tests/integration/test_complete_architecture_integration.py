@@ -32,14 +32,8 @@ class TestCompleteArchitectureIntegration:
         """Create a MainController instance for testing."""
         return MainController(temp_workspace)
     
-    @pytest.fixture
-    def real_llm_config(self):
-        """Create real LLM configuration for integration testing."""
-        return LLMConfig(
-            base_url="http://test.local:8888/openai/v1",
-            model="test-model",
-            api_key="test-key"
-        )
+    # real_llm_config fixture is provided by tests/integration/conftest.py
+    # It loads configuration from .env.integration file for secure testing
     
     @pytest.mark.integration
     def test_complete_component_initialization(self, main_controller, temp_workspace, real_llm_config):

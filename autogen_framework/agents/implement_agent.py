@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from .base_agent import BaseLLMAgent
+from .task_decomposer import TaskDecomposer, ExecutionPlan
 from ..models import LLMConfig, TaskDefinition, ExecutionResult, WorkflowState
 from ..shell_executor import ShellExecutor
 
@@ -42,6 +43,7 @@ class ImplementAgent(BaseLLMAgent):
         llm_config: LLMConfig, 
         system_message: str,
         shell_executor: ShellExecutor,
+        task_decomposer: Optional[TaskDecomposer] = None,
         description: Optional[str] = None
     ):
         """
@@ -52,21 +54,27 @@ class ImplementAgent(BaseLLMAgent):
             llm_config: LLM configuration for API connection
             system_message: System instructions for the agent
             shell_executor: ShellExecutor instance for command execution
+            task_decomposer: Optional TaskDecomposer for intelligent task breakdown
             description: Optional description of the agent's role
         """
         super().__init__(
             name=name,
             llm_config=llm_config,
             system_message=system_message,
-            description=description or "Implementation agent for executing coding tasks"
+            description=description or "Enhanced implementation agent with intelligent task decomposition"
         )
         
         self.shell_executor = shell_executor
+        self.task_decomposer = task_decomposer or TaskDecomposer(
+            name=f"{name}_decomposer",
+            llm_config=llm_config,
+            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands."
+        )
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
         self.execution_context: Dict[str, Any] = {}
         
-        self.logger.info(f"ImplementAgent initialized with shell executor")
+        self.logger.info(f"ImplementAgent initialized with shell executor and TaskDecomposer")
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for ImplementAgent."""
@@ -140,9 +148,17 @@ class ImplementAgent(BaseLLMAgent):
             "learning_outcomes": []
         }
         
-        # Use enhanced retry mechanism with intelligent approach selection
+        # Use TaskDecomposer for intelligent task breakdown and execution
         try:
-            enhanced_result = await self._execute_with_enhanced_retry(task, work_dir)
+            self.logger.info(f"Starting TaskDecomposer execution for task: {task.title}")
+            enhanced_result = await self._execute_with_task_decomposer(task, work_dir)
+            self.logger.info(f"TaskDecomposer execution completed successfully")
+            
+            # Add quality metrics and decomposition plan to execution_result
+            if enhanced_result.get("quality_metrics"):
+                execution_result["quality_metrics"] = enhanced_result["quality_metrics"]
+            if enhanced_result.get("decomposition_plan"):
+                execution_result["decomposition_plan"] = enhanced_result["decomposition_plan"]
             
             # Merge enhanced result into execution_result
             execution_result.update({
@@ -160,9 +176,9 @@ class ImplementAgent(BaseLLMAgent):
                 execution_result["files_modified"].extend(attempt.get("files_modified", []))
             
         except Exception as e:
-            self.logger.error(f"Enhanced task execution failed: {e}")
+            self.logger.error(f"TaskDecomposer execution failed: {e}")
             execution_result["attempts"].append({
-                "approach": "enhanced_retry_fallback",
+                "approach": "taskdecomposer_fallback",
                 "success": False,
                 "error": str(e),
                 "commands": []
@@ -2408,4 +2424,332 @@ Generate the complete file contents now:"""
     async def _restore_from_backups(self, backups: List[str], work_dir: str) -> Dict[str, Any]:
         """Restore files from backups."""
         # This is a placeholder implementation for testing
-        return {"commands": []}
+        return {"commands": []} 
+   
+    # ============================================================================
+    # TaskDecomposer Integration Methods
+    # ============================================================================
+    
+    async def _execute_with_task_decomposer(self, task: TaskDefinition, work_dir: str) -> Dict[str, Any]:
+        """
+        Execute task using TaskDecomposer for intelligent breakdown and execution.
+        
+        This method represents the enhanced execution flow that integrates TaskDecomposer
+        for intelligent task analysis and decomposition into executable shell commands.
+        
+        Args:
+            task: TaskDefinition to execute
+            work_dir: Working directory for execution
+            
+        Returns:
+            Dictionary containing comprehensive execution results with TaskDecomposer analysis
+        """
+        start_time = asyncio.get_event_loop().time()
+        
+        execution_result = {
+            "task_id": task.id,
+            "task_title": task.title,
+            "approaches_attempted": [],
+            "successful_approach": "task_decomposer",
+            "success": False,
+            "execution_time": 0,
+            "task_analysis": {},
+            "detailed_log": [],
+            "decomposition_plan": None,
+            "commands_executed": [],
+            "quality_metrics": {}
+        }
+        
+        try:
+            self.logger.info(f"Using TaskDecomposer for intelligent task breakdown: {task.title}")
+            
+            # Step 1: Use TaskDecomposer to analyze and decompose the task
+            decomposition_start = asyncio.get_event_loop().time()
+            execution_plan = await self.task_decomposer.decompose_task(task)
+            decomposition_time = asyncio.get_event_loop().time() - decomposition_start
+            
+            execution_result["decomposition_plan"] = {
+                "complexity_analysis": execution_plan.complexity_analysis.__dict__,
+                "commands_count": len(execution_plan.commands),
+                "decision_points_count": len(execution_plan.decision_points),
+                "success_criteria_count": len(execution_plan.success_criteria),
+                "fallback_strategies_count": len(execution_plan.fallback_strategies),
+                "estimated_duration": execution_plan.estimated_duration,
+                "decomposition_time": decomposition_time
+            }
+            
+            execution_result["detailed_log"].append(
+                f"TaskDecomposer analysis completed in {decomposition_time:.2f}s - "
+                f"Complexity: {execution_plan.complexity_analysis.complexity_level}, "
+                f"Commands: {len(execution_plan.commands)}"
+            )
+            
+            # Step 2: Execute the decomposed plan using shell commands
+            execution_start = asyncio.get_event_loop().time()
+            plan_result = await self._execute_decomposed_plan(execution_plan, work_dir)
+            execution_time = asyncio.get_event_loop().time() - execution_start
+            
+            # Step 3: Compile results
+            execution_result.update({
+                "success": plan_result["success"],
+                "commands_executed": plan_result["commands_executed"],
+                "files_modified": plan_result.get("files_modified", []),
+                "execution_output": plan_result.get("output", ""),
+                "execution_errors": plan_result.get("errors", [])
+            })
+            
+            # Step 4: Calculate quality metrics
+            execution_result["quality_metrics"] = self._calculate_execution_quality_metrics(
+                execution_plan, plan_result, execution_time
+            )
+            
+            execution_result["detailed_log"].append(
+                f"Plan execution completed in {execution_time:.2f}s - "
+                f"Success: {plan_result['success']}, "
+                f"Commands executed: {len(plan_result['commands_executed'])}"
+            )
+            
+            # Record the attempt
+            attempt_result = {
+                "approach": "task_decomposer",
+                "success": plan_result["success"],
+                "commands": [cmd.command for cmd in execution_plan.commands],
+                "files_modified": plan_result.get("files_modified", []),
+                "output": plan_result.get("output", ""),
+                "execution_time": execution_time,
+                "complexity_analysis": execution_plan.complexity_analysis.__dict__,
+                "quality_score": execution_result["quality_metrics"].get("overall_score", 0.0)
+            }
+            
+            if plan_result.get("errors"):
+                attempt_result["error"] = "; ".join(plan_result["errors"])
+            
+            execution_result["approaches_attempted"].append(attempt_result)
+            
+            if plan_result["success"]:
+                task.mark_completed(attempt_result)
+                self.logger.info(f"TaskDecomposer execution successful for task: {task.title}")
+            else:
+                self.logger.warning(f"TaskDecomposer execution failed for task: {task.title}")
+                
+        except Exception as e:
+            self.logger.error(f"TaskDecomposer execution failed with exception: {e}")
+            execution_result["approaches_attempted"].append({
+                "approach": "task_decomposer",
+                "success": False,
+                "error": str(e),
+                "commands": [],
+                "execution_time": 0
+            })
+            execution_result["detailed_log"].append(f"TaskDecomposer execution failed: {str(e)}")
+        
+        # Calculate total execution time
+        execution_result["execution_time"] = asyncio.get_event_loop().time() - start_time
+        
+        return execution_result
+    
+    async def _execute_decomposed_plan(self, execution_plan: ExecutionPlan, work_dir: str) -> Dict[str, Any]:
+        """
+        Execute the decomposed execution plan using shell commands.
+        
+        Args:
+            execution_plan: ExecutionPlan from TaskDecomposer
+            work_dir: Working directory for execution
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        result = {
+            "success": True,
+            "commands_executed": [],
+            "files_modified": [],
+            "output": [],
+            "errors": [],
+            "decision_points_evaluated": []
+        }
+        
+        self.logger.info(f"Executing decomposed plan with {len(execution_plan.commands)} commands")
+        
+        for i, shell_command in enumerate(execution_plan.commands):
+            try:
+                self.logger.debug(f"Executing command {i+1}/{len(execution_plan.commands)}: {shell_command.command}")
+                
+                # Execute the shell command
+                command_result = await self.shell_executor.execute_command(
+                    shell_command.command, 
+                    work_dir,
+                    timeout=shell_command.timeout
+                )
+                
+                result["commands_executed"].append({
+                    "command": shell_command.command,
+                    "description": shell_command.description,
+                    "success": command_result.success,
+                    "exit_code": command_result.return_code,
+                    "stdout": command_result.stdout,
+                    "stderr": command_result.stderr,
+                    "execution_time": command_result.execution_time
+                })
+                
+                if command_result.success:
+                    result["output"].append(f"✓ {shell_command.description}: {shell_command.command}")
+                    if command_result.stdout and command_result.stdout.strip():
+                        result["output"].append(f"  Output: {command_result.stdout.strip()}")
+                    
+                    # Track file modifications
+                    if self._command_modifies_files(shell_command.command):
+                        modified_files = self._extract_filenames_from_command(shell_command.command)
+                        result["files_modified"].extend(modified_files)
+                else:
+                    error_msg = f"✗ {shell_command.description}: {shell_command.command}"
+                    result["output"].append(error_msg)
+                    if command_result.stderr:
+                        result["output"].append(f"  Error: {command_result.stderr}")
+                        result["errors"].append(f"Command '{shell_command.command}': {command_result.stderr}")
+                    
+                    # Check if this is a critical error that should stop execution
+                    if self._is_critical_error(command_result.stderr, shell_command.command):
+                        result["success"] = False
+                        self.logger.error(f"Critical error in command '{shell_command.command}': {command_result.stderr}")
+                        break
+                    else:
+                        self.logger.warning(f"Non-critical error in command '{shell_command.command}': {command_result.stderr}")
+                
+                # Evaluate decision points if this command has one
+                if shell_command.decision_point:
+                    decision_result = self._evaluate_decision_point(shell_command, command_result, execution_plan)
+                    result["decision_points_evaluated"].append(decision_result)
+                    
+                    # Modify execution flow based on decision point
+                    if decision_result.get("modify_execution"):
+                        self.logger.info(f"Decision point triggered execution modification: {decision_result['action']}")
+                
+            except Exception as e:
+                self.logger.error(f"Exception executing command '{shell_command.command}': {e}")
+                result["errors"].append(f"Exception in command '{shell_command.command}': {str(e)}")
+                result["success"] = False
+                break
+        
+        # Remove duplicates from files_modified
+        result["files_modified"] = list(set(result["files_modified"]))
+        
+        # Join output lines
+        result["output"] = "\n".join(result["output"])
+        
+        self.logger.info(f"Decomposed plan execution completed - Success: {result['success']}, Commands: {len(result['commands_executed'])}")
+        
+        return result
+    
+    def _evaluate_decision_point(self, shell_command, command_result, execution_plan: ExecutionPlan) -> Dict[str, Any]:
+        """
+        Evaluate decision points during command execution.
+        
+        Args:
+            shell_command: The shell command that was executed
+            command_result: Result of the command execution
+            execution_plan: The full execution plan
+            
+        Returns:
+            Dictionary containing decision point evaluation results
+        """
+        decision_result = {
+            "command": shell_command.command,
+            "decision_triggered": False,
+            "condition_met": False,
+            "action": "continue",
+            "modify_execution": False
+        }
+        
+        # Find relevant decision points for this command
+        for decision_point in execution_plan.decision_points:
+            if decision_point.evaluation_method == "exit_code":
+                if command_result.return_code == 0:
+                    decision_result["condition_met"] = True
+                    decision_result["action"] = "success_path"
+                else:
+                    decision_result["condition_met"] = False
+                    decision_result["action"] = "failure_path"
+                decision_result["decision_triggered"] = True
+                break
+            elif decision_point.evaluation_method == "output_check":
+                if any(indicator in command_result.stdout for indicator in shell_command.success_indicators):
+                    decision_result["condition_met"] = True
+                    decision_result["action"] = "success_path"
+                elif any(indicator in command_result.stderr for indicator in shell_command.failure_indicators):
+                    decision_result["condition_met"] = False
+                    decision_result["action"] = "failure_path"
+                decision_result["decision_triggered"] = True
+                break
+        
+        return decision_result
+    
+    def _calculate_execution_quality_metrics(self, execution_plan: ExecutionPlan, plan_result: Dict[str, Any], execution_time: float) -> Dict[str, Any]:
+        """
+        Calculate quality metrics for TaskDecomposer execution.
+        
+        Args:
+            execution_plan: The execution plan that was used
+            plan_result: Results of plan execution
+            execution_time: Time taken for execution
+            
+        Returns:
+            Dictionary containing quality metrics
+        """
+        metrics = {
+            "overall_score": 0.0,
+            "command_success_rate": 0.0,
+            "execution_efficiency": 0.0,
+            "plan_accuracy": 0.0,
+            "complexity_appropriateness": 0.0
+        }
+        
+        # Calculate command success rate
+        total_commands = len(plan_result["commands_executed"])
+        successful_commands = sum(1 for cmd in plan_result["commands_executed"] if cmd["success"])
+        metrics["command_success_rate"] = (successful_commands / total_commands) if total_commands > 0 else 0.0
+        
+        # Calculate execution efficiency (actual vs estimated time)
+        estimated_minutes = execution_plan.estimated_duration
+        actual_minutes = execution_time / 60
+        if estimated_minutes > 0:
+            efficiency = min(1.0, estimated_minutes / actual_minutes) if actual_minutes > 0 else 1.0
+            metrics["execution_efficiency"] = efficiency
+        else:
+            metrics["execution_efficiency"] = 0.8  # Default reasonable efficiency
+        
+        # Calculate plan accuracy (how well the plan matched reality)
+        plan_accuracy = 1.0
+        if len(plan_result["errors"]) > 0:
+            plan_accuracy -= 0.2 * len(plan_result["errors"])  # Deduct for errors
+        if not plan_result["success"]:
+            plan_accuracy -= 0.3  # Deduct for overall failure
+        metrics["plan_accuracy"] = max(0.0, plan_accuracy)
+        
+        # Calculate complexity appropriateness
+        complexity_level = execution_plan.complexity_analysis.complexity_level
+        command_count = len(execution_plan.commands)
+        
+        if complexity_level == "simple" and command_count <= 3:
+            metrics["complexity_appropriateness"] = 1.0
+        elif complexity_level == "moderate" and 2 <= command_count <= 5:
+            metrics["complexity_appropriateness"] = 1.0
+        elif complexity_level == "complex" and 4 <= command_count <= 8:
+            metrics["complexity_appropriateness"] = 1.0
+        elif complexity_level == "very_complex" and command_count >= 6:
+            metrics["complexity_appropriateness"] = 1.0
+        else:
+            metrics["complexity_appropriateness"] = 0.7  # Reasonable but not perfect match
+        
+        # Calculate overall score as weighted average
+        weights = {
+            "command_success_rate": 0.4,
+            "execution_efficiency": 0.2,
+            "plan_accuracy": 0.25,
+            "complexity_appropriateness": 0.15
+        }
+        
+        metrics["overall_score"] = sum(
+            metrics[metric] * weight for metric, weight in weights.items()
+        )
+        
+        return metrics

@@ -1,0 +1,125 @@
+[
+  {
+    "task_id": "python_calculator",
+    "task_title": "Create Python Calculator Module",
+    "success": true,
+    "execution_time": 19.0411138749987,
+    "quality_metrics": {
+      "overall_score": 1.0,
+      "command_success_rate": 1.0,
+      "execution_efficiency": 1.0,
+      "plan_accuracy": 1.0,
+      "complexity_appropriateness": 1.0
+    },
+    "decomposition_plan": {
+      "complexity_analysis": {
+        "complexity_level": "simple",
+        "estimated_steps": 5,
+        "required_tools": [
+          "shell",
+          "basic_tools"
+        ],
+        "dependencies": [],
+        "risk_factors": [
+          "execution_failure"
+        ],
+        "confidence_score": 0.6,
+        "analysis_reasoning": "Parsed from text response"
+      },
+      "commands_count": 3,
+      "decision_points_count": 0,
+      "success_criteria_count": 9,
+      "fallback_strategies_count": 7,
+      "estimated_duration": 5,
+      "decomposition_time": 18.861438459003693
+    },
+    "files_created": [
+      "task_python_calculator_completion.md",
+      "project_execution_log.md"
+    ],
+    "commands_executed": 0,
+    "approaches_attempted": 1
+  },
+  {
+    "task_id": "json_processor",
+    "task_title": "JSON Data Processor",
+    "success": true,
+    "execution_time": 23.902607582997007,
+    "quality_metrics": {
+      "overall_score": 0.9550000000000001,
+      "command_success_rate": 1.0,
+      "execution_efficiency": 1.0,
+      "plan_accuracy": 1.0,
+      "complexity_appropriateness": 0.7
+    },
+    "decomposition_plan": {
+      "complexity_analysis": {
+        "complexity_level": "complex",
+        "estimated_steps": 8,
+        "required_tools": [
+          "shell",
+          "basic_tools"
+        ],
+        "dependencies": [],
+        "risk_factors": [
+          "execution_failure"
+        ],
+        "confidence_score": 0.6,
+        "analysis_reasoning": "Parsed from text response"
+      },
+      "commands_count": 3,
+      "decision_points_count": 0,
+      "success_criteria_count": 10,
+      "fallback_strategies_count": 9,
+      "estimated_duration": 9,
+      "decomposition_time": 23.763077625000733
+    },
+    "files_created": [
+      "task_json_processor_completion.md",
+      "project_execution_log.md"
+    ],
+    "commands_executed": 0,
+    "approaches_attempted": 1
+  },
+  {
+    "task_id": "web_scraper",
+    "task_title": "Simple Web Scraper",
+    "success": true,
+    "execution_time": 24.726681249994726,
+    "quality_metrics": {
+      "overall_score": 0.9550000000000001,
+      "command_success_rate": 1.0,
+      "execution_efficiency": 1.0,
+      "plan_accuracy": 1.0,
+      "complexity_appropriateness": 0.7
+    },
+    "decomposition_plan": {
+      "complexity_analysis": {
+        "complexity_level": "complex",
+        "estimated_steps": 8,
+        "required_tools": [
+          "shell",
+          "basic_tools"
+        ],
+        "dependencies": [],
+        "risk_factors": [
+          "execution_failure"
+        ],
+        "confidence_score": 0.6,
+        "analysis_reasoning": "Parsed from text response"
+      },
+      "commands_count": 2,
+      "decision_points_count": 0,
+      "success_criteria_count": 12,
+      "fallback_strategies_count": 9,
+      "estimated_duration": 6,
+      "decomposition_time": 24.548521665994485
+    },
+    "files_created": [
+      "task_web_scraper_completion.md",
+      "project_execution_log.md"
+    ],
+    "commands_executed": 0,
+    "approaches_attempted": 1
+  }
+]
