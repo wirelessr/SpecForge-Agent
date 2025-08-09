@@ -160,20 +160,53 @@ class ImplementAgent(BaseLLMAgent):
             if enhanced_result.get("decomposition_plan"):
                 execution_result["decomposition_plan"] = enhanced_result["decomposition_plan"]
             
-            # Merge enhanced result into execution_result
-            execution_result.update({
-                "success": enhanced_result["success"],
-                "final_approach": enhanced_result.get("successful_approach"),
-                "attempts": enhanced_result["approaches_attempted"],
-                "execution_time": enhanced_result["execution_time"],
-                "task_analysis": enhanced_result.get("task_analysis", {}),
-                "detailed_log": enhanced_result.get("detailed_log", [])
-            })
-            
-            # Extract shell commands and files modified from all attempts
-            for attempt in enhanced_result["approaches_attempted"]:
-                execution_result["shell_commands"].extend(attempt.get("commands", []))
-                execution_result["files_modified"].extend(attempt.get("files_modified", []))
+            # Check if TaskDecomposer was successful
+            if enhanced_result["success"]:
+                # TaskDecomposer succeeded
+                execution_result.update({
+                    "success": enhanced_result["success"],
+                    "final_approach": enhanced_result.get("successful_approach"),
+                    "attempts": enhanced_result["approaches_attempted"],
+                    "execution_time": enhanced_result["execution_time"],
+                    "task_analysis": enhanced_result.get("task_analysis", {}),
+                    "detailed_log": enhanced_result.get("detailed_log", [])
+                })
+                
+                # Extract shell commands and files modified from all attempts
+                for attempt in enhanced_result["approaches_attempted"]:
+                    execution_result["shell_commands"].extend(attempt.get("commands", []))
+                    execution_result["files_modified"].extend(attempt.get("files_modified", []))
+            else:
+                # TaskDecomposer failed, trigger fallback
+                self.logger.warning(f"TaskDecomposer failed for task: {task.title}, triggering fallback")
+                execution_result["attempts"].extend(enhanced_result["approaches_attempted"])
+                
+                # Fallback to original retry mechanism
+                for attempt in range(task.max_retries + 1):
+                    try:
+                        approach_result = await self._try_task_execution(task, work_dir, attempt)
+                        
+                        execution_result["attempts"].append(approach_result)
+                        execution_result["shell_commands"].extend(approach_result.get("commands", []))
+                        execution_result["files_modified"].extend(approach_result.get("files_modified", []))
+                        
+                        if approach_result["success"]:
+                            execution_result["success"] = True
+                            execution_result["final_approach"] = approach_result["approach"]
+                            task.mark_completed(execution_result)
+                            break
+                            
+                        task.increment_retry()
+                        
+                    except Exception as fallback_e:
+                        self.logger.error(f"Fallback attempt {attempt + 1} failed: {fallback_e}")
+                        execution_result["attempts"].append({
+                            "attempt": attempt + 1,
+                            "approach": f"fallback_attempt_{attempt + 1}",
+                            "success": False,
+                            "error": str(fallback_e),
+                            "commands": []
+                        })
             
         except Exception as e:
             self.logger.error(f"TaskDecomposer execution failed: {e}")
