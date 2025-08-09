@@ -36,13 +36,30 @@ Integration tests verify that components work correctly with real external servi
 - **Verify end-to-end functionality** with real components
 - **Validate configuration and service communication**
 - **Test real file system operations and memory management**
+- **Test autonomous execution components** (TaskDecomposer, ErrorRecovery, ContextManager)
 
 **Key Characteristics:**
 - Use real LLM configuration from `.env.integration`
 - Make actual API calls to external services
 - Test real AutoGen agent initialization and communication
+- Test enhanced ImplementAgent with autonomous capabilities
 - Use `real_llm_config` fixture for configuration
 - May take longer to complete due to network calls
+
+### Quality Tests (`tests/quality/`)
+
+Quality tests measure and validate the quality of autonomous execution output. They are designed to:
+
+- **Measure implementation quality** using objective metrics
+- **Compare against established baselines** for regression detection
+- **Validate quality gates** for different development phases
+- **Test quality measurement framework** itself
+
+**Key Characteristics:**
+- Use real tasks.md files for quality assessment
+- Measure functionality, maintainability, standards compliance
+- Track quality improvements over time
+- Integrate with quality gate management system
 
 ## Test Naming Conventions
 
