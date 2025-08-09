@@ -16,6 +16,21 @@ from autogen_framework.agents.implement_agent import ImplementAgent
 from autogen_framework.models import LLMConfig, TaskDefinition, ExecutionResult
 from autogen_framework.shell_executor import ShellExecutor
 
+# Global patch to mock TaskDecomposer to prevent timeout issues in unit tests
+@pytest.fixture(autouse=True)
+def mock_task_decomposer_globally():
+    """Automatically mock TaskDecomposer for all tests to prevent LLM timeout issues."""
+    with patch('autogen_framework.agents.implement_agent.TaskDecomposer') as mock_class:
+        mock_instance = Mock()
+        mock_instance.decompose_task = AsyncMock(return_value=Mock(
+            success=False,
+            error="Mocked TaskDecomposer - not executed in unit tests",
+            commands=[],
+            execution_plan=Mock(steps=[], decision_points=[])
+        ))
+        mock_class.return_value = mock_instance
+        yield mock_instance
+
 class TestImplementAgent:
     """Test suite for ImplementAgent basic functionality."""    # Using shared test_llm_config fixture from conftest.py
     @pytest.fixture
@@ -26,13 +41,21 @@ class TestImplementAgent:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def mock_task_decomposer(self):
+        """Create a mock task decomposer."""
+        decomposer = Mock()
+        decomposer.decompose_task = AsyncMock()
+        return decomposer
+    
+    @pytest.fixture
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
         """Create an ImplementAgent instance for testing."""
         return ImplementAgent(
             name="TestImplementAgent",
             llm_config=test_llm_config,
             system_message="Test implementation agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            task_decomposer=mock_task_decomposer
         )
     
     @pytest.fixture
@@ -63,7 +86,7 @@ class TestImplementAgent:
         assert implement_agent.current_work_directory is None
         assert implement_agent.current_tasks == []
         assert implement_agent.execution_context == {}
-        assert "Implementation agent" in implement_agent.description
+        assert "Enhanced implementation agent" in implement_agent.description
     
     def test_get_agent_capabilities(self, implement_agent):
         """Test agent capabilities reporting."""
@@ -127,12 +150,20 @@ class TestImplementAgentTaskExecution:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def mock_task_decomposer(self):
+        """Create a mock task decomposer."""
+        decomposer = Mock()
+        decomposer.decompose_task = AsyncMock()
+        return decomposer
+    
+    @pytest.fixture
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            task_decomposer=mock_task_decomposer
         )
     
     @pytest.fixture
@@ -153,14 +184,32 @@ class TestImplementAgentTaskExecution:
     @pytest.mark.asyncio
     async def test_execute_task_success(self, implement_agent, sample_task, temp_work_dir):
         """Test successful task execution."""
-        # Mock successful execution with enhanced retry mechanism
-        implement_agent._execute_with_approach = AsyncMock()
-        implement_agent._execute_with_approach.return_value = {
-            "success": True,
-            "approach": "test_driven_development",
-            "commands": ["echo 'test'"],
-            "files_modified": ["test.txt"]
-        }
+        # Import required classes for proper mocking
+        from autogen_framework.agents.task_decomposer import ExecutionPlan, ComplexityAnalysis, ShellCommand
+        
+        # Create a proper ExecutionPlan mock
+        mock_command = Mock()
+        mock_command.command = "echo 'test'"
+        mock_command.description = "Test command"
+        mock_command.expected_output = "test"
+        
+        mock_plan = ExecutionPlan(
+            task=sample_task,
+            complexity_analysis=Mock(),
+            commands=[mock_command],
+            decision_points=[],
+            success_criteria=["File created successfully"],
+            fallback_strategies=["Retry with different approach"]
+        )
+        
+        # Mock TaskDecomposer to return successful execution plan
+        implement_agent.task_decomposer.decompose_task = AsyncMock(return_value=mock_plan)
+        
+        # Mock shell execution
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.stdout = "test"
+        implement_agent.shell_executor.execute_command = AsyncMock(return_value=mock_result)
         
         # Mock completion recording
         implement_agent.record_task_completion = AsyncMock()
@@ -169,7 +218,7 @@ class TestImplementAgentTaskExecution:
         
         assert result["success"] is True
         assert result["task_id"] == sample_task.id
-        assert result["final_approach"] == "test_driven_development"
+        assert result["final_approach"] == "task_decomposer"
         assert sample_task.completed is True
         
         implement_agent.record_task_completion.assert_called_once()
@@ -324,12 +373,20 @@ class TestImplementAgentFileOperations:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def mock_task_decomposer(self):
+        """Create a mock task decomposer."""
+        decomposer = Mock()
+        decomposer.decompose_task = AsyncMock()
+        return decomposer
+    
+    @pytest.fixture
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            task_decomposer=mock_task_decomposer
         )
     
     @pytest.mark.asyncio
@@ -404,12 +461,20 @@ class TestImplementAgentRecording:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def mock_task_decomposer(self):
+        """Create a mock task decomposer."""
+        decomposer = Mock()
+        decomposer.decompose_task = AsyncMock()
+        return decomposer
+    
+    @pytest.fixture
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            task_decomposer=mock_task_decomposer
         )
     
     @pytest.fixture
