@@ -12,7 +12,7 @@ Welcome to the comprehensive documentation for the AutoGen Multi-Agent Framework
 ### 🏗️ Architecture and Development
 - **[Autonomous Execution Development Guide](../.kiro/steering/autonomous-execution-development-guide.md)** - Enhanced architecture principles and best practices
 - **[Future Improvements](../autogen_framework/docs/FUTURE_IMPROVEMENTS.md)** - Roadmap and planned enhancements
-- **[Token Management](../autogen_framework/docs/token-management-future-enhancements.md)** - Context optimization and token management
+- **[Context Optimization Proposal](../autogen_framework/docs/context-optimization-proposal.md)** - Context and token management optimization proposal
 
 ### 🧪 Testing and Quality
 - **[Testing Overview](../tests/README.md)** - Test organization and conventions
