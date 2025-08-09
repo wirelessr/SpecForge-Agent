@@ -60,10 +60,10 @@ Simple Python module design for testing.
 @pytest.fixture
 def real_context_manager(temp_workspace, real_llm_config):
     """Create ContextManager with real configuration."""
-    memory_manager = MemoryManager(memory_dir=temp_workspace / "memory")
+    memory_manager = MemoryManager(workspace_path=str(temp_workspace))
     context_compressor = ContextCompressor(real_llm_config)
-    token_manager = TokenManager()
     config_manager = ConfigManager()
+    token_manager = TokenManager(config_manager)
     
     context_manager = ContextManager(
         work_dir=str(temp_workspace),
