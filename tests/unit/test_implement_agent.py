@@ -187,15 +187,24 @@ class TestImplementAgentTaskExecution:
         # Import required classes for proper mocking
         from autogen_framework.agents.task_decomposer import ExecutionPlan, ComplexityAnalysis, ShellCommand
         
-        # Create a proper ExecutionPlan mock
-        mock_command = Mock()
-        mock_command.command = "echo 'test'"
-        mock_command.description = "Test command"
-        mock_command.expected_output = "test"
+        # Create a proper ShellCommand mock
+        mock_command = ShellCommand(
+            command="echo 'test'",
+            description="Test command",
+            expected_outputs=["test"]
+        )
         
+        # Create a proper ComplexityAnalysis mock
+        mock_complexity = ComplexityAnalysis(
+            complexity_level="simple",
+            estimated_steps=1,
+            confidence_score=0.9
+        )
+        
+        # Create a proper ExecutionPlan mock
         mock_plan = ExecutionPlan(
             task=sample_task,
-            complexity_analysis=Mock(),
+            complexity_analysis=mock_complexity,
             commands=[mock_command],
             decision_points=[],
             success_criteria=["File created successfully"],
@@ -209,6 +218,8 @@ class TestImplementAgentTaskExecution:
         mock_result = Mock()
         mock_result.success = True
         mock_result.stdout = "test"
+        mock_result.stderr = ""
+        mock_result.return_code = 0
         implement_agent.shell_executor.execute_command = AsyncMock(return_value=mock_result)
         
         # Mock completion recording
@@ -218,7 +229,7 @@ class TestImplementAgentTaskExecution:
         
         assert result["success"] is True
         assert result["task_id"] == sample_task.id
-        assert result["final_approach"] == "task_decomposer"
+        assert result["final_approach"] == "enhanced_execution_flow"
         assert sample_task.completed is True
         
         implement_agent.record_task_completion.assert_called_once()
@@ -1158,6 +1169,14 @@ class TestImplementAgentEnhancedTaskExecution:
     @pytest.mark.asyncio
     async def test_enhanced_retry_mechanism(self, implement_agent, complex_task, temp_work_dir):
         """Test enhanced retry mechanism with different approaches."""
+        # Mock TaskDecomposer to fail, triggering fallback mechanism
+        implement_agent._execute_with_task_decomposer = AsyncMock()
+        implement_agent._execute_with_task_decomposer.return_value = {
+            "success": False,
+            "approaches_attempted": [{"approach": "task_decomposer", "success": False, "error": "TaskDecomposer failed"}],
+            "execution_time": 1.0
+        }
+        
         # Mock different approaches with varying success rates
         approach_results = [
             {"success": False, "approach": "test_driven_development", "error": "Patch failed", "commands": []},
@@ -1166,8 +1185,8 @@ class TestImplementAgentEnhancedTaskExecution:
             {"success": True, "approach": "step_by_step", "commands": ["success_cmd"], "files_modified": ["test.py"]}
         ]
         
-        implement_agent._execute_with_approach = AsyncMock()
-        implement_agent._execute_with_approach.side_effect = approach_results
+        implement_agent._try_task_execution = AsyncMock()
+        implement_agent._try_task_execution.side_effect = approach_results
         implement_agent.record_task_completion = AsyncMock()
         
         result = await implement_agent.execute_task(complex_task, temp_work_dir)
@@ -1235,16 +1254,24 @@ class TestImplementAgentEnhancedTaskExecution:
     @pytest.mark.asyncio
     async def test_comprehensive_error_handling(self, implement_agent, complex_task, temp_work_dir):
         """Test comprehensive error handling in task execution."""
-        # Mock various types of errors in _execute_with_approach
+        # Mock TaskDecomposer to fail, triggering fallback mechanism
+        implement_agent._execute_with_task_decomposer = AsyncMock()
+        implement_agent._execute_with_task_decomposer.return_value = {
+            "success": False,
+            "approaches_attempted": [{"approach": "task_decomposer", "success": False, "error": "TaskDecomposer failed"}],
+            "execution_time": 1.0
+        }
+        
+        # Mock various types of errors in _try_task_execution
         error_scenarios = [
-            Exception("Network timeout"),
-            Exception("File permission denied"),
-            Exception("Command not found"),
-            Exception("Out of disk space")
+            {"success": False, "approach": "attempt_1", "error": "Network timeout", "commands": []},
+            {"success": False, "approach": "attempt_2", "error": "File permission denied", "commands": []},
+            {"success": False, "approach": "attempt_3", "error": "Command not found", "commands": []},
+            {"success": False, "approach": "attempt_4", "error": "Out of disk space", "commands": []}
         ]
         
-        implement_agent._execute_with_approach = AsyncMock()
-        implement_agent._execute_with_approach.side_effect = error_scenarios
+        implement_agent._try_task_execution = AsyncMock()
+        implement_agent._try_task_execution.side_effect = error_scenarios
         implement_agent.record_task_completion = AsyncMock()
         
         result = await implement_agent.execute_task(complex_task, temp_work_dir)
@@ -1337,22 +1364,18 @@ class TestImplementAgentEnhancedTaskExecution:
         implement_agent.update_project_log = AsyncMock()
         implement_agent.record_task_completion = AsyncMock()
         
-        # Mock all execution methods to avoid real calls
-        implement_agent._try_task_execution = AsyncMock()
-        implement_agent._try_task_execution.return_value = {
+        # Mock TaskDecomposer to return successful result with commands
+        implement_agent._execute_with_task_decomposer = AsyncMock()
+        implement_agent._execute_with_task_decomposer.return_value = {
             "success": True,
-            "approach": "step_by_step_with_testing",
-            "commands": execution_details["commands"],
-            "files_modified": execution_details["files_modified"]
-        }
-        
-        # Mock other methods that might be called
-        implement_agent._execute_with_approach = AsyncMock()
-        implement_agent._execute_with_approach.return_value = {
-            "success": True,
-            "approach": "step_by_step_with_testing",
-            "commands": execution_details["commands"],
-            "files_modified": execution_details["files_modified"]
+            "approaches_attempted": [{
+                "approach": "enhanced_command_execution",
+                "success": True,
+                "commands": execution_details["commands"],
+                "files_modified": execution_details["files_modified"]
+            }],
+            "execution_time": 2.5,
+            "successful_approach": "enhanced_execution_flow"
         }
         
         # Mock shell execution to avoid real commands
@@ -1544,13 +1567,13 @@ class TestImplementAgentMinorFunctions:
     """Tests for minor utility and helper functions in ImplementAgent."""
     
     @pytest.fixture
-    def implement_agent(self, llm_config):
+    def implement_agent(self, test_llm_config):
         """Create ImplementAgent instance for testing."""
         mock_shell = Mock(spec=ShellExecutor)
         mock_shell.execute_command = AsyncMock()
         return ImplementAgent(
             name="TestImplementAgent",
-            llm_config=llm_config,
+            llm_config=test_llm_config,
             system_message="Test system message",
             shell_executor=mock_shell
         )
@@ -1742,4 +1765,5 @@ class TestImplementAgentMinorFunctions:
 
 
 if __name__ == "__main__":
+    pytest.main([__file__])
     pytest.main([__file__])
