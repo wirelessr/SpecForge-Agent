@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .base_agent import BaseLLMAgent
 from .task_decomposer import TaskDecomposer, ExecutionPlan
+from .error_recovery import ErrorRecovery, CommandResult, RecoveryResult
 from ..models import LLMConfig, TaskDefinition, ExecutionResult, WorkflowState
 from ..shell_executor import ShellExecutor
 
@@ -44,6 +45,7 @@ class ImplementAgent(BaseLLMAgent):
         system_message: str,
         shell_executor: ShellExecutor,
         task_decomposer: Optional[TaskDecomposer] = None,
+        error_recovery: Optional[ErrorRecovery] = None,
         description: Optional[str] = None
     ):
         """
@@ -55,6 +57,7 @@ class ImplementAgent(BaseLLMAgent):
             system_message: System instructions for the agent
             shell_executor: ShellExecutor instance for command execution
             task_decomposer: Optional TaskDecomposer for intelligent task breakdown
+            error_recovery: Optional ErrorRecovery for intelligent error handling
             description: Optional description of the agent's role
         """
         super().__init__(
@@ -70,11 +73,16 @@ class ImplementAgent(BaseLLMAgent):
             llm_config=llm_config,
             system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands."
         )
+        self.error_recovery = error_recovery or ErrorRecovery(
+            name=f"{name}_error_recovery",
+            llm_config=llm_config,
+            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies."
+        )
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
         self.execution_context: Dict[str, Any] = {}
         
-        self.logger.info(f"ImplementAgent initialized with shell executor and TaskDecomposer")
+        self.logger.info(f"ImplementAgent initialized with shell executor, TaskDecomposer, and ErrorRecovery")
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for ImplementAgent."""
@@ -176,6 +184,9 @@ class ImplementAgent(BaseLLMAgent):
                 for attempt in enhanced_result["approaches_attempted"]:
                     execution_result["shell_commands"].extend(attempt.get("commands", []))
                     execution_result["files_modified"].extend(attempt.get("files_modified", []))
+                
+                # Mark task as completed
+                task.mark_completed(execution_result)
             else:
                 # TaskDecomposer failed, trigger fallback
                 self.logger.warning(f"TaskDecomposer failed for task: {task.title}, triggering fallback")
@@ -2459,330 +2470,478 @@ Generate the complete file contents now:"""
         # This is a placeholder implementation for testing
         return {"commands": []} 
    
-    # ============================================================================
-    # TaskDecomposer Integration Methods
-    # ============================================================================
+
+    # Enhanced Execution Flow Methods (Task 5.2)
     
     async def _execute_with_task_decomposer(self, task: TaskDefinition, work_dir: str) -> Dict[str, Any]:
         """
-        Execute task using TaskDecomposer for intelligent breakdown and execution.
+        Execute task using enhanced flow: TaskDecomposer → ShellExecutor → ErrorRecovery.
         
-        This method represents the enhanced execution flow that integrates TaskDecomposer
-        for intelligent task analysis and decomposition into executable shell commands.
+        This method implements the new enhanced execution flow that integrates
+        TaskDecomposer for intelligent task breakdown, ShellExecutor for command
+        execution, and ErrorRecovery for intelligent error handling.
         
         Args:
-            task: TaskDefinition to execute
-            work_dir: Working directory for execution
+            task: TaskDefinition object containing task details
+            work_dir: Working directory for task execution
             
         Returns:
-            Dictionary containing comprehensive execution results with TaskDecomposer analysis
+            Dictionary containing execution results and metadata
         """
-        start_time = asyncio.get_event_loop().time()
+        import time
+        start_time = time.time()
         
-        execution_result = {
-            "task_id": task.id,
-            "task_title": task.title,
-            "approaches_attempted": [],
-            "successful_approach": "task_decomposer",
+        self.logger.info(f"Starting enhanced execution flow for task: {task.title}")
+        
+        result = {
             "success": False,
+            "approaches_attempted": [],
             "execution_time": 0,
             "task_analysis": {},
-            "detailed_log": [],
             "decomposition_plan": None,
-            "commands_executed": [],
-            "quality_metrics": {}
+            "quality_metrics": {},
+            "detailed_log": [],
+            "recovery_attempts": [],
+            "successful_approach": None
         }
         
         try:
-            self.logger.info(f"Using TaskDecomposer for intelligent task breakdown: {task.title}")
+            # Step 1: Task Decomposition using TaskDecomposer
+            self.logger.info("Step 1: Decomposing task with TaskDecomposer")
+            decomposition_result = await self._decompose_task_with_context(task, work_dir)
             
-            # Step 1: Use TaskDecomposer to analyze and decompose the task
-            decomposition_start = asyncio.get_event_loop().time()
-            execution_plan = await self.task_decomposer.decompose_task(task)
-            decomposition_time = asyncio.get_event_loop().time() - decomposition_start
+            if not decomposition_result["success"]:
+                result["approaches_attempted"].append({
+                    "approach": "task_decomposition",
+                    "success": False,
+                    "error": decomposition_result.get("error", "Task decomposition failed"),
+                    "commands": []
+                })
+                return result
             
-            execution_result["decomposition_plan"] = {
-                "complexity_analysis": execution_plan.complexity_analysis.__dict__,
-                "commands_count": len(execution_plan.commands),
-                "decision_points_count": len(execution_plan.decision_points),
-                "success_criteria_count": len(execution_plan.success_criteria),
-                "fallback_strategies_count": len(execution_plan.fallback_strategies),
-                "estimated_duration": execution_plan.estimated_duration,
-                "decomposition_time": decomposition_time
+            execution_plan = decomposition_result["execution_plan"]
+            result["decomposition_plan"] = {
+                "complexity_level": execution_plan.complexity_analysis.complexity_level,
+                "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
+                "command_count": len(execution_plan.commands),
+                "estimated_duration": execution_plan.estimated_duration
             }
+            result["task_analysis"] = decomposition_result.get("task_analysis", {})
             
-            execution_result["detailed_log"].append(
-                f"TaskDecomposer analysis completed in {decomposition_time:.2f}s - "
-                f"Complexity: {execution_plan.complexity_analysis.complexity_level}, "
-                f"Commands: {len(execution_plan.commands)}"
-            )
+            # Step 2: Enhanced Command Execution with Error Recovery
+            self.logger.info("Step 2: Executing commands with error recovery")
+            execution_result = await self._execute_plan_with_recovery(execution_plan, work_dir)
             
-            # Step 2: Execute the decomposed plan using shell commands
-            execution_start = asyncio.get_event_loop().time()
-            plan_result = await self._execute_decomposed_plan(execution_plan, work_dir)
-            execution_time = asyncio.get_event_loop().time() - execution_start
+            result["approaches_attempted"].extend(execution_result["attempts"])
+            result["recovery_attempts"] = execution_result["recovery_attempts"]
+            result["detailed_log"] = execution_result["detailed_log"]
             
-            # Step 3: Compile results
-            execution_result.update({
-                "success": plan_result["success"],
-                "commands_executed": plan_result["commands_executed"],
-                "files_modified": plan_result.get("files_modified", []),
-                "execution_output": plan_result.get("output", ""),
-                "execution_errors": plan_result.get("errors", [])
-            })
-            
-            # Step 4: Calculate quality metrics
-            execution_result["quality_metrics"] = self._calculate_execution_quality_metrics(
-                execution_plan, plan_result, execution_time
-            )
-            
-            execution_result["detailed_log"].append(
-                f"Plan execution completed in {execution_time:.2f}s - "
-                f"Success: {plan_result['success']}, "
-                f"Commands executed: {len(plan_result['commands_executed'])}"
-            )
-            
-            # Record the attempt
-            attempt_result = {
-                "approach": "task_decomposer",
-                "success": plan_result["success"],
-                "commands": [cmd.command for cmd in execution_plan.commands],
-                "files_modified": plan_result.get("files_modified", []),
-                "output": plan_result.get("output", ""),
-                "execution_time": execution_time,
-                "complexity_analysis": execution_plan.complexity_analysis.__dict__,
-                "quality_score": execution_result["quality_metrics"].get("overall_score", 0.0)
-            }
-            
-            if plan_result.get("errors"):
-                attempt_result["error"] = "; ".join(plan_result["errors"])
-            
-            execution_result["approaches_attempted"].append(attempt_result)
-            
-            if plan_result["success"]:
-                task.mark_completed(attempt_result)
-                self.logger.info(f"TaskDecomposer execution successful for task: {task.title}")
-            else:
-                self.logger.warning(f"TaskDecomposer execution failed for task: {task.title}")
+            if execution_result["success"]:
+                result["success"] = True
+                result["successful_approach"] = "enhanced_execution_flow"
                 
+                # Step 3: Quality Validation
+                self.logger.info("Step 3: Validating execution quality")
+                quality_metrics = await self._validate_execution_quality(
+                    execution_plan, execution_result, work_dir
+                )
+                result["quality_metrics"] = quality_metrics
+                
+                # Step 4: Context-Aware Learning
+                self.logger.info("Step 4: Recording learning outcomes")
+                await self._record_learning_outcomes(task, execution_plan, execution_result, work_dir)
+            
         except Exception as e:
-            self.logger.error(f"TaskDecomposer execution failed with exception: {e}")
-            execution_result["approaches_attempted"].append({
-                "approach": "task_decomposer",
+            self.logger.error(f"Enhanced execution flow failed: {e}")
+            result["approaches_attempted"].append({
+                "approach": "enhanced_execution_flow",
                 "success": False,
                 "error": str(e),
-                "commands": [],
-                "execution_time": 0
+                "commands": []
             })
-            execution_result["detailed_log"].append(f"TaskDecomposer execution failed: {str(e)}")
         
-        # Calculate total execution time
-        execution_result["execution_time"] = asyncio.get_event_loop().time() - start_time
-        
-        return execution_result
+        result["execution_time"] = time.time() - start_time
+        return result
     
-    async def _execute_decomposed_plan(self, execution_plan: ExecutionPlan, work_dir: str) -> Dict[str, Any]:
+    async def _decompose_task_with_context(self, task: TaskDefinition, work_dir: str) -> Dict[str, Any]:
         """
-        Execute the decomposed execution plan using shell commands.
+        Decompose task using TaskDecomposer with full project context.
+        
+        Args:
+            task: TaskDefinition object
+            work_dir: Working directory
+            
+        Returns:
+            Dictionary containing decomposition results
+        """
+        try:
+            # Set context manager for TaskDecomposer if available
+            if self.context_manager:
+                self.task_decomposer.set_context_manager(self.context_manager)
+            
+            # Decompose the task
+            execution_plan = await self.task_decomposer.decompose_task(task)
+            
+            return {
+                "success": True,
+                "execution_plan": execution_plan,
+                "task_analysis": {
+                    "complexity_level": execution_plan.complexity_analysis.complexity_level,
+                    "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
+                    "required_tools": execution_plan.complexity_analysis.required_tools,
+                    "risk_factors": execution_plan.complexity_analysis.risk_factors,
+                    "confidence_score": execution_plan.complexity_analysis.confidence_score
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Task decomposition failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    async def _execute_plan_with_recovery(self, execution_plan: ExecutionPlan, work_dir: str) -> Dict[str, Any]:
+        """
+        Execute execution plan with intelligent error recovery.
         
         Args:
             execution_plan: ExecutionPlan from TaskDecomposer
-            work_dir: Working directory for execution
+            work_dir: Working directory
             
         Returns:
             Dictionary containing execution results
         """
         result = {
-            "success": True,
+            "success": False,
+            "attempts": [],
+            "recovery_attempts": [],
+            "detailed_log": [],
             "commands_executed": [],
-            "files_modified": [],
-            "output": [],
-            "errors": [],
-            "decision_points_evaluated": []
+            "files_modified": []
         }
         
-        self.logger.info(f"Executing decomposed plan with {len(execution_plan.commands)} commands")
+        # Set context manager for ErrorRecovery if available
+        if self.context_manager:
+            self.error_recovery.set_context_manager(self.context_manager)
         
+        # Execute commands in sequence
         for i, shell_command in enumerate(execution_plan.commands):
-            try:
-                self.logger.debug(f"Executing command {i+1}/{len(execution_plan.commands)}: {shell_command.command}")
-                
-                # Execute the shell command
-                command_result = await self.shell_executor.execute_command(
-                    shell_command.command, 
-                    work_dir,
-                    timeout=shell_command.timeout
-                )
-                
-                result["commands_executed"].append({
-                    "command": shell_command.command,
-                    "description": shell_command.description,
-                    "success": command_result.success,
-                    "exit_code": command_result.return_code,
-                    "stdout": command_result.stdout,
-                    "stderr": command_result.stderr,
-                    "execution_time": command_result.execution_time
+            command_log = {
+                "command_index": i,
+                "command": shell_command.command,
+                "description": shell_command.description,
+                "success": False,
+                "attempts": [],
+                "recovery_used": False
+            }
+            
+            # Execute the command
+            command_result = await self._execute_command_with_recovery(
+                shell_command, work_dir, execution_plan
+            )
+            
+            command_log.update({
+                "success": command_result["success"],
+                "attempts": command_result["attempts"],
+                "recovery_used": len(command_result["recovery_attempts"]) > 0
+            })
+            
+            result["detailed_log"].append(command_log)
+            result["commands_executed"].append(shell_command.command)
+            result["recovery_attempts"].extend(command_result["recovery_attempts"])
+            
+            # Track files modified
+            if command_result.get("files_modified"):
+                result["files_modified"].extend(command_result["files_modified"])
+            
+            # If command failed and couldn't be recovered, stop execution
+            if not command_result["success"]:
+                result["attempts"].append({
+                    "approach": "enhanced_command_execution",
+                    "success": False,
+                    "error": f"Command {i+1} failed: {shell_command.command}",
+                    "commands": result["commands_executed"],
+                    "failed_at_command": i
                 })
-                
-                if command_result.success:
-                    result["output"].append(f"✓ {shell_command.description}: {shell_command.command}")
-                    if command_result.stdout and command_result.stdout.strip():
-                        result["output"].append(f"  Output: {command_result.stdout.strip()}")
-                    
-                    # Track file modifications
-                    if self._command_modifies_files(shell_command.command):
-                        modified_files = self._extract_filenames_from_command(shell_command.command)
-                        result["files_modified"].extend(modified_files)
-                else:
-                    error_msg = f"✗ {shell_command.description}: {shell_command.command}"
-                    result["output"].append(error_msg)
-                    if command_result.stderr:
-                        result["output"].append(f"  Error: {command_result.stderr}")
-                        result["errors"].append(f"Command '{shell_command.command}': {command_result.stderr}")
-                    
-                    # Check if this is a critical error that should stop execution
-                    if self._is_critical_error(command_result.stderr, shell_command.command):
-                        result["success"] = False
-                        self.logger.error(f"Critical error in command '{shell_command.command}': {command_result.stderr}")
-                        break
-                    else:
-                        self.logger.warning(f"Non-critical error in command '{shell_command.command}': {command_result.stderr}")
-                
-                # Evaluate decision points if this command has one
-                if shell_command.decision_point:
-                    decision_result = self._evaluate_decision_point(shell_command, command_result, execution_plan)
-                    result["decision_points_evaluated"].append(decision_result)
-                    
-                    # Modify execution flow based on decision point
-                    if decision_result.get("modify_execution"):
-                        self.logger.info(f"Decision point triggered execution modification: {decision_result['action']}")
-                
-            except Exception as e:
-                self.logger.error(f"Exception executing command '{shell_command.command}': {e}")
-                result["errors"].append(f"Exception in command '{shell_command.command}': {str(e)}")
-                result["success"] = False
-                break
+                return result
         
-        # Remove duplicates from files_modified
-        result["files_modified"] = list(set(result["files_modified"]))
-        
-        # Join output lines
-        result["output"] = "\n".join(result["output"])
-        
-        self.logger.info(f"Decomposed plan execution completed - Success: {result['success']}, Commands: {len(result['commands_executed'])}")
+        # All commands executed successfully
+        result["success"] = True
+        result["attempts"].append({
+            "approach": "enhanced_command_execution",
+            "success": True,
+            "commands": result["commands_executed"],
+            "files_modified": result["files_modified"]
+        })
         
         return result
     
-    def _evaluate_decision_point(self, shell_command, command_result, execution_plan: ExecutionPlan) -> Dict[str, Any]:
+    async def _execute_command_with_recovery(self, shell_command, work_dir: str, execution_plan: ExecutionPlan) -> Dict[str, Any]:
         """
-        Evaluate decision points during command execution.
+        Execute a single command with error recovery capabilities.
         
         Args:
-            shell_command: The shell command that was executed
-            command_result: Result of the command execution
-            execution_plan: The full execution plan
+            shell_command: ShellCommand object from execution plan
+            work_dir: Working directory
+            execution_plan: Full execution plan for context
             
         Returns:
-            Dictionary containing decision point evaluation results
+            Dictionary containing command execution results
         """
-        decision_result = {
-            "command": shell_command.command,
-            "decision_triggered": False,
-            "condition_met": False,
-            "action": "continue",
-            "modify_execution": False
+        result = {
+            "success": False,
+            "attempts": [],
+            "recovery_attempts": [],
+            "files_modified": []
         }
         
-        # Find relevant decision points for this command
-        for decision_point in execution_plan.decision_points:
-            if decision_point.evaluation_method == "exit_code":
-                if command_result.return_code == 0:
-                    decision_result["condition_met"] = True
-                    decision_result["action"] = "success_path"
-                else:
-                    decision_result["condition_met"] = False
-                    decision_result["action"] = "failure_path"
-                decision_result["decision_triggered"] = True
-                break
-            elif decision_point.evaluation_method == "output_check":
-                if any(indicator in command_result.stdout for indicator in shell_command.success_indicators):
-                    decision_result["condition_met"] = True
-                    decision_result["action"] = "success_path"
-                elif any(indicator in command_result.stderr for indicator in shell_command.failure_indicators):
-                    decision_result["condition_met"] = False
-                    decision_result["action"] = "failure_path"
-                decision_result["decision_triggered"] = True
-                break
+        # Initial command execution
+        self.logger.info(f"Executing command: {shell_command.command}")
+        exec_result = await self.shell_executor.execute_command(
+            shell_command.command, 
+            working_dir=work_dir,
+            timeout=shell_command.timeout
+        )
         
-        return decision_result
+        # Convert to CommandResult for ErrorRecovery
+        command_result = CommandResult(
+            command=shell_command.command,
+            exit_code=exec_result.return_code,
+            stdout=exec_result.stdout,
+            stderr=exec_result.stderr,
+            execution_time=exec_result.execution_time,
+            success=exec_result.success
+        )
+        
+        result["attempts"].append({
+            "attempt": 1,
+            "command": shell_command.command,
+            "success": exec_result.success,
+            "exit_code": exec_result.return_code,
+            "stdout": exec_result.stdout[:500],  # Truncate for logging
+            "stderr": exec_result.stderr[:500]
+        })
+        
+        # Track files modified by this command
+        files_modified = self._extract_filenames_from_command(shell_command.command)
+        result["files_modified"] = files_modified
+        
+        if exec_result.success:
+            result["success"] = True
+            return result
+        
+        # Command failed - attempt error recovery
+        self.logger.warning(f"Command failed, attempting error recovery: {shell_command.command}")
+        
+        try:
+            # Create execution plan context for recovery
+            recovery_context = {
+                "execution_plan": {
+                    "task": execution_plan.task.to_dict() if hasattr(execution_plan.task, 'to_dict') else str(execution_plan.task),
+                    "commands": [cmd.command for cmd in execution_plan.commands],
+                    "current_command_index": execution_plan.commands.index(shell_command)
+                },
+                "work_directory": work_dir
+            }
+            
+            recovery_result = await self.error_recovery.recover(command_result, recovery_context)
+            
+            result["recovery_attempts"].append({
+                "success": recovery_result.success,
+                "strategy_used": recovery_result.strategy_used.name if recovery_result.strategy_used else None,
+                "strategies_attempted": len(recovery_result.attempted_strategies),
+                "recovery_time": recovery_result.recovery_time,
+                "lessons_learned": recovery_result.lessons_learned
+            })
+            
+            if recovery_result.success:
+                result["success"] = True
+                result["attempts"].append({
+                    "attempt": 2,
+                    "command": f"Recovery: {recovery_result.strategy_used.name}",
+                    "success": True,
+                    "recovery_strategy": recovery_result.strategy_used.to_dict()
+                })
+                
+                # Update files modified if recovery involved file operations
+                if recovery_result.strategy_used and recovery_result.strategy_used.commands:
+                    for recovery_cmd in recovery_result.strategy_used.commands:
+                        recovery_files = self._extract_filenames_from_command(recovery_cmd)
+                        result["files_modified"].extend(recovery_files)
+            else:
+                self.logger.error(f"Error recovery failed for command: {shell_command.command}")
+                
+        except Exception as e:
+            self.logger.error(f"Error recovery process failed: {e}")
+            result["recovery_attempts"].append({
+                "success": False,
+                "error": str(e),
+                "recovery_time": 0
+            })
+        
+        return result
     
-    def _calculate_execution_quality_metrics(self, execution_plan: ExecutionPlan, plan_result: Dict[str, Any], execution_time: float) -> Dict[str, Any]:
+    async def _validate_execution_quality(self, execution_plan: ExecutionPlan, execution_result: Dict[str, Any], work_dir: str) -> Dict[str, Any]:
         """
-        Calculate quality metrics for TaskDecomposer execution.
+        Validate the quality of task execution.
         
         Args:
-            execution_plan: The execution plan that was used
-            plan_result: Results of plan execution
-            execution_time: Time taken for execution
+            execution_plan: Original execution plan
+            execution_result: Results from execution
+            work_dir: Working directory
             
         Returns:
             Dictionary containing quality metrics
         """
-        metrics = {
+        quality_metrics = {
             "overall_score": 0.0,
-            "command_success_rate": 0.0,
-            "execution_efficiency": 0.0,
-            "plan_accuracy": 0.0,
-            "complexity_appropriateness": 0.0
+            "functionality_score": 0.0,
+            "reliability_score": 0.0,
+            "efficiency_score": 0.0,
+            "recovery_effectiveness": 0.0
         }
         
-        # Calculate command success rate
-        total_commands = len(plan_result["commands_executed"])
-        successful_commands = sum(1 for cmd in plan_result["commands_executed"] if cmd["success"])
-        metrics["command_success_rate"] = (successful_commands / total_commands) if total_commands > 0 else 0.0
+        try:
+            # Functionality Score - based on successful command execution
+            total_commands = len(execution_plan.commands)
+            successful_commands = sum(1 for log in execution_result["detailed_log"] if log["success"])
+            quality_metrics["functionality_score"] = successful_commands / total_commands if total_commands > 0 else 0.0
+            
+            # Reliability Score - based on error recovery effectiveness
+            recovery_attempts = len(execution_result["recovery_attempts"])
+            successful_recoveries = sum(1 for attempt in execution_result["recovery_attempts"] if attempt["success"])
+            
+            if recovery_attempts > 0:
+                quality_metrics["recovery_effectiveness"] = successful_recoveries / recovery_attempts
+                quality_metrics["reliability_score"] = 0.7 + (0.3 * quality_metrics["recovery_effectiveness"])
+            else:
+                quality_metrics["recovery_effectiveness"] = 1.0  # No errors to recover from
+                quality_metrics["reliability_score"] = 1.0
+            
+            # Efficiency Score - based on execution time vs estimated time
+            actual_time = execution_result.get("execution_time", execution_plan.estimated_duration * 60)
+            estimated_time = execution_plan.estimated_duration * 60  # Convert minutes to seconds
+            
+            if estimated_time > 0:
+                efficiency_ratio = estimated_time / actual_time if actual_time > 0 else 1.0
+                quality_metrics["efficiency_score"] = min(1.0, efficiency_ratio)
+            else:
+                quality_metrics["efficiency_score"] = 0.8  # Default reasonable score
+            
+            # Overall Score - weighted average
+            weights = {
+                "functionality_score": 0.4,
+                "reliability_score": 0.3,
+                "efficiency_score": 0.2,
+                "recovery_effectiveness": 0.1
+            }
+            
+            quality_metrics["overall_score"] = sum(
+                quality_metrics[metric] * weight for metric, weight in weights.items()
+            )
+            
+            self.logger.info(f"Quality validation completed - Overall Score: {quality_metrics['overall_score']:.2f}")
+            
+        except Exception as e:
+            self.logger.error(f"Quality validation failed: {e}")
+            # Return default low-quality scores
+            quality_metrics = {
+                "overall_score": 0.3,
+                "functionality_score": 0.3,
+                "reliability_score": 0.3,
+                "efficiency_score": 0.3,
+                "recovery_effectiveness": 0.0,
+                "validation_error": str(e)
+            }
         
-        # Calculate execution efficiency (actual vs estimated time)
-        estimated_minutes = execution_plan.estimated_duration
-        actual_minutes = execution_time / 60
-        if estimated_minutes > 0:
-            efficiency = min(1.0, estimated_minutes / actual_minutes) if actual_minutes > 0 else 1.0
-            metrics["execution_efficiency"] = efficiency
-        else:
-            metrics["execution_efficiency"] = 0.8  # Default reasonable efficiency
+        return quality_metrics
+    
+    async def _record_learning_outcomes(self, task: TaskDefinition, execution_plan: ExecutionPlan, execution_result: Dict[str, Any], work_dir: str) -> None:
+        """
+        Record learning outcomes from task execution for future improvement.
         
-        # Calculate plan accuracy (how well the plan matched reality)
-        plan_accuracy = 1.0
-        if len(plan_result["errors"]) > 0:
-            plan_accuracy -= 0.2 * len(plan_result["errors"])  # Deduct for errors
-        if not plan_result["success"]:
-            plan_accuracy -= 0.3  # Deduct for overall failure
-        metrics["plan_accuracy"] = max(0.0, plan_accuracy)
+        Args:
+            task: Original task definition
+            execution_plan: Execution plan used
+            execution_result: Results from execution
+            work_dir: Working directory
+        """
+        try:
+            learning_outcomes = []
+            
+            # Learn from successful strategies
+            if execution_result["success"]:
+                learning_outcomes.append(f"Task '{task.title}' completed successfully using enhanced execution flow")
+                learning_outcomes.append(f"Complexity level '{execution_plan.complexity_analysis.complexity_level}' was appropriate")
+                
+                # Learn from recovery attempts
+                for recovery in execution_result["recovery_attempts"]:
+                    if recovery["success"]:
+                        learning_outcomes.append(f"Recovery strategy '{recovery['strategy_used']}' was effective")
+                    
+                    for lesson in recovery.get("lessons_learned", []):
+                        learning_outcomes.append(f"Recovery lesson: {lesson}")
+            
+            # Learn from failures
+            else:
+                learning_outcomes.append(f"Task '{task.title}' failed - need to improve approach")
+                
+                # Analyze failure patterns
+                failed_commands = [log for log in execution_result["detailed_log"] if not log["success"]]
+                if failed_commands:
+                    learning_outcomes.append(f"Commands that commonly fail: {[cmd['command'] for cmd in failed_commands[:3]]}")
+            
+            # Update ErrorRecovery with execution history for learning
+            if execution_result["recovery_attempts"]:
+                # Find successful recovery strategies
+                successful_strategies = [
+                    recovery.get("strategy_used") for recovery in execution_result["recovery_attempts"] 
+                    if recovery["success"] and recovery.get("strategy_used")
+                ]
+                
+                await self.error_recovery.learn_from_execution_history([{
+                    "success": execution_result["success"],
+                    "strategy_used": successful_strategies[0] if successful_strategies else None,
+                    "error_type": "execution_failure",  # General category
+                    "context": {
+                        "task_type": task.title,
+                        "complexity": execution_plan.complexity_analysis.complexity_level,
+                        "work_directory": work_dir
+                    }
+                }])
+            
+            self.logger.info(f"Recorded {len(learning_outcomes)} learning outcomes")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to record learning outcomes: {e}")
+    
+    def set_error_recovery(self, error_recovery: ErrorRecovery) -> None:
+        """
+        Set the ErrorRecovery agent for this ImplementAgent.
         
-        # Calculate complexity appropriateness
-        complexity_level = execution_plan.complexity_analysis.complexity_level
-        command_count = len(execution_plan.commands)
+        Args:
+            error_recovery: ErrorRecovery agent instance
+        """
+        self.error_recovery = error_recovery
+        self.logger.info("ErrorRecovery agent set for ImplementAgent")
+    
+    def get_enhanced_capabilities(self) -> List[str]:
+        """
+        Get enhanced capabilities with new execution flow.
         
-        if complexity_level == "simple" and command_count <= 3:
-            metrics["complexity_appropriateness"] = 1.0
-        elif complexity_level == "moderate" and 2 <= command_count <= 5:
-            metrics["complexity_appropriateness"] = 1.0
-        elif complexity_level == "complex" and 4 <= command_count <= 8:
-            metrics["complexity_appropriateness"] = 1.0
-        elif complexity_level == "very_complex" and command_count >= 6:
-            metrics["complexity_appropriateness"] = 1.0
-        else:
-            metrics["complexity_appropriateness"] = 0.7  # Reasonable but not perfect match
+        Returns:
+            List of enhanced capability descriptions
+        """
+        base_capabilities = self.get_agent_capabilities()
+        enhanced_capabilities = [
+            "Execute tasks using TaskDecomposer → ShellExecutor → ErrorRecovery flow",
+            "Intelligent task decomposition with complexity analysis",
+            "Context-aware command execution using project requirements and design",
+            "Automatic error recovery with multi-strategy retry system",
+            "Quality validation and metrics collection",
+            "Learning from execution outcomes for continuous improvement",
+            "High-quality shell command execution following project standards"
+        ]
         
-        # Calculate overall score as weighted average
-        weights = {
-            "command_success_rate": 0.4,
-            "execution_efficiency": 0.2,
-            "plan_accuracy": 0.25,
-            "complexity_appropriateness": 0.15
-        }
-        
-        metrics["overall_score"] = sum(
-            metrics[metric] * weight for metric, weight in weights.items()
-        )
-        
-        return metrics
+        return base_capabilities + enhanced_capabilities
