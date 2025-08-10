@@ -2531,8 +2531,10 @@ Generate the complete file contents now:"""
             result["decomposition_plan"] = {
                 "complexity_level": execution_plan.complexity_analysis.complexity_level,
                 "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
-                "command_count": len(execution_plan.commands),
-                "estimated_duration": execution_plan.estimated_duration
+                "commands_count": len(execution_plan.commands),  # Fixed: use commands_count (with 's')
+                "command_count": len(execution_plan.commands),   # Keep both for compatibility
+                "estimated_duration": execution_plan.estimated_duration,
+                "decomposition_time": decomposition_result.get("decomposition_time", 0.1)  # Add decomposition_time
             }
             result["task_analysis"] = decomposition_result.get("task_analysis", {})
             
@@ -2582,6 +2584,9 @@ Generate the complete file contents now:"""
         Returns:
             Dictionary containing decomposition results
         """
+        import time
+        start_time = time.time()
+        
         try:
             # Set context manager for TaskDecomposer if available
             if self.context_manager:
@@ -2590,9 +2595,12 @@ Generate the complete file contents now:"""
             # Decompose the task
             execution_plan = await self.task_decomposer.decompose_task(task)
             
+            decomposition_time = time.time() - start_time
+            
             return {
                 "success": True,
                 "execution_plan": execution_plan,
+                "decomposition_time": decomposition_time,
                 "task_analysis": {
                     "complexity_level": execution_plan.complexity_analysis.complexity_level,
                     "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
@@ -2804,6 +2812,10 @@ Generate the complete file contents now:"""
         """
         quality_metrics = {
             "overall_score": 0.0,
+            "command_success_rate": 0.0,
+            "execution_efficiency": 0.0,
+            "plan_accuracy": 0.0,
+            # Keep original metrics for compatibility
             "functionality_score": 0.0,
             "reliability_score": 0.0,
             "efficiency_score": 0.0,
@@ -2811,37 +2823,42 @@ Generate the complete file contents now:"""
         }
         
         try:
-            # Functionality Score - based on successful command execution
+            # Command Success Rate - based on successful command execution
             total_commands = len(execution_plan.commands)
             successful_commands = sum(1 for log in execution_result["detailed_log"] if log["success"])
-            quality_metrics["functionality_score"] = successful_commands / total_commands if total_commands > 0 else 0.0
+            quality_metrics["command_success_rate"] = successful_commands / total_commands if total_commands > 0 else 0.0
+            quality_metrics["functionality_score"] = quality_metrics["command_success_rate"]  # Keep compatibility
             
-            # Reliability Score - based on error recovery effectiveness
+            # Plan Accuracy - based on error recovery effectiveness
             recovery_attempts = len(execution_result["recovery_attempts"])
             successful_recoveries = sum(1 for attempt in execution_result["recovery_attempts"] if attempt["success"])
             
             if recovery_attempts > 0:
                 quality_metrics["recovery_effectiveness"] = successful_recoveries / recovery_attempts
-                quality_metrics["reliability_score"] = 0.7 + (0.3 * quality_metrics["recovery_effectiveness"])
+                quality_metrics["plan_accuracy"] = 0.7 + (0.3 * quality_metrics["recovery_effectiveness"])
+                quality_metrics["reliability_score"] = quality_metrics["plan_accuracy"]  # Keep compatibility
             else:
                 quality_metrics["recovery_effectiveness"] = 1.0  # No errors to recover from
+                quality_metrics["plan_accuracy"] = 1.0
                 quality_metrics["reliability_score"] = 1.0
             
-            # Efficiency Score - based on execution time vs estimated time
+            # Execution Efficiency - based on execution time vs estimated time
             actual_time = execution_result.get("execution_time", execution_plan.estimated_duration * 60)
             estimated_time = execution_plan.estimated_duration * 60  # Convert minutes to seconds
             
             if estimated_time > 0:
                 efficiency_ratio = estimated_time / actual_time if actual_time > 0 else 1.0
-                quality_metrics["efficiency_score"] = min(1.0, efficiency_ratio)
+                quality_metrics["execution_efficiency"] = min(1.0, efficiency_ratio)
+                quality_metrics["efficiency_score"] = quality_metrics["execution_efficiency"]  # Keep compatibility
             else:
-                quality_metrics["efficiency_score"] = 0.8  # Default reasonable score
+                quality_metrics["execution_efficiency"] = 0.8  # Default reasonable score
+                quality_metrics["efficiency_score"] = 0.8
             
-            # Overall Score - weighted average
+            # Overall Score - weighted average using new metrics
             weights = {
-                "functionality_score": 0.4,
-                "reliability_score": 0.3,
-                "efficiency_score": 0.2,
+                "command_success_rate": 0.4,
+                "plan_accuracy": 0.3,
+                "execution_efficiency": 0.2,
                 "recovery_effectiveness": 0.1
             }
             
@@ -2856,10 +2873,14 @@ Generate the complete file contents now:"""
             # Return default low-quality scores
             quality_metrics = {
                 "overall_score": 0.3,
+                "command_success_rate": 0.3,
+                "execution_efficiency": 0.3,
+                "plan_accuracy": 0.3,
+                "recovery_effectiveness": 0.0,
+                # Keep compatibility
                 "functionality_score": 0.3,
                 "reliability_score": 0.3,
                 "efficiency_score": 0.3,
-                "recovery_effectiveness": 0.0,
                 "validation_error": str(e)
             }
         

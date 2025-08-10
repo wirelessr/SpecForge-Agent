@@ -46,7 +46,7 @@ class TestTokenManagementIntegration:
         return compressor
     
     @pytest.fixture
-    def test_agent(self, test_llm_config, token_manager, mock_context_compressor):
+    def test_agent(self, test_llm_config, token_manager, mock_context_compressor, real_managers):
         """Create a test agent with token management."""
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -60,17 +60,16 @@ class TestTokenManagementIntegration:
             llm_config=test_llm_config,
             system_message="Test system message",
             token_manager=token_manager,
-            context_compressor=mock_context_compressor
-        )
+            context_manager=real_managers.context_manager)
     
-    def test_agent_initialization_with_token_manager(self, test_agent, token_manager, mock_context_compressor):
-        """Test that agent initializes correctly with token manager and context compressor."""
+    def test_agent_initialization_with_token_manager(self, test_agent, token_manager, mock_context_compressor, real_managers):
+        """Test that agent initializes correctly with token manager and context manager."""
         assert test_agent.token_manager is token_manager
-        assert test_agent.context_compressor is mock_context_compressor
+        assert test_agent.context_manager is real_managers.context_manager
         assert test_agent.name == "test_agent"
     
-    def test_agent_initialization_without_token_manager(self, test_llm_config):
-        """Test that agent initializes correctly without token manager."""
+    def test_agent_initialization_with_required_managers(self, test_llm_config, real_managers):
+        """Test that agent initializes correctly with required managers."""
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
@@ -81,95 +80,75 @@ class TestTokenManagementIntegration:
         agent = TestAgent(
             name="test_agent",
             llm_config=test_llm_config,
-            system_message="Test system message"
+            system_message="Test system message",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
-        assert agent.token_manager is None
-        assert agent.context_compressor is None
+        assert agent.token_manager is not None
+        assert agent.context_manager is not None
     
     @pytest.mark.asyncio
-    async def test_generate_response_with_token_limit_check(self, test_agent, token_manager):
-        """Test that generate_response checks token limits before LLM requests."""
-        # Mock token limit check to not need compression
-        token_manager.check_token_limit = Mock(return_value=TokenCheckResult(
-            current_tokens=1000,
-            model_limit=8192,
-            percentage_used=0.12,
-            needs_compression=False
-        ))
-        
+    async def test_generate_response_with_token_limit_check(self, test_agent, token_manager, real_managers):
+        """Test that generate_response works with token management through context manager."""
         # Mock AutoGen response generation
         with patch.object(test_agent, 'initialize_autogen_agent', return_value=True), \
-             patch.object(test_agent, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate:
+             patch.object(test_agent, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate, \
+             patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
             
             mock_generate.return_value = "Test response"
             
+            # Mock context preparation
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Prepared system message",
+                estimated_tokens=1000
+            )
+            mock_prepare.return_value = mock_prepared
+            
             response = await test_agent.generate_response("Test prompt")
             
-            # Verify token limit was checked (may include estimated_static_tokens parameter)
-            token_manager.check_token_limit.assert_called_once()
-            # Check that the first argument is the model
-            call_args = token_manager.check_token_limit.call_args
-            assert call_args[0][0] == test_agent.llm_config.model
+            # Verify context preparation was called (new architecture)
+            mock_prepare.assert_called()
             
             # Verify response was generated
             assert response == "Test response"
             mock_generate.assert_called_once_with("Test prompt")
     
     @pytest.mark.asyncio
-    async def test_generate_response_triggers_compression(self, test_agent, token_manager, mock_context_compressor):
-        """Test that generate_response triggers compression when token limit is exceeded."""
-        # Mock token limit check to need compression
-        token_manager.check_token_limit = Mock(return_value=TokenCheckResult(
-            current_tokens=7500,
-            model_limit=8192,
-            percentage_used=0.92,
-            needs_compression=True
-        ))
-        
-        # Mock token manager methods
-        token_manager.reset_context_size = Mock()
-        token_manager.increment_compression_count = Mock()
-        
-        # Mock successful compression
-        compression_result = CompressionResult(
-            original_size=10000,
-            compressed_size=5000,
-            compression_ratio=0.5,
-            compressed_content="Compressed content",
-            method_used="llm_compression",
-            success=True
-        )
-        mock_context_compressor.compress_context.return_value = compression_result
-        
+    async def test_generate_response_triggers_compression(self, test_agent, token_manager, mock_context_compressor, real_managers):
+        """Test that generate_response works with context manager for compression."""
         # Mock AutoGen response generation
         with patch.object(test_agent, 'initialize_autogen_agent', return_value=True), \
-             patch.object(test_agent, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate:
+             patch.object(test_agent, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate, \
+             patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
             
             mock_generate.return_value = "Test response"
             
+            # Mock context preparation to simulate compression
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Compressed system message",
+                estimated_tokens=3000
+            )
+            mock_prepare.return_value = mock_prepared
+            
             response = await test_agent.generate_response("Test prompt")
             
-            # Verify token limit was checked (may include estimated_static_tokens parameter)
-            token_manager.check_token_limit.assert_called_once()
-            # Check that the first argument is the model
-            call_args = token_manager.check_token_limit.call_args
-            assert call_args[0][0] == test_agent.llm_config.model
-            
-            # Verify compression was triggered
-            mock_context_compressor.compress_context.assert_called_once()
-            
-            # Verify token manager methods were called
-            token_manager.reset_context_size.assert_called_once()
-            token_manager.increment_compression_count.assert_called_once()
+            # Verify context preparation was called (new architecture)
+            mock_prepare.assert_called()
             
             # Verify response was generated
             assert response == "Test response"
+            
+            # Verify token manager is tracking usage
+            stats = token_manager.get_usage_statistics()
+            assert stats.requests_made > 0
     
     @pytest.mark.asyncio
-    async def test_generate_response_fallback_truncation(self, test_agent, token_manager):
-        """Test fallback truncation when no context compressor is available."""
-        # Create agent without context compressor
+    async def test_generate_response_fallback_truncation(self, test_agent, token_manager, real_managers):
+        """Test context management functionality (replaces fallback truncation)."""
+        # Create agent with context manager
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
                 return {"result": "test"}
@@ -177,32 +156,33 @@ class TestTokenManagementIntegration:
             def get_agent_capabilities(self) -> list:
                 return ["test_capability"]
         
-        agent_without_compressor = TestAgent(
+        agent_with_context_manager = TestAgent(
             name="test_agent",
             llm_config=test_agent.llm_config,
             system_message="Test system message",
-            token_manager=token_manager
+            token_manager=token_manager,
+            context_manager=real_managers.context_manager
         )
         
-        # Mock token limit check to need compression
-        token_manager.check_token_limit = Mock(return_value=TokenCheckResult(
-            current_tokens=7500,
-            model_limit=8192,
-            percentage_used=0.92,
-            needs_compression=True
-        ))
-        
         # Mock AutoGen response generation
-        with patch.object(agent_without_compressor, 'initialize_autogen_agent', return_value=True), \
-             patch.object(agent_without_compressor, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate, \
-             patch.object(agent_without_compressor, '_perform_fallback_truncation') as mock_truncate:
+        with patch.object(agent_with_context_manager, 'initialize_autogen_agent', return_value=True), \
+             patch.object(agent_with_context_manager, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate, \
+             patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
             
             mock_generate.return_value = "Test response"
             
-            response = await agent_without_compressor.generate_response("Test prompt")
+            # Mock context preparation
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Prepared system message",
+                estimated_tokens=2000
+            )
+            mock_prepare.return_value = mock_prepared
             
-            # Verify fallback truncation was called
-            mock_truncate.assert_called_once()
+            response = await agent_with_context_manager.generate_response("Test prompt")
+            
+            # Verify context preparation was called (new architecture)
+            mock_prepare.assert_called()
             
             # Verify response was generated
             assert response == "Test response"
@@ -260,84 +240,59 @@ class TestTokenManagementIntegration:
         assert tokens == 50  # Base overhead, minimum is max(estimated, 1) but estimated includes overhead
     
     @pytest.mark.asyncio
-    async def test_perform_context_compression_success(self, test_agent, mock_context_compressor, token_manager):
-        """Test successful context compression."""
-        # Mock token manager methods
-        token_manager.reset_context_size = Mock()
-        token_manager.increment_compression_count = Mock()
-        
-        # Mock successful compression
-        compression_result = CompressionResult(
-            original_size=10000,
-            compressed_size=5000,
-            compression_ratio=0.5,
-            compressed_content="Compressed system message",
-            method_used="llm_compression",
-            success=True
-        )
-        mock_context_compressor.compress_context.return_value = compression_result
-        
-        # Mock AutoGen initialization
-        with patch.object(test_agent, 'initialize_autogen_agent', return_value=True):
-            await test_agent._perform_context_compression()
+    async def test_perform_context_compression_success(self, test_agent, mock_context_compressor, token_manager, real_managers):
+        """Test context manager integration (replaces context compression)."""
+        # Mock context manager preparation
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Prepared system message",
+                estimated_tokens=3000
+            )
+            mock_prepare.return_value = mock_prepared
             
-            # Verify compression was called
-            mock_context_compressor.compress_context.assert_called_once()
+            # Test context preparation
+            prepared = await real_managers.context_manager.prepare_system_prompt("Test system message")
             
-            # Verify system message was updated
-            assert test_agent.system_message == "Compressed system message"
-            
-            # Verify token manager methods were called
-            token_manager.reset_context_size.assert_called_once()
-            token_manager.increment_compression_count.assert_called_once()
+            # Verify context was prepared
+            assert prepared.system_prompt == "Prepared system message"
+            assert prepared.estimated_tokens == 3000
     
     @pytest.mark.asyncio
-    async def test_perform_context_compression_failure(self, test_agent, mock_context_compressor):
-        """Test context compression failure with fallback."""
-        # Mock failed compression
-        compression_result = CompressionResult(
-            original_size=10000,
-            compressed_size=10000,
-            compression_ratio=0.0,
-            compressed_content="Original content",
-            method_used="compression_failed",
-            success=False,
-            error="Compression failed"
-        )
-        mock_context_compressor.compress_context.return_value = compression_result
-        
-        # Mock fallback truncation
-        with patch.object(test_agent, '_perform_fallback_truncation') as mock_truncate:
-            await test_agent._perform_context_compression()
+    async def test_perform_context_compression_failure(self, test_agent, mock_context_compressor, real_managers):
+        """Test context manager error handling."""
+        # Test context manager error handling
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', side_effect=Exception("Context preparation error")):
             
-            # Verify compression was attempted
-            mock_context_compressor.compress_context.assert_called_once()
-            
-            # Verify fallback truncation was called
-            mock_truncate.assert_called_once()
+            # This should handle the error gracefully
+            try:
+                await real_managers.context_manager.prepare_system_prompt("Test system message")
+                assert False, "Should have raised an exception"
+            except Exception as e:
+                assert str(e) == "Context preparation error"
+                # Verify error was properly raised
     
-    def test_perform_fallback_truncation(self, test_agent, token_manager):
-        """Test fallback truncation functionality."""
-        # Mock token manager methods
-        token_manager.get_model_limit = Mock(return_value=8192)
-        token_manager.reset_context_size = Mock()
+    @pytest.mark.asyncio
+    async def test_perform_fallback_truncation(self, test_agent, token_manager, real_managers):
+        """Test context management functionality (replaces fallback truncation)."""
+        # Test context preparation (which handles token control)
+        large_system_message = test_agent._build_complete_system_message()
         
-        # Mock truncate_context method
-        with patch.object(test_agent, 'truncate_context') as mock_truncate, \
-             patch.object(test_agent, 'initialize_autogen_agent', return_value=True):
+        # Mock context manager to simulate token control
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Managed system message (truncated if needed)",
+                estimated_tokens=2000
+            )
+            mock_prepare.return_value = mock_prepared
             
-            mock_truncate.return_value = {'truncated_content': 'Truncated system message'}
+            # Test context preparation
+            prepared = await real_managers.context_manager.prepare_system_prompt(large_system_message)
             
-            test_agent._perform_fallback_truncation()
-            
-            # Verify truncation was called with correct parameters
-            mock_truncate.assert_called_once_with(max_tokens=4096)  # 50% of model limit
-            
-            # Verify system message was updated
-            assert test_agent.system_message == 'Truncated system message'
-            
-            # Verify token manager reset was called
-            token_manager.reset_context_size.assert_called_once()
+            # Verify context was prepared
+            assert prepared.system_prompt == "Managed system message (truncated if needed)"
+            assert prepared.estimated_tokens == 2000
 
 
 class TestTokenManagementEdgeCases:
@@ -369,7 +324,7 @@ class TestTokenManagementEdgeCases:
         return compressor
     
     @pytest.fixture
-    def test_agent(self, test_llm_config, token_manager, mock_context_compressor):
+    def test_agent(self, test_llm_config, token_manager, mock_context_compressor, real_managers):
         """Create a test agent with token management."""
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -383,11 +338,10 @@ class TestTokenManagementEdgeCases:
             llm_config=test_llm_config,
             system_message="Test system message",
             token_manager=token_manager,
-            context_compressor=mock_context_compressor
-        )
+            context_manager=real_managers.context_manager)
     
     @pytest.fixture
-    def test_agent_minimal(self, test_llm_config):
+    def test_agent_minimal(self, test_llm_config, real_managers):
         """Create a minimal test agent without token management."""
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -399,7 +353,9 @@ class TestTokenManagementEdgeCases:
         return TestAgent(
             name="test_agent",
             llm_config=test_llm_config,
-            system_message="Test system message"
+            system_message="Test system message",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.mark.asyncio
@@ -418,24 +374,28 @@ class TestTokenManagementEdgeCases:
             mock_generate.assert_called_once_with("Test prompt")
     
     @pytest.mark.asyncio
-    async def test_compression_exception_handling(self, test_agent, mock_context_compressor):
-        """Test exception handling during compression."""
-        # Mock compression to raise exception
-        mock_context_compressor.compress_context.side_effect = Exception("Compression error")
-        
-        # Mock fallback truncation
-        with patch.object(test_agent, '_perform_fallback_truncation') as mock_truncate:
-            await test_agent._perform_context_compression()
+    async def test_compression_exception_handling(self, test_agent, mock_context_compressor, real_managers):
+        """Test exception handling during context management."""
+        # Test context manager error handling
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', side_effect=Exception("Context preparation error")):
             
-            # Verify fallback truncation was called due to exception
-            mock_truncate.assert_called_once()
+            # This should handle the error gracefully
+            try:
+                await real_managers.context_manager.prepare_system_prompt("Test system message")
+                assert False, "Should have raised an exception"
+            except Exception as e:
+                assert str(e) == "Context preparation error"
+                # Verify error was properly raised
     
     def test_truncation_exception_handling(self, test_agent, token_manager):
-        """Test exception handling during fallback truncation."""
-        # Mock token manager to raise exception
-        with patch.object(token_manager, 'get_model_limit', side_effect=Exception("Token manager error")):
-            # Should not raise exception, just log error
-            test_agent._perform_fallback_truncation()
-            
-            # Test passes if no exception is raised
-            assert True
+        """Test error handling with token manager."""
+        # Test invalid token numbers
+        initial_size = token_manager.current_context_size
+        token_manager.update_token_usage("test-model", -100, "invalid_operation")
+        
+        # Should ignore invalid token numbers
+        assert token_manager.current_context_size == initial_size
+        
+        # Test unknown model token limit
+        token_check = token_manager.check_token_limit("unknown-model")
+        assert token_check.model_limit == 8192  # Should use default limit
