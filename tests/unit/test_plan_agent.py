@@ -41,9 +41,9 @@ class TestPlanAgent:
         return MemoryManager(temp_workspace)
     
     @pytest.fixture
-    def plan_agent(self, llm_config, memory_manager):
-        """Create a PlanAgent instance for testing."""
-        return PlanAgent(llm_config, memory_manager)
+    def plan_agent(self, llm_config, memory_manager, mock_token_manager, mock_context_manager):
+        """Create a PlanAgent instance for testing with required manager dependencies."""
+        return PlanAgent(llm_config, memory_manager, mock_token_manager, mock_context_manager)
     
     def test_plan_agent_initialization(self, plan_agent, llm_config):
         """Test that PlanAgent initializes correctly."""
@@ -382,60 +382,46 @@ This project aims to fix authentication bugs in the login system.
         assert "directories" in capability_text
         assert "EARS" in capability_text
     
-    def test_token_compression_inheritance(self, plan_agent):
-        """Test that PlanAgent inherits token compression attributes from BaseLLMAgent."""
-        # Verify that PlanAgent has token management attributes from BaseLLMAgent
+    def test_manager_dependencies_inheritance(self, plan_agent):
+        """Test that PlanAgent has required manager dependencies from BaseLLMAgent."""
+        # Verify that PlanAgent has manager dependencies from BaseLLMAgent
         assert hasattr(plan_agent, 'token_manager')
-        assert hasattr(plan_agent, 'context_compressor')
-        assert hasattr(plan_agent, 'compression_history')
-        assert hasattr(plan_agent, 'compression_stats')
+        assert hasattr(plan_agent, 'context_manager')
         
-        # Verify that token compression methods are available
+        # Verify that managers are properly set
+        assert plan_agent.token_manager is not None
+        assert plan_agent.context_manager is not None
+        
+        # Verify that deprecated compression methods exist but raise errors
         assert hasattr(plan_agent, '_perform_context_compression')
         assert hasattr(plan_agent, 'compress_context')
+        assert hasattr(plan_agent, 'truncate_context')
         
         # These should be inherited from BaseLLMAgent
         assert callable(getattr(plan_agent, '_perform_context_compression'))
         assert callable(getattr(plan_agent, 'compress_context'))
-        
-        # Verify compression stats structure
-        assert isinstance(plan_agent.compression_stats, dict)
-        assert 'total_compressions' in plan_agent.compression_stats
-        assert 'successful_compressions' in plan_agent.compression_stats
+        assert callable(getattr(plan_agent, 'truncate_context'))
     
     @pytest.mark.asyncio
-    async def test_token_compression_functionality(self, plan_agent):
-        """Test that PlanAgent can handle token compression functionality."""
-        # Test that compression stats can be updated
-        initial_compressions = plan_agent.compression_stats['total_compressions']
+    async def test_deprecated_compression_methods(self, plan_agent):
+        """Test that deprecated compression methods raise appropriate errors."""
+        # Test that deprecated compression methods raise RuntimeError
+        with pytest.raises(RuntimeError, match="_perform_context_compression is removed.*ContextManager"):
+            await plan_agent._perform_context_compression()
         
-        # Mock a compression result
-        from autogen_framework.models import CompressionResult
-        mock_compression = CompressionResult(
-            original_size=1000,
-            compressed_size=500,
-            compression_ratio=0.5,
-            compressed_content="Compressed content",
-            method_used="test_compression",
-            success=True,
-            error=None
-        )
+        with pytest.raises(RuntimeError, match="compress_context is removed.*ContextManager"):
+            await plan_agent.compress_context()
         
-        # Add compression to history
-        plan_agent.compression_history.append(mock_compression)
-        plan_agent.compression_stats['total_compressions'] += 1
-        plan_agent.compression_stats['successful_compressions'] += 1
+        with pytest.raises(RuntimeError, match="truncate_context is removed.*ContextManager"):
+            plan_agent.truncate_context()
         
-        # Verify compression was recorded
-        assert len(plan_agent.compression_history) == 1
-        assert plan_agent.compression_stats['total_compressions'] == initial_compressions + 1
-        assert plan_agent.compression_stats['successful_compressions'] == 1
+        # Test that manager dependencies are properly available
+        assert plan_agent.token_manager is not None
+        assert plan_agent.context_manager is not None
         
-        # Test that compression methods exist and are callable
-        assert hasattr(plan_agent, '_perform_context_compression')
-        assert callable(plan_agent._perform_context_compression)
-        assert hasattr(plan_agent, 'compress_context')
-        assert callable(plan_agent.compress_context)
+        # Test that managers have expected methods
+        assert hasattr(plan_agent.token_manager, 'estimate_tokens_from_text')
+        assert hasattr(plan_agent.context_manager, 'prepare_system_prompt')
     
     @pytest.mark.asyncio
     async def test_get_work_directory_suggestions(self, plan_agent):
@@ -525,9 +511,9 @@ class TestPlanAgentMocking:
         return MemoryManager(temp_workspace)
     
     @pytest.fixture
-    def plan_agent(self, llm_config, memory_manager):
-        """Create a PlanAgent instance for testing."""
-        return PlanAgent(llm_config, memory_manager)
+    def plan_agent(self, llm_config, memory_manager, mock_token_manager, mock_context_manager):
+        """Create a PlanAgent instance for testing with required manager dependencies."""
+        return PlanAgent(llm_config, memory_manager, mock_token_manager, mock_context_manager)
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')

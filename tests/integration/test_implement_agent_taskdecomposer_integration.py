@@ -31,34 +31,40 @@ class TestImplementAgentTaskDecomposerIntegration:
         return ShellExecutor()
     
     @pytest.fixture
-    def task_decomposer(self, real_llm_config):
+    def task_decomposer(self, real_llm_config, real_managers):
         """Create TaskDecomposer for testing."""
         return TaskDecomposer(
             name="test_decomposer",
             llm_config=real_llm_config,
-            system_message="You are a task decomposition expert."
+            system_message="You are a task decomposition expert.",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
-    def enhanced_implement_agent(self, real_llm_config, shell_executor, task_decomposer):
+    def enhanced_implement_agent(self, real_llm_config, shell_executor, task_decomposer, real_managers):
         """Create enhanced ImplementAgent with TaskDecomposer."""
         return ImplementAgent(
             name="enhanced_implement_agent",
             llm_config=real_llm_config,
             system_message="You are an enhanced implementation agent with intelligent task decomposition.",
             shell_executor=shell_executor,
-            task_decomposer=task_decomposer
+            task_decomposer=task_decomposer,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
-    def original_implement_agent(self, real_llm_config, shell_executor):
+    def original_implement_agent(self, real_llm_config, shell_executor, real_managers):
         """Create original ImplementAgent without TaskDecomposer for comparison."""
         return ImplementAgent(
             name="original_implement_agent",
             llm_config=real_llm_config,
             system_message="You are an implementation agent.",
             shell_executor=shell_executor,
-            task_decomposer=None  # Use default simple decomposer
+            task_decomposer=None,  # Use default simple decomposer
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
@@ -369,14 +375,16 @@ class TestTaskDecomposerExecutionFlow:
     # It loads configuration from .env.integration file for secure testing
     
     @pytest.fixture
-    def enhanced_agent(self, real_llm_config):
+    def enhanced_agent(self, real_llm_config, real_managers):
         """Create enhanced ImplementAgent for testing."""
         shell_executor = ShellExecutor()
         return ImplementAgent(
             name="test_enhanced_agent",
             llm_config=real_llm_config,
             system_message="You are an enhanced implementation agent.",
-            shell_executor=shell_executor
+            shell_executor=shell_executor,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     async def test_task_decomposer_execution_flow(self, enhanced_agent):

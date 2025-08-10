@@ -33,13 +33,15 @@ class TestErrorRecovery:
         )
     
     @pytest.fixture
-    def error_recovery_agent(self, test_llm_config):
-        """Create ErrorRecovery agent for testing."""
+    def error_recovery_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create ErrorRecovery agent for testing with required manager dependencies."""
         system_message = "You are an error recovery agent for testing."
         return ErrorRecovery(
             name="TestErrorRecovery",
             llm_config=test_llm_config,
-            system_message=system_message
+            system_message=system_message,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @pytest.fixture
@@ -259,7 +261,9 @@ class TestErrorRecovery:
         new_agent = ErrorRecovery(
             name="NewAgent",
             llm_config=error_recovery_agent.llm_config,
-            system_message="Test"
+            system_message="Test",
+            token_manager=error_recovery_agent.token_manager,
+            context_manager=error_recovery_agent.context_manager
         )
         
         success = new_agent.import_learned_patterns(exported)

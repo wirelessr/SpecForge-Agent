@@ -74,7 +74,7 @@ class TestAgentManagerRealIntegration:
         with patch('autogen_framework.agents.base_agent.BaseLLMAgent.initialize_autogen_agent') as mock_init:
             mock_init.return_value = True
             
-            # Setup agents with real components
+            # Setup agents with real components - this now creates and injects managers
             result = agent_manager.setup_agents(real_llm_config)
             assert result is True
             
@@ -88,6 +88,22 @@ class TestAgentManagerRealIntegration:
             # Verify that real LLM config was used
             assert init_event["details"]["llm_config"]["model"] == real_llm_config.model
             assert init_event["details"]["llm_config"]["base_url"] == real_llm_config.base_url
+            
+            # Verify that managers were created and injected
+            assert agent_manager.plan_agent is not None
+            assert agent_manager.design_agent is not None
+            assert agent_manager.tasks_agent is not None
+            assert agent_manager.implement_agent is not None
+            
+            # Verify agents have manager dependencies
+            assert hasattr(agent_manager.plan_agent, 'token_manager')
+            assert hasattr(agent_manager.plan_agent, 'context_manager')
+            assert hasattr(agent_manager.design_agent, 'token_manager')
+            assert hasattr(agent_manager.design_agent, 'context_manager')
+            assert hasattr(agent_manager.tasks_agent, 'token_manager')
+            assert hasattr(agent_manager.tasks_agent, 'context_manager')
+            assert hasattr(agent_manager.implement_agent, 'token_manager')
+            assert hasattr(agent_manager.implement_agent, 'context_manager')
     
     @pytest.mark.integration
     def test_real_memory_and_shell_integration(self, agent_manager, temp_workspace, real_llm_config):
@@ -251,6 +267,119 @@ class TestAgentManagerRealIntegration:
                 # Check that update_memory_context was called
                 # (This would be verified by checking agent's memory_context attribute)
                 assert hasattr(agent, 'memory_context')
+    
+    @pytest.mark.integration
+    def test_manager_creation_and_injection(self, agent_manager, temp_workspace, real_llm_config):
+        """Test that managers are properly created and injected into agents."""
+        # Mock agent initialization
+        with patch('autogen_framework.agents.base_agent.BaseLLMAgent.initialize_autogen_agent') as mock_init:
+            mock_init.return_value = True
+            
+            # Initialize agents - this should create and inject managers
+            result = agent_manager.setup_agents(real_llm_config)
+            assert result is True
+            
+            # Verify all agents were created
+            assert agent_manager.plan_agent is not None
+            assert agent_manager.design_agent is not None
+            assert agent_manager.tasks_agent is not None
+            assert agent_manager.implement_agent is not None
+            
+            # Verify each agent has the required manager dependencies
+            agents = [
+                agent_manager.plan_agent,
+                agent_manager.design_agent,
+                agent_manager.tasks_agent,
+                agent_manager.implement_agent
+            ]
+            
+            for agent in agents:
+                # Check that agent has manager dependencies
+                assert hasattr(agent, 'token_manager'), f"Agent {agent.name} missing token_manager"
+                assert hasattr(agent, 'context_manager'), f"Agent {agent.name} missing context_manager"
+                
+                # Verify manager types
+                from autogen_framework.token_manager import TokenManager
+                from autogen_framework.context_manager import ContextManager
+                
+                assert isinstance(agent.token_manager, TokenManager), f"Agent {agent.name} has wrong token_manager type"
+                assert isinstance(agent.context_manager, ContextManager), f"Agent {agent.name} has wrong context_manager type"
+                
+                # Verify managers are properly configured
+                assert agent.token_manager.config_manager is not None
+                assert str(agent.context_manager.work_dir) == temp_workspace
+                assert agent.context_manager.llm_config == real_llm_config
+    
+    @pytest.mark.integration
+    def test_context_management_integration_scenarios(self, agent_manager, temp_workspace, real_llm_config):
+        """Test context management integration scenarios with real managers."""
+        # Mock agent initialization
+        with patch('autogen_framework.agents.base_agent.BaseLLMAgent.initialize_autogen_agent') as mock_init:
+            mock_init.return_value = True
+            
+            # Initialize agents
+            result = agent_manager.setup_agents(real_llm_config)
+            assert result is True
+            
+            # Test that context managers can be used for context preparation
+            import asyncio
+            
+            async def test_context_preparation():
+                # Get a context manager from one of the agents
+                context_manager = agent_manager.plan_agent.context_manager
+                
+                # Initialize the context manager
+                await context_manager.initialize()
+                
+                # Test context preparation
+                test_prompt = "Test system prompt for integration testing"
+                prepared = await context_manager.prepare_system_prompt(test_prompt)
+                
+                assert hasattr(prepared, 'system_prompt')
+                assert hasattr(prepared, 'estimated_tokens')
+                assert isinstance(prepared.system_prompt, str)
+                assert isinstance(prepared.estimated_tokens, int)
+                assert len(prepared.system_prompt) > 0
+                assert prepared.estimated_tokens > 0
+                
+                return prepared
+            
+            # Run the async test
+            prepared = asyncio.run(test_context_preparation())
+            assert prepared is not None
+    
+    @pytest.mark.integration
+    def test_token_management_integration_scenarios(self, agent_manager, temp_workspace, real_llm_config):
+        """Test token management integration scenarios with real managers."""
+        # Mock agent initialization
+        with patch('autogen_framework.agents.base_agent.BaseLLMAgent.initialize_autogen_agent') as mock_init:
+            mock_init.return_value = True
+            
+            # Initialize agents
+            result = agent_manager.setup_agents(real_llm_config)
+            assert result is True
+            
+            # Test that token managers can be used for token operations
+            token_manager = agent_manager.plan_agent.token_manager
+            
+            # Test token estimation
+            test_text = "This is a test text for token estimation in integration testing."
+            estimated_tokens = token_manager.estimate_tokens_from_text(test_text)
+            assert isinstance(estimated_tokens, int)
+            assert estimated_tokens > 0
+            
+            # Test character count estimation
+            char_count = len(test_text)
+            char_based_tokens = token_manager.estimate_tokens_from_char_count(char_count)
+            assert isinstance(char_based_tokens, int)
+            assert char_based_tokens > 0
+            
+            # Test token limit checking
+            limit_check = token_manager.check_token_limit(real_llm_config.model, estimated_static_tokens=estimated_tokens)
+            assert hasattr(limit_check, 'needs_compression')
+            assert hasattr(limit_check, 'current_tokens')
+            assert hasattr(limit_check, 'model_limit')
+            assert isinstance(limit_check.needs_compression, bool)
 
 
 if __name__ == "__main__":

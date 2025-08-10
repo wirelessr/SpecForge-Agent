@@ -37,9 +37,14 @@ class TestPlanAgentRealIntegration:
         return memory_manager
     
     @pytest.fixture
-    def integration_plan_agent(self, real_llm_config, real_memory_manager):
+    def integration_plan_agent(self, real_llm_config, real_memory_manager, real_managers):
         """Create a PlanAgent for integration testing."""
-        return PlanAgent(real_llm_config, real_memory_manager)
+        return PlanAgent(
+            llm_config=real_llm_config,
+            memory_manager=real_memory_manager,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
+        )
     
     @pytest.mark.integration
     def test_memory_integration(self, integration_plan_agent):

@@ -20,6 +20,10 @@ from .agents.implement_agent import ImplementAgent
 from .agents.tasks_agent import TasksAgent
 from .models import LLMConfig, WorkflowState, WorkflowPhase, AgentContext
 from .memory_manager import MemoryManager
+from .token_manager import TokenManager
+from .context_manager import ContextManager
+from .context_compressor import ContextCompressor
+from .config_manager import ConfigManager
 from .shell_executor import ShellExecutor
 
 
@@ -94,27 +98,46 @@ class AgentManager:
             
             # Load memory context for agents
             memory_context = self.memory_manager.load_memory()
+
+            # Initialize core managers (mandatory)
+            config_manager = ConfigManager()
+            token_manager = TokenManager(config_manager)
+            context_compressor = ContextCompressor(llm_config, token_manager=token_manager)
+            self.context_manager = ContextManager(
+                work_dir=str(self.workspace_path),
+                memory_manager=self.memory_manager,
+                context_compressor=context_compressor,
+                llm_config=llm_config,
+                token_manager=token_manager,
+                config_manager=config_manager,
+            )
             
             self.logger.info("Initializing agents with LLM configuration")
             
             # Initialize Plan Agent
             self.plan_agent = PlanAgent(
                 llm_config=llm_config,
-                memory_manager=self.memory_manager
+                memory_manager=self.memory_manager,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
             )
             self.agents["plan"] = self.plan_agent
             
             # Initialize Design Agent
             self.design_agent = DesignAgent(
                 llm_config=llm_config,
-                memory_context=memory_context
+                memory_context=memory_context,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
             )
             self.agents["design"] = self.design_agent
             
             # Initialize Tasks Agent
             self.tasks_agent = TasksAgent(
                 llm_config=llm_config,
-                memory_manager=self.memory_manager
+                memory_manager=self.memory_manager,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
             )
             self.agents["tasks"] = self.tasks_agent
             
@@ -124,7 +147,9 @@ class AgentManager:
                 name="ImplementAgent",
                 llm_config=llm_config,
                 system_message=implement_system_message,
-                shell_executor=self.shell_executor
+                shell_executor=self.shell_executor,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
             )
             self.agents["implement"] = self.implement_agent
             

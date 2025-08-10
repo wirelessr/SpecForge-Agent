@@ -125,6 +125,179 @@ The framework now includes autonomous execution enhancement with the following n
 - **Metrics**: Functionality, maintainability, standards compliance, test coverage, documentation
 - **Features**: Baseline tracking, regression prevention, quality gates
 
+## 🔗 Dependency Injection Architecture
+
+### Mandatory Manager Dependencies
+
+The framework implements a strict dependency injection pattern where all agents require mandatory manager dependencies. This ensures proper separation of concerns and eliminates code duplication.
+
+#### Manager Hierarchy
+
+```mermaid
+graph TB
+    subgraph "Manager Dependencies"
+        CM[ConfigManager]
+        TM[TokenManager]
+        CC[ContextCompressor]
+        CTM[ContextManager]
+        MM[MemoryManager]
+    end
+    
+    subgraph "Agent Layer"
+        BA[BaseLLMAgent]
+        PA[PlanAgent]
+        DA[DesignAgent]
+        TA[TasksAgent]
+        IA[ImplementAgent]
+    end
+    
+    CM --> TM
+    TM --> CC
+    CC --> CTM
+    MM --> CTM
+    
+    CTM --> BA
+    TM --> BA
+    
+    BA --> PA
+    BA --> DA
+    BA --> TA
+    BA --> IA
+```
+
+#### Dependency Creation Pattern
+
+```python
+# AgentManager creates managers in correct dependency order
+def setup_agents(self, llm_config: LLMConfig) -> bool:
+    # Step 1: Create core managers
+    config_manager = ConfigManager()
+    token_manager = TokenManager(config_manager)
+    context_compressor = ContextCompressor(llm_config, token_manager=token_manager)
+    
+    # Step 2: Create ContextManager with all dependencies
+    context_manager = ContextManager(
+        work_dir=str(self.workspace_path),
+        memory_manager=self.memory_manager,
+        context_compressor=context_compressor,
+        llm_config=llm_config,
+        token_manager=token_manager,
+        config_manager=config_manager,
+    )
+    
+    # Step 3: Inject managers into all agents
+    self.plan_agent = PlanAgent(
+        llm_config=llm_config,
+        memory_manager=self.memory_manager,
+        token_manager=token_manager,        # MANDATORY
+        context_manager=context_manager,    # MANDATORY
+    )
+```
+
+#### Manager Responsibilities
+
+**TokenManager**:
+- Token estimation and tracking
+- Context compression decisions
+- Token usage statistics
+- Model-specific token limits
+
+**ContextManager**:
+- System prompt preparation and compression
+- Project context integration (requirements, design, execution history)
+- Agent-specific context retrieval
+- Automatic token optimization
+
+**ConfigManager**:
+- Configuration loading and validation
+- Environment variable management
+- Default value handling
+
+**ContextCompressor**:
+- LLM-based context compression
+- Token-aware content reduction
+- Critical information preservation
+
+#### Deprecated Pattern Migration
+
+The old pattern where agents managed their own context and tokens has been completely replaced:
+
+```python
+# ❌ OLD PATTERN (Deprecated)
+class BaseLLMAgent:
+    def __init__(self, name: str, llm_config: LLMConfig, system_message: str):
+        # Agents managed their own context and tokens
+        self.context = {}
+        self._perform_context_compression()  # Now raises RuntimeError
+        self.truncate_context()              # Now raises RuntimeError
+
+# ✅ NEW PATTERN (Current)
+class BaseLLMAgent:
+    def __init__(self, name: str, llm_config: LLMConfig, system_message: str,
+                 token_manager: 'TokenManager',      # MANDATORY
+                 context_manager: 'ContextManager'): # MANDATORY
+        # Agents delegate to managers
+        self.token_manager = token_manager
+        self.context_manager = context_manager
+        
+    async def generate_response(self, prompt: str) -> str:
+        # Delegate context preparation to ContextManager
+        prepared = await self.context_manager.prepare_system_prompt(
+            self._build_complete_system_message()
+        )
+        
+        # Delegate token tracking to TokenManager
+        tokens_used = self.token_manager.extract_token_usage_from_response(response)
+```
+
+#### Benefits of Dependency Injection
+
+1. **Separation of Concerns**: Each manager has a single, well-defined responsibility
+2. **Code Reuse**: Common logic is centralized in managers
+3. **Testability**: Easy to mock managers for unit testing
+4. **Consistency**: All agents use the same token and context management logic
+5. **Maintainability**: Changes to token/context logic only need to be made in one place
+
+#### Testing with Dependency Injection
+
+```python
+# Unit tests use mock managers
+@pytest.fixture
+def mock_token_manager():
+    mock = Mock(spec=TokenManager)
+    mock.extract_token_usage_from_response.return_value = 100
+    return mock
+
+@pytest.fixture
+def mock_context_manager():
+    mock = Mock(spec=ContextManager)
+    mock.prepare_system_prompt.return_value = Mock(
+        system_prompt="prepared prompt",
+        estimated_tokens=100
+    )
+    return mock
+
+# Integration tests use real managers
+@pytest.fixture
+def real_managers(tmp_path, real_llm_config):
+    memory_manager = MemoryManager(workspace_path=str(tmp_path))
+    config_manager = ConfigManager()
+    token_manager = TokenManager(config_manager)
+    context_compressor = ContextCompressor(real_llm_config, token_manager=token_manager)
+    context_manager = ContextManager(
+        work_dir=str(tmp_path),
+        memory_manager=memory_manager,
+        context_compressor=context_compressor,
+        llm_config=real_llm_config,
+        token_manager=token_manager,
+        config_manager=config_manager,
+    )
+    return {
+        'token_manager': token_manager,
+        'context_manager': context_manager
+    }
+```
+
 ## 📦 Core Component Details
 
 ### 1. MainController (Refactored)
@@ -172,45 +345,129 @@ class MainController:
 class AgentManager:
     """
     The agent manager is responsible for:
-    - Agent initialization (including new TasksAgent)
+    - Creating and managing mandatory manager dependencies
+    - Agent initialization with proper dependency injection
     - Inter-agent coordination
-    - Task distribution
-    - Result aggregation
+    - Task distribution and result aggregation
     """
 
-    def __init__(self, llm_config: LLMConfig):
-        self.llm_config = llm_config
+    def __init__(self, workspace_path: str):
+        self.workspace_path = Path(workspace_path)
+        self.logger = logging.getLogger(__name__)
+        
+        # Core components
+        self.memory_manager = MemoryManager(workspace_path)
+        self.shell_executor = ShellExecutor(str(self.workspace_path))
+        
+        # Manager instances (initialized later)
+        self.context_manager: Optional['ContextManager'] = None
+        
+        # Agent instances (initialized later)
+        self.plan_agent: Optional[PlanAgent] = None
+        self.design_agent: Optional[DesignAgent] = None
+        self.tasks_agent: Optional[TasksAgent] = None
+        self.implement_agent: Optional[ImplementAgent] = None
+        
+        # Agent registry for dynamic access
         self.agents: Dict[str, BaseLLMAgent] = {}
 
-    async def setup_agents(self) -> None:
-        """Sets up all agents including the new TasksAgent."""
-        self.agents["plan"] = PlanAgent(
-            name="PlanAgent",
-            llm_config=self.llm_config,
-            system_message=self._get_plan_agent_system_message()
-        )
-        self.agents["design"] = DesignAgent(
-            name="DesignAgent",
-            llm_config=self.llm_config,
-            system_message=self._get_design_agent_system_message()
-        )
-        self.agents["tasks"] = TasksAgent(
-            name="TasksAgent",
-            llm_config=self.llm_config,
-            system_message=self._get_tasks_agent_system_message()
-        )
-        self.agents["implement"] = ImplementAgent(
-            name="ImplementAgent",
-            llm_config=self.llm_config,
-            system_message=self._get_implement_agent_system_message()
-        )
+    def setup_agents(self, llm_config: LLMConfig) -> bool:
+        """
+        Initialize and configure all AI agents with proper dependency injection.
+        Creates mandatory managers and injects them into all agents.
+        """
+        try:
+            # Initialize core managers (mandatory)
+            config_manager = ConfigManager()
+            token_manager = TokenManager(config_manager)
+            context_compressor = ContextCompressor(llm_config, token_manager=token_manager)
+            self.context_manager = ContextManager(
+                work_dir=str(self.workspace_path),
+                memory_manager=self.memory_manager,
+                context_compressor=context_compressor,
+                llm_config=llm_config,
+                token_manager=token_manager,
+                config_manager=config_manager,
+            )
+            
+            # Load memory context for agents
+            memory_context = self.memory_manager.load_memory()
+            
+            # Initialize Plan Agent with dependency injection
+            self.plan_agent = PlanAgent(
+                llm_config=llm_config,
+                memory_manager=self.memory_manager,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+            )
+            self.agents["plan"] = self.plan_agent
+            
+            # Initialize Design Agent with dependency injection
+            self.design_agent = DesignAgent(
+                llm_config=llm_config,
+                memory_context=memory_context,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+            )
+            self.agents["design"] = self.design_agent
+            
+            # Initialize Tasks Agent with dependency injection
+            self.tasks_agent = TasksAgent(
+                llm_config=llm_config,
+                memory_manager=self.memory_manager,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+            )
+            self.agents["tasks"] = self.tasks_agent
+            
+            # Initialize Implement Agent with dependency injection
+            implement_system_message = self._build_implement_agent_system_message()
+            self.implement_agent = ImplementAgent(
+                name="ImplementAgent",
+                llm_config=llm_config,
+                system_message=implement_system_message,
+                shell_executor=self.shell_executor,
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+            )
+            self.agents["implement"] = self.implement_agent
+            
+            # Initialize AutoGen agents for all
+            initialization_results = []
+            for agent_name, agent in self.agents.items():
+                success = agent.initialize_autogen_agent()
+                initialization_results.append((agent_name, success))
+            
+            # Check if all agents initialized successfully
+            all_initialized = all(success for _, success in initialization_results)
+            
+            if all_initialized:
+                self.is_initialized = True
+                self.logger.info("All agents initialized successfully with dependency injection")
+                return True
+            else:
+                failed_agents = [name for name, success in initialization_results if not success]
+                self.logger.error(f"Failed to initialize agents: {failed_agents}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error setting up agents with dependency injection: {e}")
+            return False
 
     async def coordinate_agents(
         self,
         task_type: str,
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Coordinates agents to execute tasks."""
+        """
+        Coordinates agents to execute tasks with proper context management.
+        All agents now have access to ContextManager and TokenManager.
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Agents not initialized. Call setup_agents() first.")
+        
+        # Agents automatically retrieve context via ContextManager
+        # Token usage is automatically tracked via TokenManager
         # Routes task generation to TasksAgent, execution to ImplementAgent
         pass
 ```
@@ -223,36 +480,92 @@ class AgentManager:
 class BaseLLMAgent:
     """
     The base agent class provides:
-    - LLM integration
-    - Context management
-    - Error handling
-    - Logging
+    - LLM integration with AutoGen
+    - Context management delegation to ContextManager
+    - Token management delegation to TokenManager
+    - Error handling and logging
+    - Mandatory dependency injection pattern
     """
 
     def __init__(
         self,
         name: str,
         llm_config: LLMConfig,
-        system_message: str
+        system_message: str,
+        token_manager: 'TokenManager',      # MANDATORY
+        context_manager: 'ContextManager',  # MANDATORY
+        description: Optional[str] = None,
     ):
         self.name = name
         self.llm_config = llm_config
         self.system_message = system_message
-        self.context: Dict[str, Any] = {}
+        self.description = description or f"{name} agent for the AutoGen framework"
+        
+        # Mandatory manager dependencies
+        self.token_manager = token_manager
+        self.context_manager = context_manager
+        
+        # Context and state management
+        self.context: AgentContext = {}
+        self.memory_context: Dict[str, Any] = {}
+        self.conversation_history: List[Dict[str, Any]] = []
+        
+        # Initialize logging
         self.logger = logging.getLogger(f"autogen_framework.agents.{name}")
 
     async def generate_response(
         self,
         prompt: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[AgentContext] = None
     ) -> str:
-        """Generates an LLM response."""
-        # Implement LLM call logic
-        pass
+        """
+        Enhanced response generation with token management and context compression.
+        Delegates context preparation to ContextManager and token operations to TokenManager.
+        """
+        # Ensure AutoGen agent is initialized
+        if not self.initialize_autogen_agent():
+            raise RuntimeError(f"Failed to initialize AutoGen agent for {self.name}")
+        
+        # Update context if provided
+        original_context = None
+        if context:
+            original_context = self.context.copy()
+            self.update_context(context)
+        
+        try:
+            # Build and compress system prompt using ContextManager
+            prepared = await self.context_manager.prepare_system_prompt(
+                self._build_complete_system_message()
+            )
+            
+            # Generate response using AutoGen
+            response = await self._generate_autogen_response(prompt)
+            
+            # Update token usage via TokenManager
+            tokens_used = self.token_manager.extract_token_usage_from_response(response)
+            if tokens_used > 0:
+                self.token_manager.update_token_usage(
+                    self.llm_config.model,
+                    tokens_used,
+                    "generate_response"
+                )
+            
+            return response
+            
+        finally:
+            # Restore original context if it was temporarily updated
+            if context and original_context is not None:
+                self.context = original_context
 
-    def update_context(self, new_context: Dict[str, Any]) -> None:
+    def update_context(self, new_context: AgentContext) -> None:
         """Updates the agent's context."""
         self.context.update(new_context)
+        
+        # Reinitialize AutoGen agent with updated context if needed
+        if self._is_initialized and self._autogen_agent is not None:
+            self._is_initialized = False
+            self._autogen_agent = None
+            self.initialize_autogen_agent()
 ```
 
 ### 3. SessionManager (New Component)

@@ -50,7 +50,7 @@ class TestRealTokenManagement:
         return ContextCompressor(real_llm_config)
     
     @pytest.fixture
-    def real_agent(self, real_llm_config, real_token_manager, real_context_compressor):
+    def real_agent(self, real_llm_config, real_token_manager, real_context_compressor, real_managers):
         """創建真實agent - 遵循steering模式"""
         return RealTestAgent(
             name="real_test_agent",
@@ -62,16 +62,15 @@ class TestRealTokenManagement:
             This system message is intentionally detailed to provide sufficient context for testing compression.
             """,
             token_manager=real_token_manager,
-            context_compressor=real_context_compressor
-        )
+            context_manager=real_managers.context_manager)
     
     @pytest.mark.integration
-    def test_real_initialization(self, real_agent, real_token_manager, real_context_compressor, real_llm_config):
+    def test_real_initialization(self, real_agent, real_token_manager, real_context_compressor, real_llm_config, real_managers):
         """測試真實組件初始化 - 遵循steering指導"""
         # 驗證agent正確初始化
         assert real_agent.name == "real_test_agent"
         assert real_agent.token_manager is real_token_manager
-        assert real_agent.context_compressor is real_context_compressor
+        assert real_agent.context_manager is real_managers.context_manager
         
         # 驗證LLM配置使用環境變量
         assert real_agent.llm_config.model == real_llm_config.model
@@ -81,7 +80,7 @@ class TestRealTokenManagement:
         assert real_token_manager.token_config['compression_threshold'] == 0.9
         assert real_token_manager.token_config['compression_enabled'] is True
         
-        # 驗證ContextCompressor配置
+        # 驗證ContextCompressor配置 (through ContextManager)
         assert real_context_compressor.llm_config.model == real_agent.llm_config.model
     
     @pytest.mark.integration

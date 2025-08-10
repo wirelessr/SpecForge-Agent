@@ -41,7 +41,7 @@ class TestEnhancedExecutionFlow:
         return ShellExecutor()
     
     @pytest.fixture
-    def task_decomposer(self, real_llm_config):
+    def task_decomposer(self, real_llm_config, real_managers):
         """Create TaskDecomposer for testing."""
         system_message = """
 You are a task decomposition expert. Break down high-level tasks into executable shell commands.
@@ -51,11 +51,13 @@ Focus on practical, executable commands that achieve the task objectives.
         return TaskDecomposer(
             name="TestTaskDecomposer",
             llm_config=real_llm_config,
-            system_message=system_message
+            system_message=system_message,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
-    def error_recovery(self, real_llm_config):
+    def error_recovery(self, real_llm_config, real_managers):
         """Create ErrorRecovery for testing."""
         system_message = """
 You are an intelligent error recovery agent. Analyze failures and generate recovery strategies.
@@ -65,11 +67,13 @@ Focus on practical recovery approaches that can resolve common errors.
         return ErrorRecovery(
             name="TestErrorRecovery",
             llm_config=real_llm_config,
-            system_message=system_message
+            system_message=system_message,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
-    def enhanced_implement_agent(self, real_llm_config, shell_executor, task_decomposer, error_recovery):
+    def enhanced_implement_agent(self, real_llm_config, shell_executor, task_decomposer, error_recovery, real_managers):
         """Create enhanced ImplementAgent with all components."""
         system_message = """
 You are an enhanced implementation agent with intelligent task execution capabilities.
@@ -82,7 +86,9 @@ and ErrorRecovery for intelligent error handling.
             system_message=system_message,
             shell_executor=shell_executor,
             task_decomposer=task_decomposer,
-            error_recovery=error_recovery
+            error_recovery=error_recovery,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
@@ -279,6 +285,7 @@ and ErrorRecovery for intelligent error handling.
                 related_tasks=[],
                 memory_patterns=[]
             ))
+            mock_context_manager.update_execution_history = AsyncMock()
             
             enhanced_implement_agent.set_context_manager(mock_context_manager)
             
@@ -362,14 +369,16 @@ class TestEnhancedCapabilities:
             api_key="sk-123456"
         )
     
-    def test_enhanced_capabilities_reporting(self, real_llm_config):
+    def test_enhanced_capabilities_reporting(self, real_llm_config, real_managers):
         """Test enhanced capabilities reporting."""
         shell_executor = ShellExecutor()
         agent = ImplementAgent(
             name="TestAgent",
             llm_config=real_llm_config,
             system_message="Test agent",
-            shell_executor=shell_executor
+            shell_executor=shell_executor,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
         # Test base capabilities
@@ -389,21 +398,25 @@ class TestEnhancedCapabilities:
         assert "quality validation" in enhanced_text
         assert "context-aware" in enhanced_text
     
-    def test_error_recovery_setter(self, real_llm_config):
+    def test_error_recovery_setter(self, real_llm_config, real_managers):
         """Test ErrorRecovery setter method."""
         shell_executor = ShellExecutor()
         agent = ImplementAgent(
             name="TestAgent",
             llm_config=real_llm_config,
             system_message="Test agent",
-            shell_executor=shell_executor
+            shell_executor=shell_executor,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
         # Create new ErrorRecovery instance
         error_recovery = ErrorRecovery(
             name="TestErrorRecovery",
             llm_config=real_llm_config,
-            system_message="Test error recovery"
+            system_message="Test error recovery",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
         # Test setter

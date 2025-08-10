@@ -11,9 +11,8 @@ import os
 import re
 from typing import Dict, Any, List, Optional
 from pathlib import Path
-import logging
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, AgentContext
 
 
@@ -33,13 +32,15 @@ class DesignAgent(BaseLLMAgent):
     and patterns from previous projects.
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None, token_manager=None, context_manager=None):
         """
         Initialize the Design Agent.
-        
+
         Args:
             llm_config: LLM configuration for API connection
             memory_context: Optional memory context from MemoryManager
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
         """
         system_message = self._build_system_message()
         
@@ -47,7 +48,9 @@ class DesignAgent(BaseLLMAgent):
             name="DesignAgent",
             llm_config=llm_config,
             system_message=system_message,
-            description="AI agent specialized in generating technical design documents from requirements"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description="AI agent specialized in generating technical design documents from requirements",
         )
         
         # Update memory context if provided

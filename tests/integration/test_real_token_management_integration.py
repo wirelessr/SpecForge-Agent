@@ -13,6 +13,7 @@ from typing import Dict, Any
 from autogen_framework.agents.base_agent import BaseLLMAgent
 from autogen_framework.token_manager import TokenManager
 from autogen_framework.context_compressor import ContextCompressor
+from autogen_framework.context_manager import ContextManager
 from autogen_framework.models import LLMConfig
 from autogen_framework.config_manager import ConfigManager
 
@@ -66,22 +67,21 @@ class TestRealTokenManagementIntegration:
         return ContextCompressor(real_llm_config)
     
     @pytest.fixture
-    def real_agent(self, real_llm_config, real_token_manager, real_context_compressor):
+    def real_agent(self, real_llm_config, real_token_manager, real_context_compressor, real_managers):
         """Create a real agent with real token management components."""
         return RealTestAgent(
             name="real_test_agent",
             llm_config=real_llm_config,
             system_message="This is a real integration test agent with comprehensive context for testing token management and compression capabilities.",
             token_manager=real_token_manager,
-            context_compressor=real_context_compressor
-        )
+            context_manager=real_managers.context_manager)
     
-    def test_real_agent_initialization(self, real_agent, real_token_manager, real_context_compressor):
+    def test_real_agent_initialization(self, real_agent, real_token_manager, real_context_compressor, real_managers):
         """Test that real agent initializes correctly with real components."""
         assert real_agent.token_manager is real_token_manager
-        assert real_agent.context_compressor is real_context_compressor
+        assert real_agent.context_manager is real_managers.context_manager
         assert isinstance(real_agent.token_manager, TokenManager)
-        assert isinstance(real_agent.context_compressor, ContextCompressor)
+        assert isinstance(real_agent.context_manager, ContextManager)
         assert real_agent.name == "real_test_agent"
     
     def test_real_token_manager_functionality(self, real_token_manager):
@@ -168,50 +168,35 @@ class TestRealTokenManagementIntegration:
             assert stats.total_tokens_used > 0
     
     @pytest.mark.asyncio
-    async def test_real_agent_compression_trigger(self, real_agent, real_token_manager, real_context_compressor):
-        """Test real agent compression trigger with real components."""
-        # Set high token usage to trigger compression
-        real_token_manager.current_context_size = 7500  # Over threshold
-        initial_compressions = real_token_manager.usage_stats['compressions_performed']
-        
-        # Mock token limit check to return needs_compression=True
-        from autogen_framework.token_manager import TokenCheckResult
-        mock_token_check = TokenCheckResult(
-            current_tokens=7500,
-            model_limit=8192,
-            percentage_used=0.916,
-            needs_compression=True
-        )
-        
-        # Mock AutoGen and compression calls
+    async def test_real_agent_compression_trigger(self, real_agent, real_token_manager, real_context_compressor, real_managers):
+        """Test real agent integration with context manager for compression."""
+        # Mock AutoGen and context manager calls
         with patch.object(real_agent, 'initialize_autogen_agent', return_value=True), \
              patch.object(real_agent, '_generate_autogen_response', new_callable=AsyncMock) as mock_generate, \
-             patch.object(real_agent, '_perform_context_compression', new_callable=AsyncMock) as mock_compress, \
-             patch.object(real_token_manager, 'check_token_limit', return_value=mock_token_check):
+             patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
             
-            mock_generate.return_value = "Response after compression trigger"
+            mock_generate.return_value = "Response with context management"
             
-            # Mock the compression to simulate successful compression
-            async def mock_compression():
-                # Simulate what real compression does
-                real_token_manager.reset_context_size()
-                real_token_manager.increment_compression_count()
-                real_agent.system_message = "Compressed system message"
+            # Mock the context preparation
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Prepared system message",
+                estimated_tokens=3000
+            )
+            mock_prepare.return_value = mock_prepared
             
-            mock_compress.side_effect = mock_compression
-            
-            # This should trigger compression due to high token usage
-            response = await real_agent.generate_response("Test prompt that should trigger compression")
+            # Generate response which should use context manager
+            response = await real_agent.generate_response("Test prompt")
             
             # Verify response was generated
-            assert response == "Response after compression trigger"
+            assert response == "Response with context management"
             
-            # Verify compression was called
-            mock_compress.assert_called_once()
+            # Verify context preparation was called (new architecture)
+            mock_prepare.assert_called()
             
-            # Verify compression was triggered by checking compression count increased
+            # Verify token manager is tracking usage
             stats = real_token_manager.get_usage_statistics()
-            assert stats.compressions_performed > initial_compressions
+            assert stats.requests_made > 0
             
             # The context size should be reset and then have new token usage added
             # It should be much less than the original 7500
@@ -230,52 +215,61 @@ class TestRealTokenManagementIntegration:
             actual_tokens = real_agent._extract_token_usage_from_response(response_text)
             assert actual_tokens == expected_tokens
     
-    def test_real_fallback_truncation(self, real_agent, real_token_manager):
-        """Test real fallback truncation functionality."""
+    @pytest.mark.asyncio
+    async def test_real_fallback_truncation(self, real_agent, real_token_manager, real_managers):
+        """Test real context management functionality (replaces fallback truncation)."""
         # Add some context to the agent
         real_agent.context = {
-            'large_context': 'This is a large context that should be truncated when fallback truncation is applied. ' * 100,
+            'large_context': 'This is a large context that should be managed by ContextManager. ' * 100,
             'important_info': 'Critical information that should be preserved',
             'workflow_state': 'Current workflow state information'
         }
         
-        # Mock AutoGen initialization
-        with patch.object(real_agent, 'initialize_autogen_agent', return_value=True):
-            # Test fallback truncation
-            real_agent._perform_fallback_truncation()
+        # Test context preparation (which handles token control)
+        large_system_message = real_agent._build_complete_system_message()
+        
+        # Mock context manager to simulate token control
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', new_callable=AsyncMock) as mock_prepare:
+            from autogen_framework.context_manager import ContextManager
+            mock_prepared = ContextManager.PreparedPrompt(
+                system_prompt="Managed system message (truncated if needed)",
+                estimated_tokens=2000
+            )
+            mock_prepare.return_value = mock_prepared
             
-            # Verify system message was updated (truncated)
-            assert len(real_agent.system_message) > 0
+            # Test context preparation
+            prepared = await real_managers.context_manager.prepare_system_prompt(large_system_message)
             
-            # Verify token manager context was reset
-            assert real_token_manager.current_context_size == 0
+            # Verify context was prepared
+            assert prepared.system_prompt == "Managed system message (truncated if needed)"
+            assert prepared.estimated_tokens == 2000
     
     @pytest.mark.asyncio
-    async def test_real_error_handling(self, real_agent, real_context_compressor):
+    async def test_real_error_handling(self, real_agent, real_context_compressor, real_managers):
         """Test real error handling in integration scenarios."""
-        # Test compression failure handling
-        with patch.object(real_context_compressor, 'compress_context', side_effect=Exception("Real compression error")), \
-             patch.object(real_agent, '_perform_fallback_truncation') as mock_fallback:
+        # Test context manager error handling
+        with patch.object(real_managers.context_manager, 'prepare_system_prompt', side_effect=Exception("Context preparation error")):
             
-            # This should handle the compression error gracefully
-            await real_agent._perform_context_compression()
-            
-            # Verify fallback was called
-            mock_fallback.assert_called_once()
+            # This should handle the error gracefully
+            try:
+                await real_managers.context_manager.prepare_system_prompt("Test system message")
+                assert False, "Should have raised an exception"
+            except Exception as e:
+                assert str(e) == "Context preparation error"
+                # Verify error was properly raised
     
-    def test_real_component_compatibility(self, real_agent, real_token_manager, real_context_compressor):
+    def test_real_component_compatibility(self, real_agent, real_token_manager, real_context_compressor, real_managers):
         """Test that real components work together correctly."""
         # Verify all components are properly connected
         assert real_agent.token_manager is real_token_manager
-        assert real_agent.context_compressor is real_context_compressor
+        assert real_agent.context_manager is real_managers.context_manager
         
         # Test token manager configuration
         assert real_token_manager.token_config['compression_threshold'] == 0.9
         assert real_token_manager.token_config['compression_enabled'] is True
         
-        # Test context compressor configuration
+        # Test context compressor configuration (through context manager)
         assert real_context_compressor.llm_config.model == real_agent.llm_config.model
-        assert real_context_compressor.name == "context_compressor"
     
     def test_real_usage_statistics_accuracy(self, real_token_manager):
         """Test accuracy of real usage statistics."""

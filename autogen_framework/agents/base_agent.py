@@ -15,7 +15,8 @@ import json
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..models import LLMConfig, AgentContext, SystemInstructions, CompressionResult
+from ..models import LLMConfig, AgentContext
+from ..utils.context_utils import dict_context_to_string
 
 # Forward declarations for type hints
 from typing import TYPE_CHECKING
@@ -23,7 +24,6 @@ from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from ..token_manager import TokenManager
-    from ..context_compressor import ContextCompressor
     from ..context_manager import ContextManager
 
 
@@ -50,13 +50,13 @@ class BaseLLMAgent(ABC):
     """
     
     def __init__(
-        self, 
-        name: str, 
-        llm_config: LLMConfig, 
+        self,
+        name: str,
+        llm_config: LLMConfig,
         system_message: str,
+        token_manager: 'TokenManager',
+        context_manager: 'ContextManager',
         description: Optional[str] = None,
-        token_manager: Optional['TokenManager'] = None,
-        context_compressor: Optional['ContextCompressor'] = None
     ):
         """
         Initialize the base agent.
@@ -65,6 +65,8 @@ class BaseLLMAgent(ABC):
             name: Unique name for this agent
             llm_config: LLM configuration for API connection
             system_message: System message/instructions for the agent
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
             description: Optional description of the agent's role
         """
         self.name = name
@@ -79,26 +81,13 @@ class BaseLLMAgent(ABC):
         self.context: AgentContext = {}
         self.memory_context: Dict[str, Any] = {}
         self.conversation_history: List[Dict[str, Any]] = []
-        self.context_manager: Optional['ContextManager'] = None
+        self.context_manager: 'ContextManager' = context_manager
         
-        # Token management and context compression
+        # Token management (mandatory)
         self.token_manager = token_manager
-        self.context_compressor = context_compressor
-        
-        # Context compression functionality
-        self.compression_history: List[CompressionResult] = []
-        self.compression_stats = {
-            'total_compressions': 0,
-            'successful_compressions': 0,
-            'failed_compressions': 0,
-            'total_original_size': 0,
-            'total_compressed_size': 0,
-            'average_compression_ratio': 0.0,
-            'fallback_truncations': 0
-        }
         
         # AutoGen agent instance (will be initialized when needed)
-        self._autogen_agent: Optional[ConversableAgent] = None
+        self._autogen_agent: Optional[AssistantAgent] = None
         self._is_initialized = False
         
         # Validate configuration
@@ -300,34 +289,24 @@ class BaseLLMAgent(ABC):
             self.update_context(context)
         
         try:
-            # Check token limits before sending request
-            if self.token_manager:
-                # Estimate static content tokens if no actual usage yet
-                estimated_static_tokens = None
-                if self.token_manager.usage_stats['requests_made'] == 0:
-                    # Static phase: estimate tokens for current context
-                    estimated_static_tokens = self._estimate_static_content_tokens()
-                
-                token_check = self.token_manager.check_token_limit(
-                    self.llm_config.model, 
-                    estimated_static_tokens
-                )
-                
-                if token_check.needs_compression:
-                    phase = "static" if estimated_static_tokens else "dynamic"
-                    self.logger.info(
-                        f"Token limit threshold reached for {self.name} ({phase} phase): "
-                        f"{token_check.current_tokens}/{token_check.model_limit} "
-                        f"({token_check.percentage_used:.1%}). Triggering compression."
-                    )
-                    
-                    # Attempt context compression if compressor is available
-                    if self.context_compressor:
-                        await self._perform_context_compression()
-                    else:
-                        # Fallback to truncation if no compressor available
-                        self.logger.warning(f"No context compressor available for {self.name}, using truncation")
-                        self._perform_fallback_truncation()
+            # Build and compress system prompt using ContextManager + TokenManager
+            prepared_system = self.system_message
+            estimated_static_tokens = None
+            try:
+                prepared = await self.context_manager.prepare_system_prompt(self._build_complete_system_message())
+                prepared_system = prepared.system_prompt
+                estimated_static_tokens = prepared.estimated_tokens
+            except Exception as e:
+                self.logger.warning(f"Failed to prepare system prompt: {e}")
+
+            # Ensure AutoGen agent is initialized after system prompt is finalized
+            # Reinitialize only if the prepared system differs
+            if prepared_system != self.system_message:
+                self.system_message = prepared_system
+                self._is_initialized = False
+                self._autogen_agent = None
+                if not self.initialize_autogen_agent():
+                    raise RuntimeError(f"Failed to initialize AutoGen agent for {self.name}")
             
             # Add to conversation history
             self.add_to_conversation_history("user", prompt)
@@ -336,15 +315,14 @@ class BaseLLMAgent(ABC):
             response = await self._generate_autogen_response(prompt)
             
             # Update token usage after LLM call
-            if self.token_manager:
-                # Extract token usage from response if available
-                tokens_used = self._extract_token_usage_from_response(response)
-                if tokens_used > 0:
-                    self.token_manager.update_token_usage(
-                        self.llm_config.model,
-                        tokens_used,
-                        "generate_response"
-                    )
+            # Use centralized extraction heuristic
+            tokens_used = self._extract_token_usage_from_response(response)
+            if tokens_used > 0:
+                self.token_manager.update_token_usage(
+                    self.llm_config.model,
+                    tokens_used,
+                    "generate_response"
+                )
             
             # Add response to conversation history
             self.add_to_conversation_history("assistant", response)
@@ -388,76 +366,16 @@ class BaseLLMAgent(ABC):
         else:
             raise RuntimeError(f"Unexpected response type from AutoGen: {type(response)}")
     
+    # Deprecated: compression/truncation are handled by ContextManager now
     async def _perform_context_compression(self) -> None:
-        """
-        Perform context compression using the available context compressor.
-        """
-        try:
-            # Get current full context
-            full_context = self._get_full_context()
-            
-            # Compress context using the context compressor
-            compression_result = await self.context_compressor.compress_context(full_context)
-            
-            if compression_result.success:
-                # Update system message with compressed content
-                self.system_message = compression_result.compressed_content
-                
-                # Reset context size in token manager
-                if self.token_manager:
-                    self.token_manager.reset_context_size()
-                    self.token_manager.increment_compression_count()
-                
-                # Reinitialize AutoGen agent with compressed context
-                self._is_initialized = False
-                self._autogen_agent = None
-                self.initialize_autogen_agent()
-                
-                self.logger.info(
-                    f"Context compression successful for {self.name}. "
-                    f"Size: {compression_result.original_size} → {compression_result.compressed_size} "
-                    f"({compression_result.compression_ratio:.1%} reduction)"
-                )
-            else:
-                self.logger.warning(f"Context compression failed for {self.name}: {compression_result.error}")
-                # Fallback to truncation
-                self._perform_fallback_truncation()
-                
-        except Exception as e:
-            self.logger.error(f"Error during context compression for {self.name}: {e}")
-            # Fallback to truncation
-            self._perform_fallback_truncation()
-    
+        raise RuntimeError(
+            "_perform_context_compression is removed. Use ContextManager.prepare_system_prompt for compression."
+        )
+
     def _perform_fallback_truncation(self) -> None:
-        """
-        Perform fallback truncation when compression fails or is unavailable.
-        """
-        try:
-            # Get model limit for truncation target
-            model_limit = 4000  # Conservative default
-            if self.token_manager:
-                model_limit = int(self.token_manager.get_model_limit(self.llm_config.model) * 0.5)
-            
-            # Truncate context using built-in method
-            truncated_context = self.truncate_context(max_tokens=model_limit)
-            
-            # Update system message with truncated content
-            if 'truncated_content' in truncated_context:
-                self.system_message = truncated_context['truncated_content']
-                
-                # Reset context size in token manager
-                if self.token_manager:
-                    self.token_manager.reset_context_size()
-                
-                # Reinitialize AutoGen agent with truncated context
-                self._is_initialized = False
-                self._autogen_agent = None
-                self.initialize_autogen_agent()
-                
-                self.logger.info(f"Fallback truncation applied for {self.name}")
-            
-        except Exception as e:
-            self.logger.error(f"Error during fallback truncation for {self.name}: {e}")
+        raise RuntimeError(
+            "_perform_fallback_truncation is removed. Use ContextManager.prepare_system_prompt for token control."
+        )
     
     def _extract_token_usage_from_response(self, response: str) -> int:
         """
@@ -472,14 +390,9 @@ class BaseLLMAgent(ABC):
         Returns:
             Estimated token count
         """
-        # Rough estimation: 1 token ≈ 4 characters for most models
-        # This is an approximation since we don't have access to actual token counts
-        estimated_tokens = len(response) // 4
+        # Delegate estimation to TokenManager if available to centralize heuristics
+        return self.token_manager.extract_token_usage_from_response(response, prompt_overhead=50)
         
-        # Add some tokens for the prompt processing (rough estimate)
-        estimated_tokens += 50  # Base overhead for prompt processing
-        
-        return max(estimated_tokens, 1)  # Ensure at least 1 token is counted
     
 
     def _estimate_static_content_tokens(self) -> int:
@@ -516,12 +429,8 @@ class BaseLLMAgent(ABC):
             if 'content' in entry:
                 total_chars += len(entry['content'])
         
-        # Rough estimation: 1 token ≈ 4 characters for most models
-        estimated_tokens = total_chars // 4
-        
-        # Add base overhead for prompt structure
-        estimated_tokens += 100  # Base overhead for prompt formatting
-        
+        # Use centralized estimation in TokenManager when available
+        estimated_tokens = self.token_manager.estimate_tokens_from_char_count(total_chars, base_overhead=100)
         self.logger.debug(f"Estimated static content tokens for {self.name}: {estimated_tokens}")
         return max(estimated_tokens, 1)
     
@@ -745,93 +654,13 @@ class BaseLLMAgent(ABC):
     # Context Compression Methods
     
     async def compress_context(self, context: Optional[Dict[str, Any]] = None, 
-                             target_reduction: float = 0.5) -> CompressionResult:
+                             target_reduction: float = 0.5) -> None:
         """
-        Compress context using LLM while preserving critical information.
-        
-        Args:
-            context: Dictionary containing context to compress. If None, uses self.context.
-            target_reduction: Target compression ratio (0.5 = 50% reduction).
-            
-        Returns:
-            CompressionResult with compression details and compressed content.
+        Removed API: compression is handled by ContextManager.
         """
-        # Use agent's own context if none provided
-        if context is None:
-            context = self._get_full_context()
-        
-        # Convert context to string for compression
-        original_content = self._context_to_string(context)
-        original_size = len(original_content)
-        
-        self.logger.info(f"Starting context compression for {self.name}. Original size: {original_size} characters")
-        
-        try:
-            # Create compression prompt with agent-specific system message
-            compression_prompt = self._build_compression_prompt(original_content, target_reduction)
-            
-            # Use agent's own generate_response method for compression
-            compressed_content = await self.generate_response(compression_prompt)
-            
-            # Calculate compression metrics
-            compressed_size = len(compressed_content)
-            compression_ratio = (original_size - compressed_size) / original_size if original_size > 0 else 0.0
-            
-            # Check if compression meets minimum requirements
-            min_compression_ratio = 0.3  # Minimum 30% reduction
-            if compression_ratio < min_compression_ratio:
-                self.logger.warning(
-                    f"Compression ratio {compression_ratio:.2%} below minimum {min_compression_ratio:.2%}. "
-                    f"Applying additional truncation."
-                )
-                # Apply additional truncation
-                compressed_content = self._apply_additional_truncation(
-                    compressed_content, original_size, target_reduction
-                )
-                compressed_size = len(compressed_content)
-                compression_ratio = (original_size - compressed_size) / original_size if original_size > 0 else 0.0
-            
-            # Create successful result
-            result = CompressionResult(
-                original_size=original_size,
-                compressed_size=compressed_size,
-                compression_ratio=compression_ratio,
-                compressed_content=compressed_content,
-                method_used="llm_compression",
-                success=True
-            )
-            
-            # Update statistics and history
-            self._update_compression_stats(result)
-            self.compression_history.append(result)
-            
-            self.logger.info(
-                f"Context compression successful for {self.name}. "
-                f"Size: {original_size} → {compressed_size} "
-                f"({compression_ratio:.1%} reduction)"
-            )
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Context compression failed for {self.name}: {e}")
-            
-            # Create failure result
-            result = CompressionResult(
-                original_size=original_size,
-                compressed_size=original_size,
-                compression_ratio=0.0,
-                compressed_content=original_content,
-                method_used="compression_failed",
-                success=False,
-                error=str(e)
-            )
-            
-            # Update statistics
-            self._update_compression_stats(result)
-            self.compression_history.append(result)
-            
-            return result
+        raise RuntimeError(
+            "compress_context is removed from BaseLLMAgent. Compression is handled by ContextManager."
+        )
     
     def _get_full_context(self) -> Dict[str, Any]:
         """
@@ -860,19 +689,9 @@ class BaseLLMAgent(ABC):
             String representation of the context.
         """
         try:
-            # Handle different context structures
             if isinstance(context, dict):
-                parts = []
-                for key, value in context.items():
-                    if isinstance(value, str):
-                        parts.append(f"## {key}\n{value}")
-                    elif isinstance(value, (dict, list)):
-                        parts.append(f"## {key}\n{json.dumps(value, indent=2)}")
-                    else:
-                        parts.append(f"## {key}\n{str(value)}")
-                return "\n\n".join(parts)
-            else:
-                return str(context)
+                return dict_context_to_string(context)
+            return str(context)
         except Exception as e:
             self.logger.warning(f"Error converting context to string: {e}")
             return str(context)
@@ -981,52 +800,10 @@ Provide only the compressed content without additional commentary."""
         self.logger.info(f"Applied additional truncation for {self.name}: {len(content)} → {current_size} characters")
         return '\n'.join(truncated_lines)
     
-    def truncate_context(self, context: Optional[Dict[str, Any]] = None, max_tokens: int = 4000) -> Dict[str, Any]:
-        """
-        Fallback truncation strategy for when compression fails.
-        
-        Args:
-            context: Context dictionary to truncate. If None, uses self.context.
-            max_tokens: Maximum number of tokens allowed.
-            
-        Returns:
-            Truncated context dictionary.
-        """
-        if context is None:
-            context = self._get_full_context()
-            
-        self.logger.info(f"Applying fallback truncation for {self.name} with max_tokens: {max_tokens}")
-        
-        # Convert to string and estimate tokens (rough approximation: 1 token ≈ 4 characters)
-        content = self._context_to_string(context)
-        estimated_tokens = len(content) // 4
-        
-        if estimated_tokens <= max_tokens:
-            return context
-        
-        # Calculate target size in characters
-        target_size = max_tokens * 4
-        
-        # Apply oldest-first truncation strategy
-        truncated_content = self._apply_oldest_first_truncation(content, target_size)
-        
-        # Update statistics
-        self.compression_stats['fallback_truncations'] += 1
-        
-        # Create truncation result for history
-        result = CompressionResult(
-            original_size=len(content),
-            compressed_size=len(truncated_content),
-            compression_ratio=(len(content) - len(truncated_content)) / len(content),
-            compressed_content=truncated_content,
-            method_used="fallback_truncation",
-            success=True
+    def truncate_context(self, context: Optional[Dict[str, Any]] = None, max_tokens: int = 4000) -> None:
+        raise RuntimeError(
+            "truncate_context is removed from BaseLLMAgent. Use ContextManager for token-aware preparation."
         )
-        
-        self.compression_history.append(result)
-        
-        # Convert back to context structure
-        return {"truncated_content": truncated_content}
     
     def _apply_oldest_first_truncation(self, content: str, target_size: int) -> str:
         """
@@ -1064,7 +841,7 @@ Provide only the compressed content without additional commentary."""
         
         return '\n\n'.join(truncated_sections)
     
-    def _update_compression_stats(self, result: CompressionResult) -> None:
+    def _update_compression_stats(self, result: Any) -> None:
         """
         Update compression statistics with new result.
         
@@ -1162,46 +939,7 @@ Provide only the compressed content without additional commentary."""
         
         self.logger.info(f"Compression statistics and history reset for {self.name}")
     
-    async def compress_and_replace_context(self, target_reduction: float = 0.5) -> CompressionResult:
-        """
-        Compress the agent's current context and replace it with the compressed version.
-        
-        Args:
-            target_reduction: Target compression ratio (0.5 = 50% reduction).
-            
-        Returns:
-            CompressionResult with compression details.
-        """
-        # Compress current context
-        result = await self.compress_context(target_reduction=target_reduction)
-        
-        if result.success:
-            # Replace context with compressed version
-            try:
-                # Parse compressed content back to context structure if possible
-                compressed_context = {
-                    'compressed_content': result.compressed_content,
-                    'compression_metadata': {
-                        'original_size': result.original_size,
-                        'compressed_size': result.compressed_size,
-                        'compression_ratio': result.compression_ratio,
-                        'timestamp': result.timestamp,
-                        'method_used': result.method_used
-                    }
-                }
-                
-                # Update agent's context
-                self.context = compressed_context
-                
-                # Clear old conversation history to save space
-                if len(self.conversation_history) > 5:
-                    self.conversation_history = self.conversation_history[-5:]
-                
-                self.logger.info(f"Context replaced with compressed version for {self.name}")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to replace context with compressed version: {e}")
-                result.success = False
-                result.error = f"Context replacement failed: {str(e)}"
-        
-        return result
+    async def compress_and_replace_context(self, target_reduction: float = 0.5) -> Dict[str, Any]:
+        raise RuntimeError(
+            "compress_and_replace_context is removed. Use ContextManager to manage compressed prompts/contexts."
+        )

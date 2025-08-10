@@ -15,7 +15,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from .base_agent import BaseLLMAgent
+from .base_agent import BaseLLMAgent, ContextSpec
 from .task_decomposer import TaskDecomposer, ExecutionPlan
 from .error_recovery import ErrorRecovery, CommandResult, RecoveryResult
 from ..models import LLMConfig, TaskDefinition, ExecutionResult, WorkflowState
@@ -39,23 +39,27 @@ class ImplementAgent(BaseLLMAgent):
     """
     
     def __init__(
-        self, 
-        name: str, 
-        llm_config: LLMConfig, 
+        self,
+        name: str,
+        llm_config: LLMConfig,
         system_message: str,
         shell_executor: ShellExecutor,
+        token_manager,
+        context_manager,
         task_decomposer: Optional[TaskDecomposer] = None,
         error_recovery: Optional[ErrorRecovery] = None,
         description: Optional[str] = None
     ):
         """
         Initialize the ImplementAgent.
-        
+
         Args:
             name: Name of the agent
             llm_config: LLM configuration for API connection
             system_message: System instructions for the agent
             shell_executor: ShellExecutor instance for command execution
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
             task_decomposer: Optional TaskDecomposer for intelligent task breakdown
             error_recovery: Optional ErrorRecovery for intelligent error handling
             description: Optional description of the agent's role
@@ -64,19 +68,25 @@ class ImplementAgent(BaseLLMAgent):
             name=name,
             llm_config=llm_config,
             system_message=system_message,
-            description=description or "Enhanced implementation agent with intelligent task decomposition"
+            token_manager=token_manager,
+            context_manager=context_manager,
+            description=description or "Enhanced implementation agent with intelligent task decomposition",
         )
         
         self.shell_executor = shell_executor
         self.task_decomposer = task_decomposer or TaskDecomposer(
             name=f"{name}_decomposer",
             llm_config=llm_config,
-            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands."
+            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
+            token_manager=token_manager,
+            context_manager=context_manager
         )
         self.error_recovery = error_recovery or ErrorRecovery(
             name=f"{name}_error_recovery",
             llm_config=llm_config,
-            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies."
+            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
+            token_manager=token_manager,
+            context_manager=context_manager
         )
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
@@ -2523,8 +2533,10 @@ Generate the complete file contents now:"""
             result["decomposition_plan"] = {
                 "complexity_level": execution_plan.complexity_analysis.complexity_level,
                 "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
-                "command_count": len(execution_plan.commands),
-                "estimated_duration": execution_plan.estimated_duration
+                "commands_count": len(execution_plan.commands),  # Fixed: use commands_count (with 's')
+                "command_count": len(execution_plan.commands),   # Keep both for compatibility
+                "estimated_duration": execution_plan.estimated_duration,
+                "decomposition_time": decomposition_result.get("decomposition_time", 0.1)  # Add decomposition_time
             }
             result["task_analysis"] = decomposition_result.get("task_analysis", {})
             
@@ -2574,6 +2586,9 @@ Generate the complete file contents now:"""
         Returns:
             Dictionary containing decomposition results
         """
+        import time
+        start_time = time.time()
+        
         try:
             # Set context manager for TaskDecomposer if available
             if self.context_manager:
@@ -2582,9 +2597,12 @@ Generate the complete file contents now:"""
             # Decompose the task
             execution_plan = await self.task_decomposer.decompose_task(task)
             
+            decomposition_time = time.time() - start_time
+            
             return {
                 "success": True,
                 "execution_plan": execution_plan,
+                "decomposition_time": decomposition_time,
                 "task_analysis": {
                     "complexity_level": execution_plan.complexity_analysis.complexity_level,
                     "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
@@ -2796,6 +2814,10 @@ Generate the complete file contents now:"""
         """
         quality_metrics = {
             "overall_score": 0.0,
+            "command_success_rate": 0.0,
+            "execution_efficiency": 0.0,
+            "plan_accuracy": 0.0,
+            # Keep original metrics for compatibility
             "functionality_score": 0.0,
             "reliability_score": 0.0,
             "efficiency_score": 0.0,
@@ -2803,37 +2825,42 @@ Generate the complete file contents now:"""
         }
         
         try:
-            # Functionality Score - based on successful command execution
+            # Command Success Rate - based on successful command execution
             total_commands = len(execution_plan.commands)
             successful_commands = sum(1 for log in execution_result["detailed_log"] if log["success"])
-            quality_metrics["functionality_score"] = successful_commands / total_commands if total_commands > 0 else 0.0
+            quality_metrics["command_success_rate"] = successful_commands / total_commands if total_commands > 0 else 0.0
+            quality_metrics["functionality_score"] = quality_metrics["command_success_rate"]  # Keep compatibility
             
-            # Reliability Score - based on error recovery effectiveness
+            # Plan Accuracy - based on error recovery effectiveness
             recovery_attempts = len(execution_result["recovery_attempts"])
             successful_recoveries = sum(1 for attempt in execution_result["recovery_attempts"] if attempt["success"])
             
             if recovery_attempts > 0:
                 quality_metrics["recovery_effectiveness"] = successful_recoveries / recovery_attempts
-                quality_metrics["reliability_score"] = 0.7 + (0.3 * quality_metrics["recovery_effectiveness"])
+                quality_metrics["plan_accuracy"] = 0.7 + (0.3 * quality_metrics["recovery_effectiveness"])
+                quality_metrics["reliability_score"] = quality_metrics["plan_accuracy"]  # Keep compatibility
             else:
                 quality_metrics["recovery_effectiveness"] = 1.0  # No errors to recover from
+                quality_metrics["plan_accuracy"] = 1.0
                 quality_metrics["reliability_score"] = 1.0
             
-            # Efficiency Score - based on execution time vs estimated time
+            # Execution Efficiency - based on execution time vs estimated time
             actual_time = execution_result.get("execution_time", execution_plan.estimated_duration * 60)
             estimated_time = execution_plan.estimated_duration * 60  # Convert minutes to seconds
             
             if estimated_time > 0:
                 efficiency_ratio = estimated_time / actual_time if actual_time > 0 else 1.0
-                quality_metrics["efficiency_score"] = min(1.0, efficiency_ratio)
+                quality_metrics["execution_efficiency"] = min(1.0, efficiency_ratio)
+                quality_metrics["efficiency_score"] = quality_metrics["execution_efficiency"]  # Keep compatibility
             else:
-                quality_metrics["efficiency_score"] = 0.8  # Default reasonable score
+                quality_metrics["execution_efficiency"] = 0.8  # Default reasonable score
+                quality_metrics["efficiency_score"] = 0.8
             
-            # Overall Score - weighted average
+            # Overall Score - weighted average using new metrics
             weights = {
-                "functionality_score": 0.4,
-                "reliability_score": 0.3,
-                "efficiency_score": 0.2,
+                "command_success_rate": 0.4,
+                "plan_accuracy": 0.3,
+                "execution_efficiency": 0.2,
                 "recovery_effectiveness": 0.1
             }
             
@@ -2848,10 +2875,14 @@ Generate the complete file contents now:"""
             # Return default low-quality scores
             quality_metrics = {
                 "overall_score": 0.3,
+                "command_success_rate": 0.3,
+                "execution_efficiency": 0.3,
+                "plan_accuracy": 0.3,
+                "recovery_effectiveness": 0.0,
+                # Keep compatibility
                 "functionality_score": 0.3,
                 "reliability_score": 0.3,
                 "efficiency_score": 0.3,
-                "recovery_effectiveness": 0.0,
                 "validation_error": str(e)
             }
         

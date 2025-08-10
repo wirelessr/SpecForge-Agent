@@ -18,11 +18,13 @@ class TestTasksAgent:
     """Test suite for TasksAgent basic functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
         return TasksAgent(
             llm_config=test_llm_config,
-            memory_manager=Mock()
+            memory_manager=Mock(),
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @pytest.fixture
@@ -31,12 +33,18 @@ class TestTasksAgent:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
     
-    def test_initialization(self, test_llm_config):
-        """Test TasksAgent initialization."""
-        agent = TasksAgent(llm_config=test_llm_config)
+    def test_initialization(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Test TasksAgent initialization with required manager dependencies."""
+        agent = TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
         
         assert agent.name == "TasksAgent"
         assert agent.llm_config == test_llm_config
+        assert agent.token_manager == mock_token_manager
+        assert agent.context_manager == mock_context_manager
         assert agent.current_work_directory is None
         assert agent.current_tasks == []
         assert "Task generation agent" in agent.description
@@ -119,9 +127,13 @@ class TestTasksAgentTaskGeneration:
     """Test suite for task list generation functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
-        return TasksAgent(llm_config=test_llm_config)
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
+        return TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -303,9 +315,13 @@ class TestTasksAgentFileOperations:
     """Test suite for file operations in TasksAgent."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
-        return TasksAgent(llm_config=test_llm_config)
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
+        return TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -358,9 +374,13 @@ class TestTasksAgentIntegration:
     """Integration tests for TasksAgent with real functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
-        return TasksAgent(llm_config=test_llm_config)
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
+        return TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -460,73 +480,67 @@ class TestTasksAgentTokenCompression:
     """Test suite for TasksAgent token compression functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
-        return TasksAgent(llm_config=test_llm_config)
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
+        return TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
     
-    def test_token_compression_inheritance(self, tasks_agent):
-        """Test that TasksAgent inherits token compression attributes from BaseLLMAgent."""
-        # Verify that TasksAgent has token management attributes from BaseLLMAgent
+    def test_manager_dependencies_inheritance(self, tasks_agent):
+        """Test that TasksAgent has required manager dependencies from BaseLLMAgent."""
+        # Verify that TasksAgent has manager dependencies from BaseLLMAgent
         assert hasattr(tasks_agent, 'token_manager')
-        assert hasattr(tasks_agent, 'context_compressor')
-        assert hasattr(tasks_agent, 'compression_history')
-        assert hasattr(tasks_agent, 'compression_stats')
+        assert hasattr(tasks_agent, 'context_manager')
         
-        # Verify that token compression methods are available
+        # Verify that managers are properly set
+        assert tasks_agent.token_manager is not None
+        assert tasks_agent.context_manager is not None
+        
+        # Verify that deprecated compression methods exist but raise errors
         assert hasattr(tasks_agent, '_perform_context_compression')
         assert hasattr(tasks_agent, 'compress_context')
+        assert hasattr(tasks_agent, 'truncate_context')
         
         # These should be inherited from BaseLLMAgent
         assert callable(getattr(tasks_agent, '_perform_context_compression'))
         assert callable(getattr(tasks_agent, 'compress_context'))
-        
-        # Verify compression stats structure
-        assert isinstance(tasks_agent.compression_stats, dict)
-        assert 'total_compressions' in tasks_agent.compression_stats
-        assert 'successful_compressions' in tasks_agent.compression_stats
+        assert callable(getattr(tasks_agent, 'truncate_context'))
     
     @pytest.mark.asyncio
-    async def test_token_compression_functionality(self, tasks_agent):
-        """Test that TasksAgent can handle token compression functionality."""
-        # Test that compression stats can be updated
-        initial_compressions = tasks_agent.compression_stats['total_compressions']
+    async def test_deprecated_compression_methods(self, tasks_agent):
+        """Test that deprecated compression methods raise appropriate errors."""
+        # Test that deprecated compression methods raise RuntimeError
+        with pytest.raises(RuntimeError, match="_perform_context_compression is removed.*ContextManager"):
+            await tasks_agent._perform_context_compression()
         
-        # Mock a compression result
-        from autogen_framework.models import CompressionResult
-        mock_compression = CompressionResult(
-            original_size=3000,
-            compressed_size=1200,
-            compression_ratio=0.4,
-            compressed_content="Compressed task content",
-            method_used="task_compression",
-            success=True,
-            error=None
-        )
+        with pytest.raises(RuntimeError, match="compress_context is removed.*ContextManager"):
+            await tasks_agent.compress_context()
         
-        # Add compression to history
-        tasks_agent.compression_history.append(mock_compression)
-        tasks_agent.compression_stats['total_compressions'] += 1
-        tasks_agent.compression_stats['successful_compressions'] += 1
+        with pytest.raises(RuntimeError, match="truncate_context is removed.*ContextManager"):
+            tasks_agent.truncate_context()
         
-        # Verify compression was recorded
-        assert len(tasks_agent.compression_history) == 1
-        assert tasks_agent.compression_stats['total_compressions'] == initial_compressions + 1
-        assert tasks_agent.compression_stats['successful_compressions'] == 1
+        # Test that manager dependencies are properly available
+        assert tasks_agent.token_manager is not None
+        assert tasks_agent.context_manager is not None
         
-        # Test that compression methods exist and are callable
-        assert hasattr(tasks_agent, '_perform_context_compression')
-        assert callable(tasks_agent._perform_context_compression)
-        assert hasattr(tasks_agent, 'compress_context')
-        assert callable(tasks_agent.compress_context)
+        # Test that managers have expected methods
+        assert hasattr(tasks_agent.token_manager, 'estimate_tokens_from_text')
+        assert hasattr(tasks_agent.context_manager, 'prepare_system_prompt')
 
 
 class TestTasksAgentRevision:
     """Test suite for task revision functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config):
-        """Create a TasksAgent instance for testing."""
-        return TasksAgent(llm_config=test_llm_config)
+    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
+        """Create a TasksAgent instance for testing with required manager dependencies."""
+        return TasksAgent(
+            llm_config=test_llm_config,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
+        )
     
     @pytest.fixture
     def temp_work_dir(self):
