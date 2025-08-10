@@ -44,12 +44,14 @@ class TestBaseLLMAgent:
         return TestAgent
     
     @pytest.fixture
-    def test_agent(self, test_agent_class, llm_config):
-        """Create a test agent instance."""
+    def test_agent(self, test_agent_class, llm_config, mock_token_manager, mock_context_manager):
+        """Create a test agent instance with required manager dependencies."""
         return test_agent_class(
             name="TestAgent",
             llm_config=llm_config,
             system_message="Test system message",
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager,
             description="Test agent for unit testing"
         )
     
@@ -65,7 +67,7 @@ class TestBaseLLMAgent:
         assert not test_agent._is_initialized
         assert test_agent._autogen_agent is None
     
-    def test_agent_initialization_with_invalid_config(self, test_agent_class):
+    def test_agent_initialization_with_invalid_config(self, test_agent_class, mock_token_manager, mock_context_manager):
         """Test agent initialization with invalid LLM config."""
         invalid_config = LLMConfig(
             base_url="",  # Invalid empty URL
@@ -77,16 +79,40 @@ class TestBaseLLMAgent:
             test_agent_class(
                 name="TestAgent",
                 llm_config=invalid_config,
-                system_message="Test message"
+                system_message="Test message",
+                token_manager=mock_token_manager,
+                context_manager=mock_context_manager
             )
     
-    def test_cannot_instantiate_abstract_class(self, llm_config):
+    def test_cannot_instantiate_abstract_class(self, llm_config, mock_token_manager, mock_context_manager):
         """Test that BaseLLMAgent cannot be instantiated directly."""
         with pytest.raises(TypeError):
             BaseLLMAgent(
                 name="TestAgent",
                 llm_config=llm_config,
-                system_message="Test message"
+                system_message="Test message",
+                token_manager=mock_token_manager,
+                context_manager=mock_context_manager
+            )
+    
+    def test_agent_initialization_with_missing_token_manager(self, test_agent_class, llm_config, mock_context_manager):
+        """Test agent initialization fails when TokenManager is missing."""
+        with pytest.raises(TypeError, match="missing 1 required positional argument: 'token_manager'"):
+            test_agent_class(
+                name="TestAgent",
+                llm_config=llm_config,
+                system_message="Test message",
+                context_manager=mock_context_manager
+            )
+    
+    def test_agent_initialization_with_missing_context_manager(self, test_agent_class, llm_config, mock_token_manager):
+        """Test agent initialization fails when ContextManager is missing."""
+        with pytest.raises(TypeError, match="missing 1 required positional argument: 'context_manager'"):
+            test_agent_class(
+                name="TestAgent",
+                llm_config=llm_config,
+                system_message="Test message",
+                token_manager=mock_token_manager
             )
     
     def test_update_context(self, test_agent):
@@ -234,6 +260,83 @@ class TestBaseLLMAgent:
         assert "test-model" in repr_str
         assert "initialized=False" in repr_str
         assert "context_items=0" in repr_str
+    
+    def test_extract_token_usage_from_response(self, test_agent, mock_token_manager):
+        """Test token usage extraction delegates to TokenManager."""
+        response = "This is a test response from the LLM"
+        mock_token_manager.extract_token_usage_from_response.return_value = 150
+        
+        result = test_agent._extract_token_usage_from_response(response)
+        
+        assert result == 150
+        mock_token_manager.extract_token_usage_from_response.assert_called_once_with(response, prompt_overhead=50)
+    
+    def test_estimate_static_content_tokens(self, test_agent, mock_token_manager):
+        """Test static content token estimation delegates to TokenManager."""
+        # Add some content to estimate
+        test_agent.update_context({"key": "value"})
+        test_agent.update_memory_context({"global": {"test.md": "Test content"}})
+        test_agent.add_to_conversation_history("user", "Hello")
+        
+        mock_token_manager.estimate_tokens_from_char_count.return_value = 200
+        
+        result = test_agent._estimate_static_content_tokens()
+        
+        assert result == 200
+        # Verify TokenManager was called with character count and base overhead
+        mock_token_manager.estimate_tokens_from_char_count.assert_called_once()
+        call_args = mock_token_manager.estimate_tokens_from_char_count.call_args
+        assert call_args[1]["base_overhead"] == 100
+        assert call_args[0][0] > 0  # Should have some character count
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_with_context_manager_integration(self, test_agent, mock_context_manager, mock_token_manager):
+        """Test generate_response integrates with ContextManager for system prompt preparation."""
+        # Mock the context manager's prepare_system_prompt method
+        prepared_result = Mock()
+        prepared_result.system_prompt = "prepared system prompt with context"
+        prepared_result.estimated_tokens = 150
+        mock_context_manager.prepare_system_prompt.return_value = prepared_result
+        
+        # Mock token manager methods
+        mock_token_manager.extract_token_usage_from_response.return_value = 100
+        
+        # Mock AutoGen initialization and response generation
+        test_agent.initialize_autogen_agent = Mock(return_value=True)
+        test_agent._generate_autogen_response = AsyncMock(return_value="Test response")
+        
+        # Test response generation
+        result = await test_agent.generate_response("Test prompt")
+        
+        assert result == "Test response"
+        
+        # Verify ContextManager was called for system prompt preparation
+        mock_context_manager.prepare_system_prompt.assert_called_once()
+        
+        # Verify TokenManager was called for token usage extraction
+        mock_token_manager.extract_token_usage_from_response.assert_called_once_with("Test response", prompt_overhead=50)
+        
+        # Verify TokenManager was called for token usage update
+        mock_token_manager.update_token_usage.assert_called_once_with(
+            "test-model", 100, "generate_response"
+        )
+    
+    @pytest.mark.asyncio
+    async def test_deprecated_context_compression_method(self, test_agent):
+        """Test that deprecated _perform_context_compression raises RuntimeError with migration guidance."""
+        with pytest.raises(RuntimeError, match="_perform_context_compression is removed.*ContextManager.prepare_system_prompt"):
+            await test_agent._perform_context_compression()
+    
+    def test_deprecated_truncate_context_method(self, test_agent):
+        """Test that deprecated truncate_context raises RuntimeError with migration guidance."""
+        with pytest.raises(RuntimeError, match="truncate_context is removed.*ContextManager"):
+            test_agent.truncate_context()
+    
+    @pytest.mark.asyncio
+    async def test_deprecated_compress_context_method(self, test_agent):
+        """Test that deprecated compress_context raises RuntimeError with migration guidance."""
+        with pytest.raises(RuntimeError, match="compress_context is removed.*ContextManager"):
+            await test_agent.compress_context()
 
 class TestBaseLLMAgentAutoGenMocking:
     """Test suite for AutoGen integration with proper mocking."""
@@ -251,12 +354,14 @@ class TestBaseLLMAgentAutoGenMocking:
         return TestAgent
     
     @pytest.fixture
-    def test_agent(self, test_agent_class, llm_config):
-        """Create a test agent instance."""
+    def test_agent(self, test_agent_class, llm_config, mock_token_manager, mock_context_manager):
+        """Create a test agent instance with required manager dependencies."""
         return test_agent_class(
             name="TestAgent",
             llm_config=llm_config,
-            system_message="Test system message"
+            system_message="Test system message",
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
@@ -355,27 +460,40 @@ class TestBaseLLMAgentAutoGenMocking:
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    async def test_generate_response_with_context(self, mock_client_class, mock_agent_class, test_agent):
-        """Test response generation with context and memory."""
+    async def test_generate_response_with_context(self, mock_client_class, mock_agent_class, test_agent, mock_context_manager, mock_token_manager):
+        """Test response generation with context and memory using manager dependencies."""
         # Mock AutoGen components
         mock_client = Mock()
         mock_agent = Mock()
         mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
         
+        # Configure context manager mock
+        prepared_result = Mock()
+        prepared_result.system_prompt = "prepared system with context"
+        prepared_result.estimated_tokens = 200
+        mock_context_manager.prepare_system_prompt.return_value = prepared_result
+        
+        # Configure token manager mock
+        mock_token_manager.extract_token_usage_from_response.return_value = 120
+        
         # Initialize agent and add context
         test_agent.initialize_autogen_agent()
         test_agent.update_context({"key": "value"})
         test_agent.update_memory_context({"global": {"test.md": "Test content"}})
         
-        # Mock the generate_response method directly to avoid AutoGen complexity
-        test_agent.generate_response = AsyncMock(return_value="Response with context")
+        # Mock the _generate_autogen_response method to avoid AutoGen complexity
+        test_agent._generate_autogen_response = AsyncMock(return_value="Response with context")
         
         # Test response generation
         result = await test_agent.generate_response("Test prompt")
         
         assert result == "Response with context"
-        test_agent.generate_response.assert_called_once_with("Test prompt")
+        
+        # Verify manager interactions
+        mock_context_manager.prepare_system_prompt.assert_called_once()
+        mock_token_manager.extract_token_usage_from_response.assert_called_once_with("Response with context", prompt_overhead=50)
+        mock_token_manager.update_token_usage.assert_called_once_with("test-model", 120, "generate_response")
 
 
 # Integration tests have been moved to tests/integration/test_real_base_agent.py

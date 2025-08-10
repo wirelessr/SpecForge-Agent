@@ -48,13 +48,15 @@ class TestImplementAgent:
         return decomposer
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
-        """Create an ImplementAgent instance for testing."""
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_token_manager, mock_context_manager):
+        """Create an ImplementAgent instance for testing with required manager dependencies."""
         return ImplementAgent(
             name="TestImplementAgent",
             llm_config=test_llm_config,
             system_message="Test implementation agent",
             shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager,
             task_decomposer=mock_task_decomposer
         )
     
@@ -157,12 +159,14 @@ class TestImplementAgentTaskExecution:
         return decomposer
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_token_manager, mock_context_manager):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
             shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager,
             task_decomposer=mock_task_decomposer
         )
     
@@ -398,12 +402,14 @@ class TestImplementAgentFileOperations:
         return decomposer
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_token_manager, mock_context_manager):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
             shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager,
             task_decomposer=mock_task_decomposer
         )
     
@@ -486,12 +492,14 @@ class TestImplementAgentRecording:
         return decomposer
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_token_manager, mock_context_manager):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
             shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager,
             task_decomposer=mock_task_decomposer
         )
     
@@ -690,12 +698,14 @@ class TestImplementAgentEnhancedRecording:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_token_manager, mock_context_manager):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @pytest.fixture
@@ -1135,12 +1145,14 @@ class TestImplementAgentEnhancedTaskExecution:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_token_manager, mock_context_manager):
         return ImplementAgent(
             name="TestAgent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @pytest.fixture
@@ -1488,13 +1500,15 @@ class TestImplementAgentMocking:
         return executor
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor):
+    def implement_agent(self, test_llm_config, mock_shell_executor, mock_token_manager, mock_context_manager):
         """Create an ImplementAgent instance with comprehensive mocking."""
         agent = ImplementAgent(
             name="TestImplementAgent",
             llm_config=test_llm_config,
             system_message="Test implementation agent",
-            shell_executor=mock_shell_executor
+            shell_executor=mock_shell_executor,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
         
         # Mock all potentially slow methods
@@ -1567,7 +1581,7 @@ class TestImplementAgentMinorFunctions:
     """Tests for minor utility and helper functions in ImplementAgent."""
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config):
+    def implement_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
         """Create ImplementAgent instance for testing."""
         mock_shell = Mock(spec=ShellExecutor)
         mock_shell.execute_command = AsyncMock()
@@ -1575,7 +1589,9 @@ class TestImplementAgentMinorFunctions:
             name="TestImplementAgent",
             llm_config=test_llm_config,
             system_message="Test system message",
-            shell_executor=mock_shell
+            shell_executor=mock_shell,
+            token_manager=mock_token_manager,
+            context_manager=mock_context_manager
         )
     
     @pytest.fixture

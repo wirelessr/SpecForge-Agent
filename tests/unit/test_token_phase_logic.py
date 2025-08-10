@@ -32,7 +32,7 @@ class TestTokenPhaseLogic:
         return TokenManager(config_manager)
     
     @pytest.fixture
-    def test_agent(self, test_llm_config, token_manager):
+    def test_agent(self, test_llm_config, token_manager, mock_context_manager):
         """Create a test agent for testing."""
         class TestAgent(BaseLLMAgent):
             async def _process_task_impl(self, task_input):
@@ -45,9 +45,10 @@ class TestTokenPhaseLogic:
             name="test_agent",
             llm_config=test_llm_config,
             system_message="Test agent",
+            token_manager=token_manager,
+            context_manager=mock_context_manager,
             description="Test agent for phase logic"
         )
-        agent.token_manager = token_manager
         return agent
     
     def test_static_phase_detection(self, token_manager):
@@ -244,6 +245,7 @@ class TestTokenPhaseIntegration:
     @pytest.fixture
     def integration_setup(self, test_llm_config):
         """Set up integration test environment."""
+        from unittest.mock import Mock
         config_manager = Mock(spec=ConfigManager)
         config_manager.get_token_config.return_value = {
             'default_token_limit': 8192,
@@ -262,13 +264,17 @@ class TestTokenPhaseIntegration:
             def get_agent_capabilities(self):
                 return ["test_capability"]
         
+        from unittest.mock import Mock
+        mock_context_manager = Mock()
+        
         agent = TestAgent(
             name="integration_agent",
             llm_config=test_llm_config,
             system_message="Integration test agent",
+            token_manager=token_manager,
+            context_manager=mock_context_manager,
             description="Agent for integration testing"
         )
-        agent.token_manager = token_manager
         
         return {
             'token_manager': token_manager,

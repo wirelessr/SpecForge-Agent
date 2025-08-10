@@ -30,13 +30,15 @@ def test_llm_config():
 
 
 @pytest.fixture
-def task_decomposer(test_llm_config):
-    """Create TaskDecomposer instance for testing."""
+def task_decomposer(test_llm_config, mock_token_manager, mock_context_manager):
+    """Create TaskDecomposer instance for testing with required manager dependencies."""
     system_message = "You are a task decomposition agent."
     return TaskDecomposer(
         name="TestTaskDecomposer",
         llm_config=test_llm_config,
-        system_message=system_message
+        system_message=system_message,
+        token_manager=mock_token_manager,
+        context_manager=mock_context_manager
     )
 
 
