@@ -61,5 +61,3 @@ def agent_context_to_string(context: Any) -> str:
             parts.append(getattr(pattern, 'content', '') or '')
 
     return ' '.join(parts)
-
-

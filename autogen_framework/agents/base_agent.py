@@ -16,7 +16,7 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from ..models import LLMConfig, AgentContext, SystemInstructions
-from ..context_utils import dict_context_to_string
+from ..utils.context_utils import dict_context_to_string
 
 # Forward declarations for type hints
 from typing import TYPE_CHECKING

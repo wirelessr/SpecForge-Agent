@@ -140,6 +140,8 @@ class ErrorRecovery(BaseLLMAgent):
         name: str, 
         llm_config: LLMConfig, 
         system_message: str,
+        token_manager,
+        context_manager,
         description: Optional[str] = None
     ):
         """
@@ -149,12 +151,16 @@ class ErrorRecovery(BaseLLMAgent):
             name: Name of the agent
             llm_config: LLM configuration for API connection
             system_message: System instructions for the agent
+            token_manager: TokenManager instance for token tracking
+            context_manager: ContextManager instance for context management
             description: Optional description of the agent's role
         """
         super().__init__(
             name=name,
             llm_config=llm_config,
             system_message=system_message,
+            token_manager=token_manager,
+            context_manager=context_manager,
             description=description or "Error recovery agent for intelligent failure analysis and recovery"
         )
         

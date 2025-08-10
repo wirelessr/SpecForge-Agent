@@ -75,12 +75,16 @@ class ImplementAgent(BaseLLMAgent):
         self.task_decomposer = task_decomposer or TaskDecomposer(
             name=f"{name}_decomposer",
             llm_config=llm_config,
-            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands."
+            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
+            token_manager=token_manager,
+            context_manager=context_manager
         )
         self.error_recovery = error_recovery or ErrorRecovery(
             name=f"{name}_error_recovery",
             llm_config=llm_config,
-            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies."
+            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
+            token_manager=token_manager,
+            context_manager=context_manager
         )
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []

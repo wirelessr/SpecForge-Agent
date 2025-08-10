@@ -20,7 +20,7 @@ For detailed usage patterns, see:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, AsyncMock
 
 from autogen_framework.models import LLMConfig
 
@@ -152,6 +152,82 @@ def mock_agent_manager():
         "agents_initialized": 0,
         "current_workflow_phase": None
     })
+    
+    return mock_manager
+
+
+@pytest.fixture
+def mock_token_manager():
+    """Create a mock TokenManager for unit tests."""
+    mock_manager = Mock()
+    
+    # Configure common token management methods
+    mock_manager.extract_token_usage_from_response = Mock(return_value=100)
+    mock_manager.estimate_tokens_from_char_count = Mock(return_value=50)
+    mock_manager.estimate_tokens_from_text = Mock(return_value=75)
+    mock_manager.update_token_usage = Mock()
+    mock_manager.check_token_limit = Mock(return_value=Mock(
+        needs_compression=False,
+        current_tokens=100,
+        model_limit=4000,
+        percentage_used=0.025
+    ))
+    mock_manager.get_model_limit = Mock(return_value=4000)
+    mock_manager.get_usage_stats = Mock(return_value={
+        "requests_made": 0,
+        "total_tokens_used": 0,
+        "compressions_triggered": 0,
+        "average_tokens_per_request": 0.0
+    })
+    mock_manager.reset_context_size = Mock()
+    mock_manager.increment_compression_count = Mock()
+    
+    return mock_manager
+
+
+@pytest.fixture
+def mock_context_manager():
+    """Create a mock ContextManager for unit tests."""
+    mock_manager = Mock()
+    
+    # Configure async methods with AsyncMock
+    mock_manager.prepare_system_prompt = AsyncMock(return_value=Mock(
+        system_prompt="prepared system prompt",
+        estimated_tokens=100
+    ))
+    mock_manager.get_plan_context = AsyncMock(return_value=Mock(
+        user_request="test request",
+        memory_patterns=[],
+        project_structure=None
+    ))
+    mock_manager.get_design_context = AsyncMock(return_value=Mock(
+        user_request="test request",
+        requirements=Mock(content="test requirements"),
+        memory_patterns=[],
+        project_structure=None
+    ))
+    mock_manager.get_tasks_context = AsyncMock(return_value=Mock(
+        user_request="test request",
+        requirements=Mock(content="test requirements"),
+        design=Mock(content="test design"),
+        memory_patterns=[],
+        project_structure=None
+    ))
+    mock_manager.get_implementation_context = AsyncMock(return_value=Mock(
+        task=Mock(description="test task"),
+        requirements=Mock(content="test requirements"),
+        design=Mock(content="test design"),
+        tasks=Mock(content="test tasks"),
+        execution_history=[],
+        related_tasks=[],
+        project_structure=None
+    ))
+    mock_manager.update_execution_history = AsyncMock()
+    mock_manager.initialize = AsyncMock()
+    
+    # Configure sync methods
+    mock_manager.get_memory_patterns = Mock(return_value=[])
+    mock_manager.get_project_structure = Mock(return_value=None)
     
     return mock_manager
 

@@ -23,10 +23,18 @@ For detailed usage patterns, see:
 
 import os
 import pytest
+import tempfile
+import shutil
+from pathlib import Path
 from dotenv import load_dotenv
 
 from autogen_framework.config_manager import ConfigManager
 from autogen_framework.models import LLMConfig
+from autogen_framework.memory_manager import MemoryManager
+from autogen_framework.token_manager import TokenManager
+from autogen_framework.context_manager import ContextManager
+from autogen_framework.context_compressor import ContextCompressor
+from autogen_framework.utils import ManagerDependencies
 
 
 @pytest.fixture
@@ -53,6 +61,70 @@ def real_llm_config():
 def integration_config_manager():
     """Create a ConfigManager for integration testing with real environment loading."""
     return ConfigManager(load_env=True)
+
+
+@pytest.fixture
+def temp_workspace():
+    """Create a temporary workspace directory for integration testing."""
+    temp_dir = tempfile.mkdtemp(prefix="autogen_integration_test_")
+    
+    # Create basic directory structure
+    memory_dir = Path(temp_dir) / "memory"
+    memory_dir.mkdir()
+    (memory_dir / "global").mkdir()
+    (memory_dir / "projects").mkdir()
+    
+    logs_dir = Path(temp_dir) / "logs"
+    logs_dir.mkdir()
+    
+    yield temp_dir
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def real_memory_manager(temp_workspace):
+    """Create a real MemoryManager for integration testing."""
+    return MemoryManager(workspace_path=temp_workspace)
+
+
+@pytest.fixture
+def real_token_manager(integration_config_manager):
+    """Create a real TokenManager for integration testing."""
+    return TokenManager(integration_config_manager)
+
+
+@pytest.fixture
+def real_managers(temp_workspace, real_memory_manager, real_llm_config):
+    """Create real manager dependencies for integration testing."""
+    return ManagerDependencies.create_for_workspace(
+        workspace_path=temp_workspace,
+        memory_manager=real_memory_manager,
+        llm_config=real_llm_config,
+        load_env=True
+    )
+
+
+@pytest.fixture
+async def initialized_real_managers(temp_workspace, real_memory_manager, real_llm_config):
+    """Create and initialize real manager dependencies for integration testing."""
+    return await ManagerDependencies.create_and_initialize_for_workspace(
+        workspace_path=temp_workspace,
+        memory_manager=real_memory_manager,
+        llm_config=real_llm_config,
+        load_env=True
+    )
+
+
+@pytest.fixture
+def real_context_manager(real_managers):
+    """Create a real ContextManager for integration testing."""
+    return real_managers.context_manager
+
+
+@pytest.fixture
+async def initialized_real_context_manager(initialized_real_managers):
+    """Create and initialize a real ContextManager for integration testing."""
+    return (await initialized_real_managers).context_manager
 
 
 # Override the default llm_config fixture for integration tests

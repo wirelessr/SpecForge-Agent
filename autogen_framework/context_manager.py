@@ -22,7 +22,7 @@ from .memory_manager import MemoryManager
 from .context_compressor import ContextCompressor
 from .config_manager import ConfigManager
 from .models import LLMConfig, TaskDefinition, ExecutionResult
-from .context_utils import agent_context_to_string
+from .utils.context_utils import agent_context_to_string
 
 # Forward declaration for type hints
 from typing import TYPE_CHECKING
