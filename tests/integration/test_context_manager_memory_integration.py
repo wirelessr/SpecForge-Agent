@@ -424,7 +424,7 @@ The system uses memory patterns to inform design decisions.
         assert "total_files" in memory_stats
         
         # Test context compressor capabilities
-        capabilities = real_context_compressor.get_agent_capabilities()
+        capabilities = real_context_compressor.get_capabilities()
         assert isinstance(capabilities, list)
         assert len(capabilities) > 0
         

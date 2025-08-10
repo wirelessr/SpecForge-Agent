@@ -57,9 +57,14 @@ class TestDesignAgentRealIntegration:
         return memory_manager
     
     @pytest.fixture
-    def integration_design_agent(self, real_llm_config, real_memory_manager):
+    def integration_design_agent(self, real_llm_config, real_memory_manager, real_managers):
         """Create a DesignAgent for integration testing."""
-        return DesignAgent(real_llm_config, real_memory_manager.load_memory())
+        return DesignAgent(
+            llm_config=real_llm_config,
+            memory_context=real_memory_manager.load_memory(),
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
+        )
     
     @pytest.fixture
     def sample_requirements_file(self, temp_workspace):

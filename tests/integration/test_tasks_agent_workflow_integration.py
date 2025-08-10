@@ -31,9 +31,14 @@ class TestTasksAgentWorkflowIntegration:
     # It loads configuration from .env.integration file for secure testing
     
     @pytest.fixture
-    def tasks_agent(self, real_llm_config):
+    def tasks_agent(self, real_llm_config, real_managers):
         """Create a TasksAgent instance for testing."""
-        return TasksAgent(real_llm_config)
+        return TasksAgent(
+            llm_config=real_llm_config,
+            memory_manager=real_managers.context_manager.memory_manager,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
+        )
     
     @pytest.fixture
     def work_directory(self, temp_workspace):

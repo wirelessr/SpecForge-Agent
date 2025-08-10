@@ -39,34 +39,18 @@ class TestWorkflowManagerIntegration:
         mock_agent.coordinate_agents = AsyncMock()
         return mock_agent
     
-    @pytest.fixture
-    def mock_memory_manager(self):
-        """Create a mock MemoryManager."""
-        mock = Mock()
-        mock.search_memory = Mock(return_value=[])
-        return mock
+
     
     @pytest.fixture
-    def mock_context_compressor(self):
-        """Create a mock ContextCompressor."""
-        mock = Mock()
-        mock.compress_context = AsyncMock()
-        return mock
-    
-    @pytest.fixture
-    def mock_token_manager(self):
-        """Create a mock TokenManager."""
-        mock = Mock()
-        mock.get_model_limit = Mock(return_value=8192)
-        mock.check_token_limit = Mock()
-        mock.current_context_size = 0
-        mock.usage_stats = {'compressions_performed': 0}
-        return mock
-    
-    @pytest.fixture
-    def workflow_manager(self, mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
+    def workflow_manager(self, mock_agent_manager, session_manager, real_managers):
         """Create a WorkflowManager instance for testing."""
-        return WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
+        return WorkflowManager(
+            mock_agent_manager, 
+            session_manager, 
+            real_managers.context_manager.memory_manager, 
+            real_managers.context_manager.context_compressor, 
+            real_managers.token_manager
+        )
     
     @pytest.mark.integration
     @pytest.mark.asyncio
@@ -125,7 +109,7 @@ class TestWorkflowManagerIntegration:
     
     @pytest.mark.integration
     @pytest.mark.asyncio
-    async def test_workflow_state_persistence_through_session_manager(self, workflow_manager, session_manager, mock_agent_manager, mock_memory_manager, mock_context_compressor, mock_token_manager):
+    async def test_workflow_state_persistence_through_session_manager(self, workflow_manager, session_manager, mock_agent_manager, real_managers):
         """Test that workflow state persists through SessionManager."""
         # Initialize session first
         session_manager.load_or_create_session()
@@ -156,7 +140,13 @@ class TestWorkflowManagerIntegration:
         assert session_data["current_workflow"]["work_directory"] == "/test/work"
         
         # Create new WorkflowManager instance with same SessionManager
-        new_workflow_manager = WorkflowManager(mock_agent_manager, session_manager, mock_memory_manager, mock_context_compressor, mock_token_manager)
+        new_workflow_manager = WorkflowManager(
+            mock_agent_manager, 
+            session_manager, 
+            real_managers.context_manager.memory_manager, 
+            real_managers.context_manager.context_compressor, 
+            real_managers.token_manager
+        )
         
         # Verify workflow state was loaded from session
         assert new_workflow_manager.current_workflow is not None

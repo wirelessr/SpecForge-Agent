@@ -116,7 +116,7 @@ class TestErrorRecoveryQualityImpact:
         )
     
     @pytest.fixture
-    def error_recovery_agent(self, real_llm_config):
+    def error_recovery_agent(self, real_llm_config, real_managers):
         """Create ErrorRecovery agent for integration testing."""
         system_message = """
 You are an intelligent error recovery agent. Your role is to:
@@ -130,11 +130,13 @@ Always respond with valid JSON when requested.
         return ErrorRecovery(
             name="IntegrationTestErrorRecovery",
             llm_config=real_llm_config,
-            system_message=system_message
+            system_message=system_message,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
-    def task_decomposer_agent(self, real_llm_config):
+    def task_decomposer_agent(self, real_llm_config, real_managers):
         """Create TaskDecomposer agent for integration testing."""
         system_message = """
 You are a task decomposition agent. Your role is to:
@@ -147,7 +149,9 @@ Always respond with valid JSON when requested.
         return TaskDecomposer(
             name="IntegrationTestTaskDecomposer",
             llm_config=real_llm_config,
-            system_message=system_message
+            system_message=system_message,
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.fixture
@@ -181,7 +185,7 @@ Always respond with valid JSON when requested.
         ]
     
     @pytest.mark.integration
-    async def test_error_recovery_quality_impact_comparison(self, error_recovery_agent, sample_tasks):
+    async def test_error_recovery_quality_impact_comparison(self, error_recovery_agent, sample_tasks, real_managers):
         """Test quality impact by comparing execution with and without ErrorRecovery."""
         # Test without ErrorRecovery
         agent_without_recovery = MockImplementAgent(use_error_recovery=False)
@@ -224,7 +228,7 @@ Always respond with valid JSON when requested.
         print(f"Overall Improvement: {impact_report['overall_improvement']:.2%}")
     
     @pytest.mark.integration
-    async def test_error_analysis_accuracy(self, error_recovery_agent):
+    async def test_error_analysis_accuracy(self, error_recovery_agent, real_managers):
         """Test accuracy of error analysis with real LLM."""
         test_cases = [
             {
@@ -304,7 +308,7 @@ Always respond with valid JSON when requested.
         print(f"Average Confidence: {avg_confidence:.2f}")
     
     @pytest.mark.integration
-    async def test_strategy_generation_quality(self, error_recovery_agent):
+    async def test_strategy_generation_quality(self, error_recovery_agent, real_managers):
         """Test quality of generated recovery strategies."""
         # Test strategy generation for different error types
         error_scenarios = [
@@ -511,19 +515,23 @@ class TestErrorRecoveryTaskDecomposerIntegration:
         )
     
     @pytest.mark.integration
-    async def test_taskdecomposer_errorrecovery_integration(self, real_llm_config):
+    async def test_taskdecomposer_errorrecovery_integration(self, real_llm_config, real_managers):
         """Test integration between TaskDecomposer and ErrorRecovery."""
         # Create agents
         task_decomposer = TaskDecomposer(
             name="TestTaskDecomposer",
             llm_config=real_llm_config,
-            system_message="You are a task decomposition agent for testing."
+            system_message="You are a task decomposition agent for testing.",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
         error_recovery = ErrorRecovery(
             name="TestErrorRecovery", 
             llm_config=real_llm_config,
-            system_message="You are an error recovery agent for testing."
+            system_message="You are an error recovery agent for testing.",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
         
         # Create test task

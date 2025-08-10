@@ -48,12 +48,14 @@ class TestBaseLLMAgentRealAutoGenIntegration:
         return TestAgent
     
     @pytest.fixture
-    def test_agent(self, test_agent_class, real_llm_config):
-        """Create a test agent instance with real LLM configuration."""
+    def test_agent(self, test_agent_class, real_llm_config, real_managers):
+        """Create a test agent instance with real LLM configuration and manager dependencies."""
         return test_agent_class(
             name="TestAgent",
             llm_config=real_llm_config,
-            system_message="Test system message"
+            system_message="Test system message",
+            token_manager=real_managers.token_manager,
+            context_manager=real_managers.context_manager
         )
     
     @pytest.mark.integration
