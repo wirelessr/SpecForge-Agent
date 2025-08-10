@@ -9,9 +9,7 @@ This module contains the TasksAgent class which is responsible for:
 """
 
 import os
-import asyncio
 from typing import Dict, Any, List, Optional
-from pathlib import Path
 
 from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, TaskDefinition
@@ -20,11 +18,11 @@ from ..models import LLMConfig, TaskDefinition
 class TasksAgent(BaseLLMAgent):
     """
     AI agent responsible for task generation in the multi-agent framework.
-    
+
     The TasksAgent handles the task generation phase of the workflow where
     technical designs are decomposed into actionable implementation plans.
     It creates structured task lists that can be executed by the ImplementAgent.
-    
+
     Key capabilities:
     - Generate structured task lists from design documents
     - Reference specific requirements for each task
@@ -32,7 +30,7 @@ class TasksAgent(BaseLLMAgent):
     - Format tasks in markdown checkbox format
     - Maintain context access to requirements.md and design.md
     """
-    
+
     def __init__(
         self,
         llm_config: LLMConfig,
@@ -43,10 +41,12 @@ class TasksAgent(BaseLLMAgent):
     ):
         """
         Initialize the TasksAgent.
-        
+
         Args:
             llm_config: LLM configuration for API connection
             memory_manager: Optional memory manager for context
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
             description: Optional description of the agent's role
         """
         super().__init__(
@@ -57,13 +57,12 @@ class TasksAgent(BaseLLMAgent):
             context_manager=context_manager,
             description=description or "Task generation agent for creating implementation plans",
         )
-        
+
         self.memory_manager = memory_manager
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
-        
+
         self.logger.info(f"TasksAgent initialized")
-    
     def _build_system_message(self) -> str:
         """Build the system message for the TasksAgent."""
         return """You are a TasksAgent responsible for generating detailed implementation task lists.
@@ -83,37 +82,36 @@ You should generate tasks that:
 - Focus ONLY on coding tasks that can be executed via shell commands
 
 Always maintain the existing task generation logic, prompts, and formatting unchanged."""
-    
+
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for TasksAgent."""
         if task_input.get("user_request"):
             from .base_agent import ContextSpec
             return ContextSpec(context_type="tasks")
         return None
-    
+
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a task assigned to the TasksAgent.
-        
+
         Args:
             task_input: Dictionary containing task type and parameters
-            
+
         Returns:
             Dictionary containing task results and metadata
         """
         task_type = task_input.get("task_type")
-        
+
         if task_type == "generate_task_list":
             return await self._handle_generate_task_list(task_input)
         elif task_type == "revision":
             return await self._handle_revision_task(task_input)
         else:
             raise ValueError(f"Unknown task type for TasksAgent: {task_type}")
-    
     def get_agent_capabilities(self) -> List[str]:
         """
         Get a list of capabilities that this agent provides.
-        
+
         Returns:
             List of capability descriptions
         """
@@ -126,30 +124,30 @@ Always maintain the existing task generation logic, prompts, and formatting unch
             "Ensure tasks build incrementally on each other",
             "Handle task list revisions based on user feedback"
         ]
-    
+
     async def generate_task_list(
-        self, 
-        design_path: str, 
-        requirements_path: str, 
+        self,
+        design_path: str,
+        requirements_path: str,
         work_dir: str
     ) -> str:
         """
         Generate a tasks.md file based on design and requirements documents.
-        
+
         Args:
             design_path: Path to the design.md file
             requirements_path: Path to the requirements.md file
             work_dir: Working directory for the project
-            
+
         Returns:
             Path to the generated tasks.md file
         """
         self.current_work_directory = work_dir
-        
+
         # Read design and requirements documents
         design_content = await self._read_file_content(design_path)
         requirements_content = await self._read_file_content(requirements_path)
-        
+
         # Prepare context for task generation
         context = {
             "design_document": design_content,

@@ -34,10 +34,12 @@ class PlanAgent(BaseLLMAgent):
     def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager, token_manager, context_manager):
         """
         Initialize the Plan Agent.
-        
+
         Args:
             llm_config: LLM configuration for API connection
             memory_manager: Memory manager instance for context loading
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
         """
         system_message = self._build_system_message()
         

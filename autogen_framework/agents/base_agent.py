@@ -15,7 +15,7 @@ import json
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
-from ..models import LLMConfig, AgentContext, SystemInstructions
+from ..models import LLMConfig, AgentContext
 from ..utils.context_utils import dict_context_to_string
 
 # Forward declarations for type hints
@@ -65,6 +65,8 @@ class BaseLLMAgent(ABC):
             name: Unique name for this agent
             llm_config: LLM configuration for API connection
             system_message: System message/instructions for the agent
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
             description: Optional description of the agent's role
         """
         self.name = name

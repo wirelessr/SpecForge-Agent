@@ -99,51 +99,88 @@ uv run python -m autogen_framework.quality_metrics --compare baseline current
 
 ## Architecture
 
-### Enhanced ImplementAgent Components
+### Enhanced Architecture with Dependency Injection
 
 ```mermaid
 graph TB
-    subgraph "Enhanced ImplementAgent"
-        IA[ImplementAgent]
+    subgraph "Agent Coordination Layer"
+        AM[AgentManager]
+    end
+    
+    subgraph "Mandatory Manager Dependencies"
+        CFG[ConfigManager]
+        TM[TokenManager]
+        CC[ContextCompressor]
+        CM[ContextManager]
+        MM[MemoryManager]
+    end
+    
+    subgraph "Agent Layer (All require managers)"
+        PA[PlanAgent]
+        DA[DesignAgent]
+        TA[TasksAgent]
+        IA[Enhanced ImplementAgent]
+    end
+    
+    subgraph "Enhanced ImplementAgent Components"
         TD[TaskDecomposer]
         SE[ShellExecutor]
         ER[ErrorRecovery]
     end
     
-    subgraph "Shared Framework Components"
-        CM[ContextManager]
-        MM[MemoryManager]
-        CC[ContextCompressor]
-    end
+    AM --> CFG
+    AM --> TM
+    AM --> CC
+    AM --> CM
+    AM --> MM
     
-    subgraph "Other Framework Agents"
-        PA[PlanAgent]
-        DA[DesignAgent]
-        TA[TasksAgent]
-    end
+    CFG --> TM
+    TM --> CC
+    MM --> CM
+    CC --> CM
+    
+    AM -.->|"Injects Managers"| PA
+    AM -.->|"Injects Managers"| DA
+    AM -.->|"Injects Managers"| TA
+    AM -.->|"Injects Managers"| IA
+    
+    TM -.->|"Mandatory Dependency"| PA
+    TM -.->|"Mandatory Dependency"| DA
+    TM -.->|"Mandatory Dependency"| TA
+    TM -.->|"Mandatory Dependency"| IA
+    
+    CM -.->|"Mandatory Dependency"| PA
+    CM -.->|"Mandatory Dependency"| DA
+    CM -.->|"Mandatory Dependency"| TA
+    CM -.->|"Mandatory Dependency"| IA
     
     IA --> TD
     IA --> SE
     IA --> ER
-    IA --> CM
-    
-    PA --> CM
-    DA --> CM
-    TA --> CM
-    
-    CM --> MM
-    CM --> CC
 ```
 
 ### Component Responsibilities
 
-- **Enhanced ImplementAgent**: Main orchestrator for autonomous task execution
+#### Agent Coordination
+- **AgentManager**: Creates and injects mandatory manager dependencies into all agents
+
+#### Mandatory Manager Dependencies (Injected into all agents)
+- **TokenManager**: Centralized token estimation, tracking, and usage statistics
+- **ContextManager**: Project context integration with automatic compression and agent-specific interfaces
+- **ContextCompressor**: LLM-based context compression with token optimization
+- **ConfigManager**: Configuration loading, validation, and environment management
+- **MemoryManager**: Cross-session learning patterns and historical data storage
+
+#### Agent Layer (All require TokenManager and ContextManager)
+- **Enhanced ImplementAgent**: Autonomous task execution with intelligent capabilities
+- **PlanAgent**: Requirements analysis and specification generation
+- **DesignAgent**: Technical design and architecture planning
+- **TasksAgent**: Task decomposition and implementation planning
+
+#### Enhanced ImplementAgent Components
 - **TaskDecomposer**: Converts high-level tasks into executable shell command sequences
 - **ShellExecutor**: Executes shell commands with proper error handling and logging
 - **ErrorRecovery**: Analyzes failures and generates alternative strategies
-- **ContextManager**: Provides agent-specific project context with automatic compression
-- **MemoryManager**: Manages cross-session learning patterns and historical data
-- **ContextCompressor**: Handles automatic token optimization for large contexts
 
 ## Project Structure
 

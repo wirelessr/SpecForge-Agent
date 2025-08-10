@@ -52,12 +52,14 @@ class ImplementAgent(BaseLLMAgent):
     ):
         """
         Initialize the ImplementAgent.
-        
+
         Args:
             name: Name of the agent
             llm_config: LLM configuration for API connection
             system_message: System instructions for the agent
             shell_executor: ShellExecutor instance for command execution
+            token_manager: TokenManager instance for token operations (mandatory)
+            context_manager: ContextManager instance for context operations (mandatory)
             task_decomposer: Optional TaskDecomposer for intelligent task breakdown
             error_recovery: Optional ErrorRecovery for intelligent error handling
             description: Optional description of the agent's role
