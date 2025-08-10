@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
-from autogen_framework.main_controller import MainController, UserApprovalStatus
+from autogen_framework.main_controller import MainController
+from autogen_framework.models import UserApprovalStatus
 from autogen_framework.memory_manager import MemoryManager
 from autogen_framework.shell_executor import ShellExecutor
 

@@ -106,7 +106,7 @@ class TestSessionManagement:
                     
                     # Add some state
                     controller.phase_results["test"] = {"data": "test"}
-                    from autogen_framework.main_controller import UserApprovalStatus
+                    from autogen_framework.models import UserApprovalStatus
                     controller.user_approval_status["test"] = UserApprovalStatus.APPROVED
                     
                     # Reset session

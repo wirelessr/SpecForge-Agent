@@ -26,12 +26,7 @@ if TYPE_CHECKING:
     from .token_manager import TokenManager
 
 
-class UserApprovalStatus(Enum):
-    """Status of user approval for workflow phases."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    NEEDS_REVISION = "needs_revision"
+from .models import UserApprovalStatus
 
 
 class WorkflowManager:
@@ -986,8 +981,15 @@ class WorkflowManager:
                 self.logger.warning(f"Could not determine parameter modifications for {phase}")
                 return False
             
-            # For now, return False as the actual retry logic would need to be implemented
-            # This is a placeholder for the recovery strategy
+            # Retry the operation with modified context using corresponding retry helpers or agent calls
+            if phase == "requirements":
+                return self._retry_requirements_generation(modified_context)
+            elif phase == "design":
+                return self._retry_design_generation(modified_context)
+            elif phase == "tasks":
+                return self._retry_tasks_generation(modified_context)
+            elif phase == "implementation":
+                return self._retry_implementation_execution(modified_context)
             return False
                 
         except Exception as retry_error:
@@ -1012,8 +1014,19 @@ class WorkflowManager:
         self.logger.info(f"Attempting to skip non-critical steps for {phase}")
         
         try:
-            # For now, return False as the actual skip logic would need to be implemented
-            # This is a placeholder for the recovery strategy
+            # Identify non-critical steps and run simplified execution paths
+            non_critical_steps = self._identify_non_critical_steps(phase, error)
+            if not non_critical_steps:
+                return False
+            simplified_context = self._create_simplified_context(context, non_critical_steps)
+            if phase == "requirements":
+                return self._execute_simplified_requirements(simplified_context)
+            elif phase == "design":
+                return self._execute_simplified_design(simplified_context)
+            elif phase == "tasks":
+                return self._execute_simplified_tasks(simplified_context)
+            elif phase == "implementation":
+                return self._execute_simplified_implementation(simplified_context)
             return False
                 
         except Exception as skip_error:
@@ -1038,8 +1051,15 @@ class WorkflowManager:
         self.logger.info(f"Attempting fallback implementation for {phase}")
         
         try:
-            # For now, return False as the actual fallback logic would need to be implemented
-            # This is a placeholder for the recovery strategy
+            # Use phase-specific conservative fallback approaches
+            if phase == "requirements":
+                return self._fallback_requirements_generation(context)
+            elif phase == "design":
+                return self._fallback_design_generation(context)
+            elif phase == "tasks":
+                return self._fallback_tasks_generation(context)
+            elif phase == "implementation":
+                return self._fallback_implementation_execution(context)
             return False
                 
         except Exception as fallback_error:
@@ -1048,7 +1068,7 @@ class WorkflowManager:
     
     def _modify_parameters_for_retry(self, error: Exception, phase: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Modify parameters for retry based on error type and phase.
+        Modify parameters based on error type and phase for retry strategy.
         
         Args:
             error: The exception that occurred
@@ -1056,11 +1076,47 @@ class WorkflowManager:
             context: Original context information
             
         Returns:
-            Modified context dictionary or None if no modifications possible
+            Modified context for retry, or None if no modifications possible
         """
-        # This is a placeholder for parameter modification logic
-        # The actual implementation would analyze the error and modify context accordingly
-        return None
+        modified_context = context.copy()
+        error_str = str(error).lower()
+        
+        # Common parameter modifications based on error patterns
+        if "timeout" in error_str or "connection" in error_str:
+            # Increase timeout and add retry parameters
+            modified_context["timeout"] = modified_context.get("timeout", 30) * 2
+            modified_context["max_retries"] = 3
+            modified_context["retry_delay"] = 5
+            self.logger.info(f"Modified parameters for connection/timeout error in {phase}")
+            
+        elif "memory" in error_str or "limit" in error_str:
+            # Reduce complexity for memory/limit errors
+            modified_context["max_complexity"] = "low"
+            modified_context["simplified_mode"] = True
+            modified_context["reduce_detail"] = True
+            self.logger.info(f"Modified parameters for memory/limit error in {phase}")
+            
+        elif "format" in error_str or "parse" in error_str:
+            # Use more structured format for parsing errors
+            modified_context["strict_format"] = True
+            modified_context["use_templates"] = True
+            modified_context["validate_output"] = True
+            self.logger.info(f"Modified parameters for format/parse error in {phase}")
+            
+        elif "permission" in error_str or "access" in error_str:
+            # Try alternative paths or methods for permission errors
+            modified_context["use_alternative_path"] = True
+            modified_context["fallback_mode"] = True
+            self.logger.info(f"Modified parameters for permission/access error in {phase}")
+            
+        else:
+            # Generic modifications for unknown errors
+            modified_context["safe_mode"] = True
+            modified_context["verbose_logging"] = True
+            modified_context["error_recovery"] = True
+            self.logger.info(f"Applied generic parameter modifications for {phase}")
+        
+        return modified_context
     
     def _generate_workflow_id(self) -> str:
         """Generate a unique workflow ID."""

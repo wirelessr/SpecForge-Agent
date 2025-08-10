@@ -248,7 +248,7 @@ class TestCompleteArchitectureIntegration:
                 phase=WorkflowPhase.DESIGN,
                 work_directory="/test/work"
             )
-            from autogen_framework.workflow_manager import UserApprovalStatus
+            from autogen_framework.models import UserApprovalStatus
             main_controller1.workflow_manager.user_approval_status["requirements"] = \
                 UserApprovalStatus.APPROVED
             
@@ -343,7 +343,7 @@ class TestCompleteArchitectureIntegration:
                 phase=WorkflowPhase.IMPLEMENTATION,
                 work_directory="/test/work"
             )
-            from autogen_framework.workflow_manager import UserApprovalStatus
+            from autogen_framework.models import UserApprovalStatus
             main_controller.workflow_manager.user_approval_status["requirements"] = \
                 UserApprovalStatus.APPROVED
             main_controller.workflow_manager.execution_log.append({"event": "test"})

@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from autogen_framework.main_controller import MainController, UserApprovalStatus
+from autogen_framework.main_controller import MainController
+from autogen_framework.models import UserApprovalStatus
 from autogen_framework.memory_manager import MemoryManager
 from autogen_framework.shell_executor import ShellExecutor
 from autogen_framework.session_manager import SessionManager
@@ -141,7 +142,7 @@ class TestMainControllerRealIntegration:
             assert main_controller.user_approval_status["tasks"] == UserApprovalStatus.APPROVED
             
             # Verify WorkflowManager has the approval status
-            from autogen_framework.workflow_manager import UserApprovalStatus as WMUserApprovalStatus
+            from autogen_framework.models import UserApprovalStatus as WMUserApprovalStatus
             assert main_controller.workflow_manager.user_approval_status["requirements"] == WMUserApprovalStatus.APPROVED
             assert main_controller.workflow_manager.user_approval_status["design"] == WMUserApprovalStatus.APPROVED
             assert main_controller.workflow_manager.user_approval_status["tasks"] == WMUserApprovalStatus.APPROVED

@@ -10,7 +10,8 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from pathlib import Path
 
-from autogen_framework.workflow_manager import WorkflowManager, UserApprovalStatus
+from autogen_framework.workflow_manager import WorkflowManager
+from autogen_framework.models import UserApprovalStatus
 from autogen_framework.models import WorkflowState, WorkflowPhase
 from autogen_framework.session_manager import SessionManager
 
