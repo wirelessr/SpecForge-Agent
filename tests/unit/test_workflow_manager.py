@@ -356,16 +356,19 @@ class TestWorkflowManager:
         
         assert result is False
     
-    def test_handle_error_recovery_attempt(self, workflow_manager):
-        """Test error recovery attempt."""
-        with patch.object(workflow_manager, '_retry_with_modified_parameters', return_value=True):
-            result = workflow_manager.handle_error_recovery(
-                Exception("Test error"), "requirements", {}
-            )
+    def test_handle_error_recovery_simplified(self, workflow_manager):
+        """Test simplified error recovery - always returns False and provides guidance."""
+        result = workflow_manager.handle_error_recovery(
+            Exception("Test error"), "requirements", {}
+        )
         
-        assert result is True
-        assert workflow_manager.error_recovery_attempts["requirements"] == 1
-        assert len(workflow_manager.workflow_summary['errors_recovered']) == 1
+        # Simplified error recovery always returns False (no automatic recovery)
+        assert result is False
+        
+        # Test that guidance method works
+        guidance = workflow_manager._get_phase_error_guidance("requirements")
+        assert "--revise" in guidance
+        assert "requirements" in guidance
     
     def test_parse_tasks_from_file_success(self, workflow_manager, tmp_path):
         """Test successful task parsing from file."""

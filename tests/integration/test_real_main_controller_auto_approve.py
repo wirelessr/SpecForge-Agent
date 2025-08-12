@@ -228,7 +228,7 @@ class TestMainControllerAutoApproveIntegration:
     
     @pytest.mark.integration
     def test_error_recovery_with_real_components(self, main_controller, temp_workspace, real_llm_config):
-        """Test error recovery functionality with real components."""
+        """Test simplified error recovery functionality with real components."""
         # Mock only the agent setup to avoid AutoGen dependencies
         with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             mock_agent_instance = mock_agent.return_value
@@ -238,51 +238,23 @@ class TestMainControllerAutoApproveIntegration:
             # Initialize framework
             main_controller.initialize_framework(real_llm_config)
             
-            # Test error recovery with different error types
+            # Test simplified error recovery - should delegate to WorkflowManager
             timeout_error = Exception("Connection timeout occurred")
             memory_error = Exception("Memory limit exceeded")
             format_error = Exception("Parse error in format")
             
-            # Test parameter modification for different error types
-            timeout_context = main_controller._modify_parameters_for_retry(
-                timeout_error, "requirements", {"timeout": 30}
-            )
-            assert timeout_context["timeout"] == 60
-            assert timeout_context["max_retries"] == 3
+            # Test that error recovery always returns False (no automatic recovery)
+            result1 = main_controller.handle_error_recovery(timeout_error, "requirements", {"timeout": 30})
+            assert result1 is False
             
-            memory_context = main_controller._modify_parameters_for_retry(
-                memory_error, "design", {"complexity": "high"}
-            )
-            assert memory_context["max_complexity"] == "low"
-            assert memory_context["simplified_mode"] is True
+            result2 = main_controller.handle_error_recovery(memory_error, "design", {"complexity": "high"})
+            assert result2 is False
             
-            format_context = main_controller._modify_parameters_for_retry(
-                format_error, "tasks", {"format": "flexible"}
-            )
-            assert format_context["strict_format"] is True
-            assert format_context["use_templates"] is True
+            result3 = main_controller.handle_error_recovery(format_error, "tasks", {"format": "flexible"})
+            assert result3 is False
             
-            # Test non-critical step identification
-            req_steps = main_controller._identify_non_critical_steps("requirements", timeout_error)
-            assert len(req_steps) > 0
-            assert "detailed_examples" in req_steps
-            
-            design_steps = main_controller._identify_non_critical_steps("design", memory_error)
-            assert len(design_steps) > 0
-            assert "detailed_diagrams" in design_steps
-            
-            # Test simplified context creation
-            simplified_context = main_controller._create_simplified_context(
-                {"original": "value"}, ["step1", "step2"]
-            )
-            assert simplified_context["skip_steps"] == ["step1", "step2"]
-            assert simplified_context["simplified_execution"] is True
-            
-            # Test fallback implementations
-            assert main_controller._fallback_requirements_generation({"test": "context"}) is True
-            assert main_controller._fallback_design_generation({"test": "context"}) is True
-            assert main_controller._fallback_tasks_generation({"test": "context"}) is True
-            assert main_controller._fallback_implementation_execution({"test": "context"}) is True
+            # Verify that WorkflowManager provides user guidance
+            # (This would be tested by checking logs, but we'll keep it simple for now)
             
             # Verify real components are still accessible and functional
             assert isinstance(main_controller.memory_manager, MemoryManager)
@@ -291,7 +263,7 @@ class TestMainControllerAutoApproveIntegration:
             # Test that memory manager can save error recovery information
             main_controller.memory_manager.save_memory(
                 "error_recovery_test",
-                f"Error recovery test completed with {len(req_steps)} non-critical steps identified",
+                "Error recovery test completed with simplified error handling",
                 "global"
             )
             
@@ -303,7 +275,7 @@ class TestMainControllerAutoApproveIntegration:
     
     @pytest.mark.integration
     def test_error_recovery_attempt_tracking_with_persistence(self, temp_workspace, real_llm_config):
-        """Test error recovery attempt tracking with session persistence."""
+        """Test simplified error recovery with session persistence."""
         # Create first controller
         controller1 = MainController(temp_workspace)
         
@@ -314,23 +286,15 @@ class TestMainControllerAutoApproveIntegration:
             
             controller1.initialize_framework(real_llm_config)
             
-            # Simulate error recovery attempts
-            with patch.object(controller1, '_get_error_recovery_max_attempts', return_value=3):
-                with patch.object(controller1, '_retry_with_modified_parameters', return_value=True):
-                    error = Exception("Test integration error")
-                    
-                    # First recovery attempt
-                    result1 = controller1.handle_error_recovery(error, "requirements", {"test": "context"})
-                    assert result1 is True
-                    assert controller1.error_recovery_attempts["requirements"] == 1
-                    
-                    # Second recovery attempt
-                    result2 = controller1.handle_error_recovery(error, "design", {"test": "context"})
-                    assert result2 is True
-                    assert controller1.error_recovery_attempts["design"] == 1
-                    
-                    # Verify recovery logging
-                    assert len(controller1.workflow_summary['errors_recovered']) == 2
+            # Test simplified error recovery - should always return False
+            error = Exception("Test integration error")
+            
+            # Error recovery should return False (no automatic recovery)
+            result1 = controller1.handle_error_recovery(error, "requirements", {"test": "context"})
+            assert result1 is False
+            
+            result2 = controller1.handle_error_recovery(error, "design", {"test": "context"})
+            assert result2 is False
             
             # Save session state
             controller1._save_session_state()
@@ -347,24 +311,14 @@ class TestMainControllerAutoApproveIntegration:
             
             controller2.initialize_framework(real_llm_config)
         
-        # Verify error recovery data was persisted
+        # Verify session persistence works
         assert controller2.session_id == session_id
-        assert controller2.error_recovery_attempts == {"requirements": 1, "design": 1}
-        assert len(controller2.workflow_summary['errors_recovered']) == 2
         
         # Verify real components are functional after session reload
         assert isinstance(controller2.memory_manager, MemoryManager)
         assert isinstance(controller2.shell_executor, ShellExecutor)
         
-        # Test that we can continue error recovery from persisted state
-        with patch.object(controller2, '_get_error_recovery_max_attempts', return_value=3):
-            with patch.object(controller2, '_skip_non_critical_steps', return_value=True):
-                error = Exception("Another test error")
-                
-                # Third recovery attempt (should increment from persisted state)
-                result3 = controller2.handle_error_recovery(error, "requirements", {"test": "context"})
-                assert result3 is True
-                assert controller2.error_recovery_attempts["requirements"] == 2  # Incremented from 1
-                
-                # Verify total recovery count
-                assert len(controller2.workflow_summary['errors_recovered']) == 3
+        # Test that error recovery still works with persisted session
+        error = Exception("Another test error")
+        result3 = controller2.handle_error_recovery(error, "requirements", {"test": "context"})
+        assert result3 is False  # Should always return False with simplified error recovery
