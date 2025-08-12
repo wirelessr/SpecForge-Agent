@@ -26,12 +26,7 @@ if TYPE_CHECKING:
     from .token_manager import TokenManager
 
 
-class UserApprovalStatus(Enum):
-    """Status of user approval for workflow phases."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    NEEDS_REVISION = "needs_revision"
+from .models import UserApprovalStatus
 
 
 class WorkflowManager:
@@ -583,25 +578,9 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Requirements phase failed: {e}")
             
-            # Attempt error recovery
-            recovery_context = {
-                "user_request": user_request,
-                "workspace_path": str(self.session_manager.workspace_path),
-                "memory_context": {}  # Memory context would be provided by MainController
-            }
-            
-            if self.handle_error_recovery(e, "requirements", recovery_context):
-                self.logger.info("Requirements phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "requirements_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["requirements"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Requirements phase retry failed: {retry_error}")
+            # Provide clear error message for manual revision
+            self.logger.error(f"Requirements phase failed: {e}")
+            self.logger.info("To fix this issue, use: autogen-framework --revise \"requirements:Please provide more specific requirements\"")
             
             return {"success": False, "error": str(e)}
     
@@ -642,25 +621,9 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Design phase failed: {e}")
             
-            # Attempt error recovery
-            recovery_context = {
-                "requirements_path": requirements_result.get("requirements_path"),
-                "work_directory": requirements_result.get("work_directory"),
-                "memory_context": {}  # Memory context would be provided by MainController
-            }
-            
-            if self.handle_error_recovery(e, "design", recovery_context):
-                self.logger.info("Design phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "design_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["design"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Design phase retry failed: {retry_error}")
+            # Provide clear error message for manual revision
+            self.logger.error(f"Design phase failed: {e}")
+            self.logger.info("To fix this issue, use: autogen-framework --revise \"design:Please simplify the design and focus on core features\"")
             
             return {"success": False, "error": str(e)}
     
@@ -703,26 +666,9 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Tasks phase failed: {e}")
             
-            # Attempt error recovery
-            recovery_context = {
-                "design_path": design_result.get("design_path"),
-                "requirements_path": requirements_result.get("requirements_path"),
-                "work_directory": design_result.get("work_directory"),
-                "memory_context": {}  # Memory context would be provided by MainController
-            }
-            
-            if self.handle_error_recovery(e, "tasks", recovery_context):
-                self.logger.info("Tasks phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "task_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["tasks"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Tasks phase retry failed: {retry_error}")
+            # Provide clear error message for manual revision
+            self.logger.error(f"Tasks phase failed: {e}")
+            self.logger.info("To fix this issue, use: autogen-framework --revise \"tasks:Please create simpler tasks with clearer descriptions\"")
             
             return {"success": False, "error": str(e)}
     
@@ -797,43 +743,10 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Implementation phase failed: {e}")
             
-            # Attempt error recovery
-            recovery_context = {
-                "tasks_file": tasks_file,
-                "work_directory": self.current_workflow.work_directory,
-                "memory_context": {}  # Memory context would be provided by MainController
-            }
-            
-            if self.handle_error_recovery(e, "implementation", recovery_context):
-                self.logger.info("Implementation phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    # Re-parse tasks and retry execution
-                    tasks = self._parse_tasks_from_file(tasks_file)
-                    uncompleted_tasks = [task for task in tasks if not task.completed]
-                    
-                    if uncompleted_tasks:
-                        task_results = await self.agent_manager.coordinate_agents(
-                            "execute_multiple_tasks",
-                            {
-                                "tasks": [task.to_dict() for task in uncompleted_tasks],
-                                "work_directory": self.current_workflow.work_directory,
-                                "memory_context": {}  # Memory context would be provided by MainController
-                            }
-                        )
-                        
-                        if task_results.get("success", False):
-                            self._update_tasks_file_with_completion(tasks_file, task_results.get("task_results", []))
-                            result = {
-                                "success": True,
-                                "execution_completed": True,
-                                "tasks_completed": len(task_results.get("task_results", [])),
-                                "work_directory": self.current_workflow.work_directory
-                            }
-                            self.phase_results["implementation"] = result
-                            return result
-                except Exception as retry_error:
-                    self.logger.error(f"Implementation phase retry failed: {retry_error}")
+            # Implementation phase uses ImplementAgent's sophisticated error recovery
+            # If implementation fails completely, suggest revising tasks phase
+            self.logger.error(f"Implementation phase failed: {e}")
+            self.logger.info("Implementation errors are handled by ImplementAgent. If all tasks fail, consider revising tasks: autogen-framework --revise \"tasks:Please create simpler, more specific tasks\"")
             
             return {"success": False, "error": str(e)}
     
@@ -914,7 +827,7 @@ class WorkflowManager:
     
     def handle_error_recovery(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
         """
-        Attempt automatic error recovery. Returns True if recovery successful.
+        Simplified error recovery - provides user guidance instead of automatic recovery.
         
         Args:
             error: The exception that occurred
@@ -922,145 +835,39 @@ class WorkflowManager:
             context: Context information for recovery
             
         Returns:
-            True if recovery was successful, False otherwise
+            Always returns False - no automatic recovery, user must use --revise
         """
-        max_attempts = self._get_error_recovery_max_attempts()
-        current_attempts = self.error_recovery_attempts.get(phase, 0)
+        # Log the error for debugging
+        self.logger.error(f"Phase {phase} failed: {error}")
         
-        if current_attempts >= max_attempts:
-            self.logger.error(f"Maximum error recovery attempts ({max_attempts}) exceeded for {phase}")
-            return False
+        # Provide user guidance based on phase
+        guidance = self._get_phase_error_guidance(phase)
+        self.logger.info(guidance)
         
-        self.error_recovery_attempts[phase] = current_attempts + 1
-        
-        # Attempt recovery strategies
-        recovery_strategies = [
-            self._retry_with_modified_parameters,
-            self._skip_non_critical_steps,
-            self._use_fallback_implementation
-        ]
-        
-        for strategy in recovery_strategies:
-            try:
-                if strategy(error, phase, context):
-                    self.workflow_summary['errors_recovered'].append({
-                        'phase': phase,
-                        'error': str(error),
-                        'strategy': getattr(strategy, '__name__', str(strategy)),
-                        'attempt': current_attempts + 1,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    self.logger.info(f"Error recovery successful using {getattr(strategy, '__name__', str(strategy))} for {phase}")
-                    return True
-            except Exception as recovery_error:
-                self.logger.warning(f"Recovery strategy {getattr(strategy, '__name__', str(strategy))} failed: {recovery_error}")
-        
+        # Always return False - no automatic recovery
         return False
     
-    def _get_error_recovery_max_attempts(self) -> int:
-        """Get maximum error recovery attempts from configuration."""
-        return int(os.getenv('AUTO_APPROVE_ERROR_RECOVERY_ATTEMPTS', '3'))
-    
-    def _retry_with_modified_parameters(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+    def _get_phase_error_guidance(self, phase: str) -> str:
         """
-        Recovery strategy: Retry with modified parameters.
-        
-        This strategy attempts to recover from errors by modifying parameters
-        that might have caused the failure and retrying the operation.
+        Get user guidance message for phase failures.
         
         Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
+            phase: The phase that failed
             
         Returns:
-            True if recovery was successful, False otherwise
+            User-friendly guidance message with --revise examples
         """
-        self.logger.info(f"Attempting retry with modified parameters for {phase}")
+        guidance_messages = {
+            "requirements": "To fix this issue, use: autogen-framework --revise \"requirements:Please provide more specific and detailed requirements\"",
+            "design": "To fix this issue, use: autogen-framework --revise \"design:Please simplify the design and focus on core features\"",
+            "tasks": "To fix this issue, use: autogen-framework --revise \"tasks:Please create simpler tasks with clearer descriptions\"",
+            "implementation": "Implementation errors are handled by ImplementAgent. If all tasks fail, consider revising tasks: autogen-framework --revise \"tasks:Please create simpler, more specific tasks\""
+        }
         
-        try:
-            # Modify parameters based on error type and phase
-            modified_context = self._modify_parameters_for_retry(error, phase, context)
-            
-            if not modified_context:
-                self.logger.warning(f"Could not determine parameter modifications for {phase}")
-                return False
-            
-            # For now, return False as the actual retry logic would need to be implemented
-            # This is a placeholder for the recovery strategy
-            return False
-                
-        except Exception as retry_error:
-            self.logger.error(f"Retry with modified parameters failed for {phase}: {retry_error}")
-            return False
+        return guidance_messages.get(phase, f"To fix this issue, use: autogen-framework --revise \"{phase}:Please provide more specific guidance\"")
     
-    def _skip_non_critical_steps(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Recovery strategy: Skip non-critical steps.
-        
-        This strategy attempts to recover by identifying and skipping
-        non-essential steps that might be causing the failure.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        self.logger.info(f"Attempting to skip non-critical steps for {phase}")
-        
-        try:
-            # For now, return False as the actual skip logic would need to be implemented
-            # This is a placeholder for the recovery strategy
-            return False
-                
-        except Exception as skip_error:
-            self.logger.error(f"Skip non-critical steps failed for {phase}: {skip_error}")
-            return False
-    
-    def _use_fallback_implementation(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Recovery strategy: Use fallback implementation.
-        
-        This strategy uses a simpler, more reliable fallback approach
-        when the primary implementation fails.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        self.logger.info(f"Attempting fallback implementation for {phase}")
-        
-        try:
-            # For now, return False as the actual fallback logic would need to be implemented
-            # This is a placeholder for the recovery strategy
-            return False
-                
-        except Exception as fallback_error:
-            self.logger.error(f"Fallback implementation failed for {phase}: {fallback_error}")
-            return False
-    
-    def _modify_parameters_for_retry(self, error: Exception, phase: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Modify parameters for retry based on error type and phase.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Original context information
-            
-        Returns:
-            Modified context dictionary or None if no modifications possible
-        """
-        # This is a placeholder for parameter modification logic
-        # The actual implementation would analyze the error and modify context accordingly
-        return None
+    # Complex error recovery methods removed - using simple error reporting instead
+    # Manual revision via --revise is the preferred approach for phase-level failures
     
     def _generate_workflow_id(self) -> str:
         """Generate a unique workflow ID."""

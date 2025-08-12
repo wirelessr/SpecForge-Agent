@@ -38,7 +38,7 @@ The AutoGen Multi-Agent Framework is built around four core agents with autonomo
 
 ### Autonomous Execution Components
 - **TaskDecomposer**: Intelligent task breakdown into executable shell command sequences
-- **ErrorRecovery**: Multi-strategy error recovery with learning capabilities
+- **ErrorRecovery**: Task-level error recovery with learning capabilities (used by ImplementAgent)
 - **ContextManager**: Comprehensive project context integration
 - **Quality Measurement Framework**: Objective quality assessment and continuous improvement
 
@@ -46,7 +46,8 @@ The AutoGen Multi-Agent Framework is built around four core agents with autonomo
 
 ### Autonomous Execution Enhancement
 - **Intelligent Task Decomposition**: Automatically converts high-level tasks into sequential shell command interactions
-- **Multi-Strategy Error Recovery**: Analyzes failures and tries different approaches automatically
+- **Task-Level Error Recovery**: ImplementAgent provides sophisticated error recovery for individual tasks
+- **Workflow-Level Error Guidance**: Clear error messages guide users to use manual revision via `--revise`
 - **Context-Aware Execution**: Uses comprehensive project context including requirements, design, and execution history
 - **Quality-First Implementation**: Produces high-quality, maintainable code following project standards
 

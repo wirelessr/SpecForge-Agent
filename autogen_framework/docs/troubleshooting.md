@@ -2,6 +2,28 @@
 
 This guide helps users diagnose and resolve common issues encountered while using the AutoGen Multi-Agent Framework.
 
+## 🔧 Error Handling Approach
+
+The framework uses a **two-level error handling strategy**:
+
+1. **Task-Level Recovery**: ImplementAgent automatically handles individual task failures using TaskDecomposer and ErrorRecovery components
+2. **Workflow-Level Guidance**: When workflow phases (requirements, design, tasks) fail, the system provides clear guidance for manual revision using `--revise`
+
+### When Phases Fail
+Instead of automatic retry, you'll receive specific guidance like:
+```bash
+# Requirements phase failure
+"To fix this issue, use: autogen-framework --revise 'requirements:Please provide more specific requirements'"
+
+# Design phase failure  
+"To fix this issue, use: autogen-framework --revise 'design:Please simplify the design and focus on core features'"
+
+# Tasks phase failure
+"To fix this issue, use: autogen-framework --revise 'tasks:Please create simpler tasks with clearer descriptions'"
+```
+
+This approach ensures you maintain control over important design decisions while still benefiting from automatic task-level error recovery.
+
 ## 
  Quick Index of Common Issues
 
@@ -12,7 +34,7 @@ This guide helps users diagnose and resolve common issues encountered while usin
 | [Task Generation Issues](#task-generation-issues) | TasksAgent failures, malformed tasks.md | Check TasksAgent logs, verify design.md |
 | [Task Execution Failure](#task-execution-issues) | ImplementAgent errors, command failures | Check execution logs, manually fix |
 | [TaskDecomposer Issues](#taskdecomposer-issues) | Task breakdown failures, invalid commands | Check task complexity, context availability |
-| [ErrorRecovery Issues](#errorrecovery-issues) | Recovery strategies failing, infinite loops | Check error patterns, strategy generation |
+| [Error Handling Issues](#error-handling-issues) | Phase failures, unclear error messages | Check error logs, use --revise guidance |
 | [Context Management Issues](#context-management-issues) | Missing context, compression errors | Check ContextManager state, token limits |
 | [Quality Measurement Issues](#quality-measurement-issues) | Quality scores failing, baseline missing | Check quality metrics, establish baseline |
 | [Session Management Issues](#session-management-issues) | Session corruption, state inconsistency | Check SessionManager, reset session |
@@ -947,65 +969,61 @@ export ENABLE_CONTEXT_COMPRESSION=true
 autogen-framework --continue-workflow
 ```
 
-### ErrorRecovery Issues
+### Error Handling Issues
 
 #### Symptoms
-- Recovery strategies consistently failing
-- Infinite retry loops
-- No alternative strategies generated
-- Error categorization failures
+- Phase failures without clear guidance
+- Workflow stuck after errors
+- Unclear error messages
 
 #### Diagnostic Steps
 ```bash
-# Check ErrorRecovery logs
-grep "ErrorRecovery" logs/framework.log
+# Check workflow error logs
+grep "failed:" logs/framework.log
 
-# View error patterns
-grep "error_type\|recovery_strategy" logs/framework.log
+# View error guidance messages
+grep "To fix this issue, use:" logs/framework.log
 
-# Check strategy success rates
-grep "strategy.*success\|strategy.*failed" logs/framework.log
+# Check workflow state after errors
+autogen-framework --status
 ```
 
 #### Common Causes and Solutions
 
-**1. Error Pattern Recognition Failure**
-```python
-# Problem: Unknown error types not being categorized
-# Solution: Add custom error patterns
-
-# Check current error patterns
-grep "ERROR_PATTERNS" autogen_framework/agents/error_recovery.py
-
-# Add custom patterns to error_recovery.py
-ERROR_PATTERNS = {
-    'custom_error': [r'your custom error pattern'],
-    # ... existing patterns
-}
-```
-
-**2. Strategy Generation Issues**
+**1. Phase Failure Without Clear Guidance**
 ```bash
-# Problem: No alternative strategies generated
-# Solution: Check LLM connectivity and prompts
+# Problem: Phase fails but no clear next steps
+# Solution: Check error logs for --revise guidance
 
-# Test LLM connection
-autogen-framework --test-llm-connection
+# View recent phase failures
+grep "phase failed:" logs/framework.log
 
-# Check strategy generation prompts
-grep "Generate alternative strategies" logs/framework.log
+# Look for revision guidance
+grep "autogen-framework --revise" logs/framework.log
 ```
 
-**3. Infinite Retry Loops**
-```python
-# Problem: Same strategy being retried indefinitely
-# Solution: Check strategy learning and limits
+**2. Task-Level Error Recovery Issues**
+```bash
+# Problem: Individual tasks failing repeatedly
+# Solution: Check ImplementAgent's ErrorRecovery component
 
-# Verify retry limits in configuration
-grep "max_retry_attempts" autogen_framework/agents/error_recovery.py
+# Check task execution logs
+grep "ImplementAgent\|TaskDecomposer\|ErrorRecovery" logs/framework.log
 
-# Check if strategies are being recorded
-grep "record_success\|record_failure" logs/framework.log
+# View task-level error recovery attempts
+grep "recovery.*attempt\|strategy.*applied" logs/framework.log
+```
+
+**3. Manual Revision Not Working**
+```bash
+# Problem: --revise command not fixing issues
+# Solution: Check revision feedback and workflow state
+
+# Test revision command
+autogen-framework --revise "requirements:Please provide more specific requirements"
+
+# Check if revision was applied
+autogen-framework --status
 ```
 
 ### Context Management Issues

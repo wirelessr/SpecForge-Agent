@@ -11,6 +11,14 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
+class UserApprovalStatus(Enum):
+    """Status of user approval for workflow phases."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    NEEDS_REVISION = "needs_revision"
+
+
 class WorkflowPhase(Enum):
     """Enumeration of workflow phases in the multi-agent framework."""
     PLANNING = "planning"

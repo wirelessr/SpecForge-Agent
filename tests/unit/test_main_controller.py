@@ -28,7 +28,8 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
-from autogen_framework.main_controller import MainController, UserApprovalStatus
+from autogen_framework.main_controller import MainController
+from autogen_framework.models import UserApprovalStatus
 from autogen_framework.models import LLMConfig, WorkflowPhase
 from autogen_framework.memory_manager import MemoryManager
 from autogen_framework.agent_manager import AgentManager

@@ -28,12 +28,7 @@ from .context_compressor import ContextCompressor
 from .token_manager import TokenManager
 
 
-class UserApprovalStatus(Enum):
-    """Status of user approval for workflow phases."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    NEEDS_REVISION = "needs_revision"
+from .models import UserApprovalStatus
 
 
 class MainController:
@@ -74,13 +69,15 @@ class MainController:
         
         # Session-related properties (delegated to SessionManager after initialization)
         self.session_id: Optional[str] = None
-        self.current_workflow: Optional[WorkflowState] = None
-        self.user_approval_status: Dict[str, UserApprovalStatus] = {}
-        self.phase_results: Dict[str, Dict[str, Any]] = {}
-        self.execution_log: List[Dict[str, Any]] = []
-        self.approval_log: List[Dict[str, Any]] = []
-        self.error_recovery_attempts: Dict[str, int] = {}
-        self.workflow_summary: Dict[str, Any] = {
+        # Deprecated: workflow state is now managed by WorkflowManager as SSOT
+        # These fields are kept for backward compatibility and will be removed in future versions
+        self._current_workflow: Optional[WorkflowState] = None
+        self._user_approval_status: Dict[str, UserApprovalStatus] = {}
+        self._phase_results: Dict[str, Dict[str, Any]] = {}
+        self._execution_log: List[Dict[str, Any]] = []
+        self._approval_log: List[Dict[str, Any]] = []
+        self._error_recovery_attempts: Dict[str, int] = {}
+        self._workflow_summary: Dict[str, Any] = {
             'phases_completed': [],
             'tasks_completed': [],
             'token_usage': {},
@@ -90,6 +87,105 @@ class MainController:
         }
         
         self.logger.info(f"MainController initialized for workspace: {workspace_path}")
+    
+    # Backward compatibility properties - delegate to WorkflowManager
+    @property
+    def current_workflow(self) -> Optional[WorkflowState]:
+        """Get current workflow from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.current_workflow
+        return self._current_workflow
+    
+    @current_workflow.setter
+    def current_workflow(self, value: Optional[WorkflowState]) -> None:
+        """Set current workflow - updates WorkflowManager if available."""
+        self._current_workflow = value
+        if self.workflow_manager:
+            self.workflow_manager.current_workflow = value
+    
+    @property
+    def user_approval_status(self) -> Dict[str, UserApprovalStatus]:
+        """Get user approval status from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.user_approval_status
+        return self._user_approval_status
+    
+    @user_approval_status.setter
+    def user_approval_status(self, value: Dict[str, UserApprovalStatus]) -> None:
+        """Set user approval status - updates WorkflowManager if available."""
+        self._user_approval_status = value
+        if self.workflow_manager:
+            self.workflow_manager.user_approval_status = value
+    
+    @property
+    def phase_results(self) -> Dict[str, Dict[str, Any]]:
+        """Get phase results from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.phase_results
+        return self._phase_results
+    
+    @phase_results.setter
+    def phase_results(self, value: Dict[str, Dict[str, Any]]) -> None:
+        """Set phase results - updates WorkflowManager if available."""
+        self._phase_results = value
+        if self.workflow_manager:
+            self.workflow_manager.phase_results = value
+    
+    @property
+    def execution_log(self) -> List[Dict[str, Any]]:
+        """Get execution log from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.execution_log
+        return self._execution_log
+    
+    @execution_log.setter
+    def execution_log(self, value: List[Dict[str, Any]]) -> None:
+        """Set execution log - updates WorkflowManager if available."""
+        self._execution_log = value
+        if self.workflow_manager:
+            self.workflow_manager.execution_log = value
+    
+    @property
+    def approval_log(self) -> List[Dict[str, Any]]:
+        """Get approval log from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.approval_log
+        return self._approval_log
+    
+    @approval_log.setter
+    def approval_log(self, value: List[Dict[str, Any]]) -> None:
+        """Set approval log - updates WorkflowManager if available."""
+        self._approval_log = value
+        if self.workflow_manager:
+            self.workflow_manager.approval_log = value
+    
+    @property
+    def error_recovery_attempts(self) -> Dict[str, int]:
+        """Get error recovery attempts from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.error_recovery_attempts
+        return self._error_recovery_attempts
+    
+    @error_recovery_attempts.setter
+    def error_recovery_attempts(self, value: Dict[str, int]) -> None:
+        """Set error recovery attempts - updates WorkflowManager if available."""
+        self._error_recovery_attempts = value
+        if self.workflow_manager:
+            self.workflow_manager.error_recovery_attempts = value
+    
+    @property
+    def workflow_summary(self) -> Dict[str, Any]:
+        """Get workflow summary from WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.workflow_summary
+        return self._workflow_summary
+    
+    @workflow_summary.setter
+    def workflow_summary(self, value: Dict[str, Any]) -> None:
+        """Set workflow summary - updates WorkflowManager if available."""
+        self._workflow_summary = value
+        if self.workflow_manager:
+            self.workflow_manager.workflow_summary = value
     
     def initialize_framework(self, llm_config: Optional[LLMConfig] = None) -> bool:
         """
@@ -193,8 +289,8 @@ class MainController:
             self.agent_manager.set_context_manager(context_manager)
             self.logger.info("ContextManager passed to AgentManager")
         
-        # Sync workflow state back to MainController for backward compatibility
-        self._sync_workflow_state_from_manager()
+        # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
+        # self._sync_workflow_state_from_manager()
         
         return result
     
@@ -227,8 +323,8 @@ class MainController:
         # Delegate to WorkflowManager
         result = self.workflow_manager.approve_phase(phase, approved)
         
-        # Sync workflow state back to MainController for backward compatibility
-        self._sync_workflow_state_from_manager()
+        # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
+        # self._sync_workflow_state_from_manager()
         
         return result
     
@@ -242,8 +338,8 @@ class MainController:
         # Delegate to WorkflowManager
         result = await self.workflow_manager.continue_workflow()
         
-        # Sync workflow state back to MainController for backward compatibility
-        self._sync_workflow_state_from_manager()
+        # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
+        # self._sync_workflow_state_from_manager()
         
         return result
     
@@ -254,6 +350,10 @@ class MainController:
         Returns:
             Dictionary containing comprehensive framework status information
         """
+        # Prefer reading workflow state directly from WorkflowManager to avoid drift
+        wm = self.workflow_manager
+        current_workflow = wm.current_workflow if wm else self.current_workflow
+        approval_status = ( {k: v.value for k, v in wm.user_approval_status.items()} if wm else {k: v.value for k, v in self.user_approval_status.items()} )
         status = {
             "initialized": self.is_initialized,
             "session_id": self.session_id,
@@ -296,8 +396,8 @@ class MainController:
         # Delegate to WorkflowManager
         result = await self.workflow_manager.apply_phase_revision(phase, revision_feedback)
         
-        # Sync workflow state back to MainController for backward compatibility
-        self._sync_workflow_state_from_manager()
+        # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
+        # self._sync_workflow_state_from_manager()
         
         return result
     
@@ -321,8 +421,8 @@ class MainController:
         # Delegate to WorkflowManager
         result = self.workflow_manager.complete_workflow()
         
-        # Sync workflow state back to MainController for backward compatibility
-        self._sync_workflow_state_from_manager()
+        # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
+        # self._sync_workflow_state_from_manager()
         
         return result
     
@@ -333,6 +433,9 @@ class MainController:
         Returns:
             List of execution events with timestamps and details
         """
+        # Prefer WorkflowManager as SSOT, fallback to local copy for backward compatibility
+        if self.workflow_manager and hasattr(self.workflow_manager, 'execution_log'):
+            return self.workflow_manager.execution_log.copy()
         return self.execution_log.copy()
     
     def reset_framework(self) -> bool:
@@ -447,316 +550,29 @@ class MainController:
             self.logger.error(f"Error loading framework memory: {e}")
             return False
     
-    async def _execute_requirements_phase(self, user_request: str, workflow_id: str) -> Dict[str, Any]:
-        """Execute the requirements generation phase."""
-        self.logger.info("Executing requirements phase")
-        self.current_workflow.phase = WorkflowPhase.PLANNING
-        
-        try:
-            result = await self.agent_manager.coordinate_agents(
-                "requirements_generation",
-                {
-                    "user_request": user_request,
-                    "workspace_path": str(self.workspace_path)
-                }
-            )
-            
-            if result.get("success", False):
-                # Update workflow state
-                self.current_workflow.work_directory = result.get("work_directory", "")
-                
-                # Store phase result
-                self.phase_results["requirements"] = result
-                
-                # Record phase completion
-                self._record_execution_event(
-                    event_type="phase_completed",
-                    details={
-                        "phase": "requirements",
-                        "workflow_id": workflow_id,
-                        "work_directory": self.current_workflow.work_directory
-                    }
-                )
-                
-                # Save session state after phase completion
-                self._save_session_state()
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Requirements phase failed: {e}")
-            
-            # Attempt error recovery
-            recovery_context = {
-                "user_request": user_request,
-                "workspace_path": str(self.workspace_path),
-                "memory_context": self.memory_manager.load_memory() if self.memory_manager else {}
-            }
-            
-            if self.handle_error_recovery(e, "requirements", recovery_context):
-                self.logger.info("Requirements phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "requirements_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["requirements"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Requirements phase retry failed: {retry_error}")
-            
-            return {"success": False, "error": str(e)}
+# Deprecated: _execute_requirements_phase removed - WorkflowManager handles phase execution
     
-    async def _execute_design_phase(self, requirements_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
-        """Execute the design generation phase."""
-        self.logger.info("Executing design phase")
-        self.current_workflow.phase = WorkflowPhase.DESIGN
-        
-        try:
-            result = await self.agent_manager.coordinate_agents(
-                "design_generation",
-                {
-                    "requirements_path": requirements_result.get("requirements_path"),
-                    "work_directory": requirements_result.get("work_directory"),
-                    "memory_context": self.memory_manager.load_memory()
-                }
-            )
-            
-            if result.get("success", False):
-                # Store phase result
-                self.phase_results["design"] = result
-                
-                # Record phase completion
-                self._record_execution_event(
-                    event_type="phase_completed",
-                    details={
-                        "phase": "design",
-                        "workflow_id": workflow_id,
-                        "design_path": result.get("design_path")
-                    }
-                )
-                
-                # Save session state after phase completion
-                self._save_session_state()
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Design phase failed: {e}")
-            
-            # Attempt error recovery
-            recovery_context = {
-                "requirements_path": requirements_result.get("requirements_path"),
-                "work_directory": requirements_result.get("work_directory"),
-                "memory_context": self.memory_manager.load_memory()
-            }
-            
-            if self.handle_error_recovery(e, "design", recovery_context):
-                self.logger.info("Design phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "design_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["design"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Design phase retry failed: {retry_error}")
-            
-            return {"success": False, "error": str(e)}
+# Deprecated: _execute_design_phase removed - WorkflowManager handles phase execution
     
-    async def _execute_tasks_phase(self, design_result: Dict[str, Any], 
-                                  requirements_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
-        """Execute the task generation phase."""
-        self.logger.info("Executing tasks phase")
-        self.current_workflow.phase = WorkflowPhase.TASK_GENERATION
-        
-        try:
-            result = await self.agent_manager.coordinate_agents(
-                "task_generation",
-                {
-                    "task_type": "generate_task_list",
-                    "design_path": design_result.get("design_path"),
-                    "requirements_path": requirements_result.get("requirements_path"),
-                    "work_dir": requirements_result.get("work_directory")
-                }
-            )
-            
-            if result.get("success", False):
-                # Store phase result
-                self.phase_results["tasks"] = result
-                
-                # Record phase completion
-                self._record_execution_event(
-                    event_type="phase_completed",
-                    details={
-                        "phase": "tasks",
-                        "workflow_id": workflow_id,
-                        "tasks_file": result.get("tasks_file")
-                    }
-                )
-                
-                # Save session state after phase completion
-                self._save_session_state()
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Tasks phase failed: {e}")
-            
-            # Attempt error recovery
-            recovery_context = {
-                "design_path": design_result.get("design_path"),
-                "requirements_path": requirements_result.get("requirements_path"),
-                "work_directory": design_result.get("work_directory"),
-                "memory_context": self.memory_manager.load_memory()
-            }
-            
-            if self.handle_error_recovery(e, "tasks", recovery_context):
-                self.logger.info("Tasks phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    result = await self.agent_manager.coordinate_agents(
-                        "task_generation", recovery_context
-                    )
-                    if result.get("success", False):
-                        self.phase_results["tasks"] = result
-                        return result
-                except Exception as retry_error:
-                    self.logger.error(f"Tasks phase retry failed: {retry_error}")
-            
-            return {"success": False, "error": str(e)}
+# Deprecated: _execute_tasks_phase removed - WorkflowManager handles phase execution
     
-    async def _execute_implementation_phase(self, tasks_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
-        """Execute the implementation phase by actually running all tasks."""
-        self.logger.info("Executing implementation phase")
-        self.current_workflow.phase = WorkflowPhase.IMPLEMENTATION
-        
-        try:
-            # Try both "tasks_file" and "tasks_path" for compatibility
-            tasks_file = tasks_result.get("tasks_file") or tasks_result.get("tasks_path")
-            work_directory = self.current_workflow.work_directory
-            
-            if not tasks_file or not Path(tasks_file).exists():
-                return {
-                    "success": False,
-                    "error": f"Tasks file not found: {tasks_file}"
-                }
-            
-            # Parse tasks from tasks.md file
-            tasks = self._parse_tasks_from_file(tasks_file)
-            
-            if not tasks:
-                return {
-                    "success": False,
-                    "error": "No tasks found in tasks.md file"
-                }
-            
-            self.logger.info(f"Found {len(tasks)} tasks to execute")
-            
-            # Execute all tasks using the ImplementAgent
-            execution_result = await self.agent_manager.coordinate_agents(
-                "execute_multiple_tasks",
-                {
-                    "task_type": "execute_multiple_tasks",
-                    "tasks": tasks,
-                    "work_dir": work_directory,
-                    "stop_on_failure": False  # Continue even if some tasks fail
-                }
-            )
-            
-            # Update tasks.md file with completion status
-            if execution_result.get("success"):
-                self._update_tasks_file_with_completion(tasks_file, execution_result.get("task_results", []))
-            
-            # Record phase completion
-            self._record_execution_event(
-                event_type="phase_completed",
-                details={
-                    "phase": "implementation",
-                    "workflow_id": workflow_id,
-                    "status": "tasks_executed",
-                    "total_tasks": len(tasks),
-                    "completed_tasks": execution_result.get("completed_count", 0),
-                    "success_rate": f"{execution_result.get('completed_count', 0)}/{len(tasks)}"
-                }
-            )
-            
-            result = {
-                "success": execution_result.get("success", False),
-                "message": f"Implementation phase completed. {execution_result.get('completed_count', 0)}/{len(tasks)} tasks executed successfully.",
-                "tasks_file": tasks_file,
-                "work_directory": work_directory,
-                "total_tasks": len(tasks),
-                "completed_tasks": execution_result.get("completed_count", 0),
-                "task_results": execution_result.get("task_results", []),
-                "execution_completed": True
-            }
-            
-            return result
-            
-        except Exception as e:
-            self.logger.error(f"Implementation phase failed: {e}")
-            
-            # Attempt error recovery
-            recovery_context = {
-                "tasks_file": tasks_file,
-                "work_directory": self.current_workflow.work_directory,
-                "memory_context": self.memory_manager.load_memory()
-            }
-            
-            if self.handle_error_recovery(e, "implementation", recovery_context):
-                self.logger.info("Implementation phase recovered from error, retrying...")
-                # Retry the phase after successful recovery
-                try:
-                    # Re-parse tasks and retry execution
-                    tasks = self._parse_tasks_from_file(tasks_file)
-                    uncompleted_tasks = [task for task in tasks if not task.completed]
-                    
-                    if uncompleted_tasks:
-                        task_results = await self.agent_manager.coordinate_agents(
-                            "execute_multiple_tasks",
-                            {
-                                "tasks": [task.to_dict() for task in uncompleted_tasks],
-                                "work_directory": self.current_workflow.work_directory,
-                                "memory_context": self.memory_manager.load_memory()
-                            }
-                        )
-                        
-                        if task_results.get("success", False):
-                            self._update_tasks_file_with_completion(tasks_file, task_results.get("task_results", []))
-                            result = {
-                                "success": True,
-                                "execution_completed": True,
-                                "tasks_completed": len(task_results.get("task_results", [])),
-                                "work_directory": self.current_workflow.work_directory
-                            }
-                            self.phase_results["implementation"] = result
-                            return result
-                except Exception as retry_error:
-                    self.logger.error(f"Implementation phase retry failed: {retry_error}")
-            
-            return {"success": False, "error": str(e)}
+# Deprecated: _execute_implementation_phase removed - WorkflowManager handles phase execution
     
-    def _is_phase_approved(self, phase: str) -> bool:
-        """Check if a phase has been approved by the user."""
-        return self.user_approval_status.get(phase) == UserApprovalStatus.APPROVED
+# Deprecated: approval and error recovery methods removed - WorkflowManager handles these
     
+# Deprecated: should_auto_approve removed - WorkflowManager handles auto-approval logic
+    
+# Deprecated: All error recovery and approval helper methods removed - WorkflowManager handles these
+    
+# Backward compatibility methods - delegate to WorkflowManager
     def should_auto_approve(self, phase: str, auto_approve: bool) -> bool:
-        """
-        Determine if phase should be automatically approved based on --auto-approve flag.
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.should_auto_approve(phase, auto_approve)
         
-        Args:
-            phase: Phase name ("requirements", "design", "tasks")
-            auto_approve: Whether auto-approve mode is enabled
-            
-        Returns:
-            True if phase should be automatically approved, False otherwise
-        """
+        # Fallback logic when WorkflowManager is not available (e.g., in tests)
         # First check if phase is already manually approved
-        if self._is_phase_approved(phase):
+        if self.user_approval_status.get(phase) == UserApprovalStatus.APPROVED:
             return True
         
         # If auto-approve is not enabled, return False
@@ -782,209 +598,63 @@ class MainController:
         
         return True
     
+    def log_auto_approval(self, phase: str, decision: bool, reason: str) -> None:
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            self.workflow_manager.log_auto_approval(phase, decision, reason)
+        else:
+            # Fallback logic when WorkflowManager is not available
+            approval_entry = {
+                'phase': phase,
+                'decision': decision,
+                'reason': reason,
+                'timestamp': datetime.now().isoformat()
+            }
+            self.approval_log.append(approval_entry)
+            self.workflow_summary['auto_approvals'].append(approval_entry)
+            self.logger.info(f"Auto-approval decision for {phase}: {decision} - {reason}")
+    
+    def handle_error_recovery(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager.handle_error_recovery(error, phase, context)
+        return False
+    
     def _get_critical_checkpoints(self) -> List[str]:
-        """
-        Get list of critical checkpoints that require explicit approval.
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager._get_critical_checkpoints()
         
-        Returns:
-            List of phase names that are considered critical checkpoints
-        """
-        # For now, no phases are considered critical checkpoints
-        # This can be configured via environment variables or config in the future
+        # Fallback logic when WorkflowManager is not available
         critical_checkpoints_env = os.getenv('AUTO_APPROVE_CRITICAL_CHECKPOINTS', '')
         if critical_checkpoints_env:
             return [phase.strip() for phase in critical_checkpoints_env.split(',')]
         return []
     
-    def log_auto_approval(self, phase: str, decision: bool, reason: str) -> None:
-        """
-        Log automatic approval decisions for audit trail.
-        
-        Args:
-            phase: Phase name
-            decision: Whether the phase was approved
-            reason: Reason for the decision
-        """
-        approval_entry = {
-            'phase': phase,
-            'decision': decision,
-            'reason': reason,
-            'timestamp': datetime.now().isoformat()
-        }
-        self.approval_log.append(approval_entry)
-        self.workflow_summary['auto_approvals'].append(approval_entry)
-        self.logger.info(f"Auto-approval decision for {phase}: {decision} - {reason}")
+    def _parse_tasks_from_file(self, tasks_file: str):
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager._parse_tasks_from_file(tasks_file)
+        return []
     
-    def handle_error_recovery(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Attempt automatic error recovery. Returns True if recovery successful.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        max_attempts = self._get_error_recovery_max_attempts()
-        current_attempts = self.error_recovery_attempts.get(phase, 0)
-        
-        if current_attempts >= max_attempts:
-            self.logger.error(f"Maximum error recovery attempts ({max_attempts}) exceeded for {phase}")
-            return False
-        
-        self.error_recovery_attempts[phase] = current_attempts + 1
-        
-        # Attempt recovery strategies
-        recovery_strategies = [
-            self._retry_with_modified_parameters,
-            self._skip_non_critical_steps,
-            self._use_fallback_implementation
-        ]
-        
-        for strategy in recovery_strategies:
-            try:
-                if strategy(error, phase, context):
-                    self.workflow_summary['errors_recovered'].append({
-                        'phase': phase,
-                        'error': str(error),
-                        'strategy': getattr(strategy, '__name__', str(strategy)),
-                        'attempt': current_attempts + 1,
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    self.logger.info(f"Error recovery successful using {getattr(strategy, '__name__', str(strategy))} for {phase}")
-                    return True
-            except Exception as recovery_error:
-                self.logger.warning(f"Recovery strategy {getattr(strategy, '__name__', str(strategy))} failed: {recovery_error}")
-        
-        return False
+    def _update_tasks_file_with_completion(self, tasks_file: str, task_results: List[Dict[str, Any]]) -> None:
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            self.workflow_manager._update_tasks_file_with_completion(tasks_file, task_results)
     
     def _get_error_recovery_max_attempts(self) -> int:
-        """Get maximum error recovery attempts from configuration."""
+        """Delegate to WorkflowManager for backward compatibility."""
+        if self.workflow_manager:
+            return self.workflow_manager._get_error_recovery_max_attempts()
+        
+        # Fallback logic when WorkflowManager is not available
         return int(os.getenv('AUTO_APPROVE_ERROR_RECOVERY_ATTEMPTS', '3'))
     
-    def _retry_with_modified_parameters(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Recovery strategy: Retry with modified parameters.
-        
-        This strategy attempts to recover from errors by modifying parameters
-        that might have caused the failure and retrying the operation.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        self.logger.info(f"Attempting retry with modified parameters for {phase}")
-        
-        try:
-            # Modify parameters based on error type and phase
-            modified_context = self._modify_parameters_for_retry(error, phase, context)
-            
-            if not modified_context:
-                self.logger.warning(f"Could not determine parameter modifications for {phase}")
-                return False
-            
-            # Retry the operation with modified parameters
-            if phase == "requirements":
-                return self._retry_requirements_generation(modified_context)
-            elif phase == "design":
-                return self._retry_design_generation(modified_context)
-            elif phase == "tasks":
-                return self._retry_tasks_generation(modified_context)
-            elif phase == "implementation":
-                return self._retry_implementation_execution(modified_context)
-            else:
-                self.logger.warning(f"Unknown phase for retry: {phase}")
-                return False
-                
-        except Exception as retry_error:
-            self.logger.error(f"Retry with modified parameters failed for {phase}: {retry_error}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _skip_non_critical_steps(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Recovery strategy: Skip non-critical steps.
-        
-        This strategy attempts to recover by identifying and skipping
-        non-essential steps that might be causing the failure.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        self.logger.info(f"Attempting to skip non-critical steps for {phase}")
-        
-        try:
-            # Identify non-critical steps that can be skipped
-            non_critical_steps = self._identify_non_critical_steps(phase, error)
-            
-            if not non_critical_steps:
-                self.logger.info(f"No non-critical steps identified for {phase}")
-                return False
-            
-            # Create simplified context by skipping non-critical steps
-            simplified_context = self._create_simplified_context(context, non_critical_steps)
-            
-            # Retry with simplified approach
-            if phase == "requirements":
-                return self._execute_simplified_requirements(simplified_context)
-            elif phase == "design":
-                return self._execute_simplified_design(simplified_context)
-            elif phase == "tasks":
-                return self._execute_simplified_tasks(simplified_context)
-            elif phase == "implementation":
-                return self._execute_simplified_implementation(simplified_context)
-            else:
-                self.logger.warning(f"Unknown phase for simplified execution: {phase}")
-                return False
-                
-        except Exception as skip_error:
-            self.logger.error(f"Skip non-critical steps failed for {phase}: {skip_error}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _use_fallback_implementation(self, error: Exception, phase: str, context: Dict[str, Any]) -> bool:
-        """
-        Recovery strategy: Use fallback implementation.
-        
-        This strategy uses a simpler, more reliable fallback approach
-        when the primary implementation fails.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Context information for recovery
-            
-        Returns:
-            True if recovery was successful, False otherwise
-        """
-        self.logger.info(f"Attempting fallback implementation for {phase}")
-        
-        try:
-            # Use fallback implementation based on phase
-            if phase == "requirements":
-                return self._fallback_requirements_generation(context)
-            elif phase == "design":
-                return self._fallback_design_generation(context)
-            elif phase == "tasks":
-                return self._fallback_tasks_generation(context)
-            elif phase == "implementation":
-                return self._fallback_implementation_execution(context)
-            else:
-                self.logger.warning(f"Unknown phase for fallback implementation: {phase}")
-                return False
-                
-        except Exception as fallback_error:
-            self.logger.error(f"Fallback implementation failed for {phase}: {fallback_error}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
     def get_comprehensive_summary(self) -> Dict[str, Any]:
         """
@@ -1035,102 +705,9 @@ class MainController:
         self.execution_log.append(event)
         self.logger.debug(f"Recorded execution event: {event_type}")
     
-    def _parse_tasks_from_file(self, tasks_file: str) -> List['TaskDefinition']:
-        """Parse tasks from tasks.md file and return TaskDefinition objects."""
-        try:
-            from .models import TaskDefinition
-            
-            with open(tasks_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            tasks = []
-            lines = content.split('\n')
-            current_task_data = None
-            
-            for i, line in enumerate(lines):
-                # Check for task line (starts with - [ ] or - [x])
-                if line.strip().startswith('- ['):
-                    # Save previous task if exists
-                    if current_task_data:
-                        task_def = TaskDefinition(
-                            id=current_task_data["id"],
-                            title=current_task_data["title"],
-                            description=current_task_data["description"],
-                            steps=current_task_data["steps"],
-                            requirements_ref=current_task_data["requirements_ref"],
-                            completed=current_task_data["completed"]
-                        )
-                        tasks.append(task_def)
-                    
-                    # Extract task title (everything after the checkbox)
-                    task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] "
-                    
-                    current_task_data = {
-                        "id": f"task_{len(tasks) + 1}",
-                        "title": task_title,
-                        "description": task_title,
-                        "steps": [],
-                        "requirements_ref": [],
-                        "completed": line.strip().startswith('- [x]')
-                    }
-                
-                elif current_task_data and line.strip().startswith('- Step'):
-                    # Add step to current task
-                    step = line.strip()[2:].strip()  # Remove "- "
-                    current_task_data["steps"].append(step)
-                
-                elif current_task_data and line.strip().startswith('- Requirements:'):
-                    # Extract requirements
-                    req_text = line.strip()[14:].strip()  # Remove "- Requirements: "
-                    current_task_data["requirements_ref"] = [r.strip() for r in req_text.split(',')]
-            
-            # Add the last task
-            if current_task_data:
-                task_def = TaskDefinition(
-                    id=current_task_data["id"],
-                    title=current_task_data["title"],
-                    description=current_task_data["description"],
-                    steps=current_task_data["steps"],
-                    requirements_ref=current_task_data["requirements_ref"],
-                    completed=current_task_data["completed"]
-                )
-                tasks.append(task_def)
-            
-            # Filter out already completed tasks
-            uncompleted_tasks = [task for task in tasks if not task.completed]
-            
-            self.logger.info(f"Parsed {len(tasks)} total tasks, {len(uncompleted_tasks)} uncompleted")
-            return uncompleted_tasks
-            
-        except Exception as e:
-            self.logger.error(f"Error parsing tasks file: {e}")
-            return []
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _update_tasks_file_with_completion(self, tasks_file: str, task_results: List[Dict[str, Any]]) -> None:
-        """Update tasks.md file to mark completed tasks."""
-        try:
-            with open(tasks_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            lines = content.split('\n')
-            task_index = 0
-            
-            for i, line in enumerate(lines):
-                if line.strip().startswith('- [ ]'):
-                    # Check if this task was completed
-                    if task_index < len(task_results) and task_results[task_index].get("success", False):
-                        # Mark as completed
-                        lines[i] = line.replace('- [ ]', '- [x]')
-                    task_index += 1
-            
-            # Write back to file
-            with open(tasks_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines))
-            
-            self.logger.info(f"Updated tasks file with completion status")
-            
-        except Exception as e:
-            self.logger.error(f"Error updating tasks file: {e}")
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
     def _get_json_safe_framework_status(self) -> Dict[str, Any]:
         """
@@ -1225,14 +802,8 @@ class MainController:
             report = {
                 "timestamp": datetime.now().isoformat(),
                 "framework_status": self._get_json_safe_framework_status(),
-                "execution_log": self._make_json_safe(self.execution_log),
-                "workflow_state": {
-                    "current_workflow": {
-                        "phase": self.current_workflow.phase.value if self.current_workflow else None,
-                        "work_directory": self.current_workflow.work_directory if self.current_workflow else None
-                    },
-                    "approval_status": {k: v.value for k, v in self.user_approval_status.items()}
-                }
+                "execution_log": self._make_json_safe(self.get_execution_log()),
+                "workflow_state": self._get_workflow_state_from_wm()
             }
             
             # Add agent coordination report if available
@@ -1338,9 +909,7 @@ class MainController:
         self.error_recovery_attempts = self.session_manager.error_recovery_attempts
         self.workflow_summary = self.session_manager.workflow_summary
         
-        # Sync session data to WorkflowManager if it exists
-        if self.workflow_manager:
-            self._sync_workflow_state_to_manager()
+        # Deprecated: No longer sync state to WorkflowManager - it loads from SessionManager directly
     
     def _create_new_session(self):
         """Create a new session with unique ID."""
@@ -1381,49 +950,36 @@ class MainController:
         # Save through SessionManager
         return self.session_manager.save_session_state()
     
-    def _sync_workflow_state_to_manager(self):
-        """Sync workflow state from MainController to WorkflowManager."""
+    def _get_workflow_state_from_wm(self) -> Dict[str, Any]:
+        """Get workflow state from WorkflowManager for reporting."""
         if not self.workflow_manager:
-            return
-            
-        self.workflow_manager.current_workflow = self.current_workflow
+            # Fallback to local state for backward compatibility
+            return {
+                "current_workflow": {
+                    "phase": self.current_workflow.phase.value if self.current_workflow else None,
+                    "work_directory": self.current_workflow.work_directory if self.current_workflow else None
+                },
+                "approval_status": {k: v.value for k, v in self.user_approval_status.items()}
+            }
         
-        # Convert approval status from enum values to WorkflowManager enum
-        from .workflow_manager import UserApprovalStatus as WMUserApprovalStatus
-        self.workflow_manager.user_approval_status = {
-            k: WMUserApprovalStatus(v.value) for k, v in self.user_approval_status.items()
+        wm = self.workflow_manager
+        current_workflow = wm.current_workflow
+        return {
+            "current_workflow": {
+                "phase": current_workflow.phase.value if current_workflow else None,
+                "work_directory": current_workflow.work_directory if current_workflow else None
+            },
+            "approval_status": {k: v.value for k, v in wm.user_approval_status.items()}
         }
-        
-        self.workflow_manager.phase_results = self.phase_results
-        self.workflow_manager.execution_log = self.execution_log
-        self.workflow_manager.approval_log = self.approval_log
-        self.workflow_manager.error_recovery_attempts = self.error_recovery_attempts
-        self.workflow_manager.workflow_summary = self.workflow_summary
+    
+# Backward compatibility stubs for removed sync methods
+    def _sync_workflow_state_to_manager(self):
+        """Deprecated: No-op for backward compatibility. State is now automatically synced via properties."""
+        pass
     
     def _sync_workflow_state_from_manager(self):
-        """Sync workflow state from WorkflowManager back to MainController."""
-        if not self.workflow_manager:
-            return
-            
-        self.current_workflow = self.workflow_manager.current_workflow
-        
-        # Convert approval status from WorkflowManager enum to MainController enum
-        self.user_approval_status = {
-            k: UserApprovalStatus(v.value) for k, v in self.workflow_manager.user_approval_status.items()
-        }
-        
-        self.phase_results = self.workflow_manager.phase_results
-        self.execution_log = self.workflow_manager.execution_log
-        self.approval_log = self.workflow_manager.approval_log
-        self.error_recovery_attempts = self.workflow_manager.error_recovery_attempts
-        self.workflow_summary = self.workflow_manager.workflow_summary
-        self.session_manager.execution_log = self.execution_log
-        self.session_manager.approval_log = self.approval_log
-        self.session_manager.error_recovery_attempts = self.error_recovery_attempts
-        self.session_manager.workflow_summary = self.workflow_summary
-        
-        # Delegate to SessionManager
-        return self.session_manager.save_session_state()
+        """Deprecated: No-op for backward compatibility. State is now automatically synced via properties."""
+        pass
     
     def get_session_id(self) -> str:
         """Get the current session ID."""
@@ -1455,329 +1011,33 @@ class MainController:
     
     # Error Recovery Helper Methods
     
-    def _modify_parameters_for_retry(self, error: Exception, phase: str, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Modify parameters based on error type and phase for retry strategy.
-        
-        Args:
-            error: The exception that occurred
-            phase: Phase where the error occurred
-            context: Original context information
-            
-        Returns:
-            Modified context for retry, or None if no modifications possible
-        """
-        modified_context = context.copy()
-        error_str = str(error).lower()
-        
-        # Common parameter modifications based on error patterns
-        if "timeout" in error_str or "connection" in error_str:
-            # Increase timeout and add retry parameters
-            modified_context["timeout"] = modified_context.get("timeout", 30) * 2
-            modified_context["max_retries"] = 3
-            modified_context["retry_delay"] = 5
-            self.logger.info(f"Modified parameters for connection/timeout error in {phase}")
-            
-        elif "memory" in error_str or "limit" in error_str:
-            # Reduce complexity for memory/limit errors
-            modified_context["max_complexity"] = "low"
-            modified_context["simplified_mode"] = True
-            modified_context["reduce_detail"] = True
-            self.logger.info(f"Modified parameters for memory/limit error in {phase}")
-            
-        elif "format" in error_str or "parse" in error_str:
-            # Use more structured format for parsing errors
-            modified_context["strict_format"] = True
-            modified_context["use_templates"] = True
-            modified_context["validate_output"] = True
-            self.logger.info(f"Modified parameters for format/parse error in {phase}")
-            
-        elif "permission" in error_str or "access" in error_str:
-            # Try alternative paths or methods for permission errors
-            modified_context["use_alternative_path"] = True
-            modified_context["fallback_mode"] = True
-            self.logger.info(f"Modified parameters for permission/access error in {phase}")
-            
-        else:
-            # Generic modifications for unknown errors
-            modified_context["safe_mode"] = True
-            modified_context["verbose_logging"] = True
-            modified_context["error_recovery"] = True
-            self.logger.info(f"Applied generic parameter modifications for {phase}")
-        
-        return modified_context
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _retry_requirements_generation(self, context: Dict[str, Any]) -> bool:
-        """Retry requirements generation with modified parameters."""
-        try:
-            self.logger.info("Retrying requirements generation with modified parameters")
-            
-            # Use simplified prompt if in safe mode
-            if context.get("safe_mode"):
-                context["simplified_prompt"] = True
-                context["basic_requirements_only"] = True
-            
-            # This would normally call the agent manager with modified context
-            # For now, we'll simulate a successful retry
-            self.logger.info("Requirements generation retry completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Requirements generation retry failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _retry_design_generation(self, context: Dict[str, Any]) -> bool:
-        """Retry design generation with modified parameters."""
-        try:
-            self.logger.info("Retrying design generation with modified parameters")
-            
-            # Use simplified design approach if needed
-            if context.get("simplified_mode"):
-                context["basic_design_only"] = True
-                context["skip_advanced_patterns"] = True
-            
-            # This would normally call the agent manager with modified context
-            self.logger.info("Design generation retry completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Design generation retry failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _retry_tasks_generation(self, context: Dict[str, Any]) -> bool:
-        """Retry tasks generation with modified parameters."""
-        try:
-            self.logger.info("Retrying tasks generation with modified parameters")
-            
-            # Use simpler task structure if needed
-            if context.get("reduce_detail"):
-                context["simple_tasks_only"] = True
-                context["minimal_descriptions"] = True
-            
-            # This would normally call the agent manager with modified context
-            self.logger.info("Tasks generation retry completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Tasks generation retry failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _retry_implementation_execution(self, context: Dict[str, Any]) -> bool:
-        """Retry implementation execution with modified parameters."""
-        try:
-            self.logger.info("Retrying implementation execution with modified parameters")
-            
-            # Use safer execution mode if needed
-            if context.get("fallback_mode"):
-                context["safe_execution"] = True
-                context["skip_risky_operations"] = True
-            
-            # This would normally call the agent manager with modified context
-            self.logger.info("Implementation execution retry completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Implementation execution retry failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _identify_non_critical_steps(self, phase: str, error: Exception) -> List[str]:
-        """
-        Identify non-critical steps that can be skipped for recovery.
-        
-        Args:
-            phase: Phase where the error occurred
-            error: The exception that occurred
-            
-        Returns:
-            List of non-critical step names that can be skipped
-        """
-        non_critical_steps = []
-        error_str = str(error).lower()
-        
-        if phase == "requirements":
-            # Non-critical steps in requirements generation
-            non_critical_steps = [
-                "detailed_examples",
-                "edge_case_analysis", 
-                "performance_requirements",
-                "advanced_validation"
-            ]
-            
-        elif phase == "design":
-            # Non-critical steps in design generation
-            non_critical_steps = [
-                "detailed_diagrams",
-                "performance_optimization",
-                "advanced_patterns",
-                "comprehensive_error_handling"
-            ]
-            
-        elif phase == "tasks":
-            # Non-critical steps in task generation
-            non_critical_steps = [
-                "detailed_descriptions",
-                "dependency_analysis",
-                "time_estimates",
-                "risk_assessment"
-            ]
-            
-        elif phase == "implementation":
-            # Non-critical steps in implementation
-            non_critical_steps = [
-                "comprehensive_testing",
-                "performance_optimization",
-                "advanced_error_handling",
-                "detailed_logging"
-            ]
-        
-        # Filter based on error type
-        if "timeout" in error_str:
-            # For timeout errors, skip time-consuming steps
-            non_critical_steps.extend(["comprehensive_analysis", "detailed_validation"])
-        
-        self.logger.info(f"Identified {len(non_critical_steps)} non-critical steps for {phase}")
-        return non_critical_steps
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _create_simplified_context(self, context: Dict[str, Any], skip_steps: List[str]) -> Dict[str, Any]:
-        """
-        Create simplified context by marking steps to skip.
-        
-        Args:
-            context: Original context
-            skip_steps: List of steps to skip
-            
-        Returns:
-            Simplified context with skip instructions
-        """
-        simplified_context = context.copy()
-        simplified_context["skip_steps"] = skip_steps
-        simplified_context["simplified_execution"] = True
-        simplified_context["focus_on_essentials"] = True
-        
-        self.logger.info(f"Created simplified context skipping {len(skip_steps)} steps")
-        return simplified_context
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _execute_simplified_requirements(self, context: Dict[str, Any]) -> bool:
-        """Execute simplified requirements generation."""
-        try:
-            self.logger.info("Executing simplified requirements generation")
-            
-            # Focus on core requirements only
-            context["core_requirements_only"] = True
-            context["minimal_detail"] = True
-            
-            # This would normally call the agent manager with simplified context
-            self.logger.info("Simplified requirements generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Simplified requirements generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _execute_simplified_design(self, context: Dict[str, Any]) -> bool:
-        """Execute simplified design generation."""
-        try:
-            self.logger.info("Executing simplified design generation")
-            
-            # Focus on basic design only
-            context["basic_architecture_only"] = True
-            context["skip_complex_patterns"] = True
-            
-            # This would normally call the agent manager with simplified context
-            self.logger.info("Simplified design generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Simplified design generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _execute_simplified_tasks(self, context: Dict[str, Any]) -> bool:
-        """Execute simplified tasks generation."""
-        try:
-            self.logger.info("Executing simplified tasks generation")
-            
-            # Focus on essential tasks only
-            context["essential_tasks_only"] = True
-            context["basic_descriptions"] = True
-            
-            # This would normally call the agent manager with simplified context
-            self.logger.info("Simplified tasks generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Simplified tasks generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _execute_simplified_implementation(self, context: Dict[str, Any]) -> bool:
-        """Execute simplified implementation."""
-        try:
-            self.logger.info("Executing simplified implementation")
-            
-            # Focus on core functionality only
-            context["core_functionality_only"] = True
-            context["skip_advanced_features"] = True
-            
-            # This would normally call the agent manager with simplified context
-            self.logger.info("Simplified implementation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Simplified implementation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _fallback_requirements_generation(self, context: Dict[str, Any]) -> bool:
-        """Fallback requirements generation using basic templates."""
-        try:
-            self.logger.info("Using fallback requirements generation")
-            
-            # Use basic template-based approach
-            context["use_basic_template"] = True
-            context["minimal_requirements"] = True
-            context["no_advanced_features"] = True
-            
-            # This would normally use a simple template-based generator
-            self.logger.info("Fallback requirements generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Fallback requirements generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _fallback_design_generation(self, context: Dict[str, Any]) -> bool:
-        """Fallback design generation using standard patterns."""
-        try:
-            self.logger.info("Using fallback design generation")
-            
-            # Use standard design patterns
-            context["use_standard_patterns"] = True
-            context["basic_architecture"] = True
-            context["no_custom_solutions"] = True
-            
-            # This would normally use predefined design templates
-            self.logger.info("Fallback design generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Fallback design generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
-    def _fallback_tasks_generation(self, context: Dict[str, Any]) -> bool:
-        """Fallback tasks generation using basic task templates."""
-        try:
-            self.logger.info("Using fallback tasks generation")
-            
-            # Use basic task templates
-            context["use_basic_tasks"] = True
-            context["standard_workflow"] = True
-            context["no_complex_dependencies"] = True
-            
-            # This would normally use simple task templates
-            self.logger.info("Fallback tasks generation completed successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Fallback tasks generation failed: {e}")
-            return False
+# Deprecated: Method removed - WorkflowManager handles this functionality
     
     def _fallback_implementation_execution(self, context: Dict[str, Any]) -> bool:
         """Fallback implementation execution using safe methods."""

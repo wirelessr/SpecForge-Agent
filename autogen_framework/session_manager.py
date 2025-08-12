@@ -17,12 +17,7 @@ from typing import Dict, Any, Optional
 from .models import WorkflowState, WorkflowPhase
 
 
-class UserApprovalStatus:
-    """Status of user approval for workflow phases."""
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    NEEDS_REVISION = "needs_revision"
+# Use shared UserApprovalStatus enum values as plain strings in persisted data
 
 
 class SessionManager:

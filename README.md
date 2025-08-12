@@ -14,13 +14,13 @@ A Python-based multi-agent collaboration framework using AutoGen for project dev
 
 ### Autonomous Execution Enhancement
 - **Intelligent Task Decomposition**: Automatically converts high-level tasks into sequential shell command interactions
-- **Multi-Strategy Error Recovery**: Analyzes failures and tries different approaches automatically
+- **Task-Level Error Recovery**: ImplementAgent provides sophisticated error recovery for individual tasks
 - **Context-Aware Execution**: Uses comprehensive project context including requirements, design, and execution history
 - **Quality-First Implementation**: Produces high-quality, maintainable code following project standards
 
 ### Advanced Components
 - **TaskDecomposer**: Breaks down complex tasks into executable shell command sequences with conditional logic
-- **ErrorRecovery**: Intelligent error analysis and alternative strategy generation
+- **ErrorRecovery**: Intelligent error analysis and alternative strategy generation for task execution
 - **ContextManager**: Comprehensive project context integration with agent-specific interfaces
 - **Quality Measurement Framework**: Objective quality metrics and continuous improvement tracking
 
@@ -75,10 +75,10 @@ The enhanced ImplementAgent provides several autonomous capabilities:
 - Analyzes task complexity and generates conditional execution plans
 - Adapts command sequences based on intermediate results
 
-#### Multi-Strategy Error Recovery
-- Categorizes errors and analyzes root causes automatically
-- Generates ranked alternative strategies for failure recovery
-- Learns from successful recovery patterns for future use
+#### Error Handling Strategy
+- **Task-Level Recovery**: ImplementAgent provides sophisticated error recovery for individual task execution
+- **Workflow-Level Guidance**: Clear error messages guide users to use manual revision via `--revise`
+- **Phase Failures**: Users receive specific guidance on how to fix requirements, design, or tasks phases
 
 #### Context-Aware Implementation
 - Uses comprehensive project context (requirements, design, execution history)
@@ -281,15 +281,15 @@ executor = ShellExecutor(error_recovery)
 result = await executor.execute_plan(execution_plan)
 ```
 
-#### ErrorRecovery Integration
+#### Error Handling Approach
 ```python
-# Multi-strategy error handling
-error_recovery = ErrorRecovery(context_manager)
-recovery_result = await error_recovery.recover(failed_result, execution_plan)
+# Task-level error recovery (handled automatically by ImplementAgent)
+implement_agent = ImplementAgent(shell_executor, task_decomposer, error_recovery)
+result = await implement_agent.execute_task(task_definition, work_dir)
 
-if recovery_result.success:
-    # Continue with updated plan
-    updated_plan = recovery_result.updated_plan
+# Workflow-level errors provide user guidance
+# When phases fail, users receive clear --revise command examples:
+# "To fix this issue, use: autogen-framework --revise 'design:Please simplify the design'"
 ```
 
 ## Requirements
