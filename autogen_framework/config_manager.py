@@ -171,7 +171,21 @@ class ConfigManager:
             'SHELL_MAX_RETRIES': ('shell_max_retries', 2, int)
         }
         
-        for env_var, (config_key, default_value, value_type) in framework_vars.items():
+        # Task completion configuration with defaults
+        task_completion_vars = {
+            'TASK_REAL_TIME_UPDATES_ENABLED': ('task_real_time_updates_enabled', True, lambda x: x.lower() == 'true'),
+            'TASK_FALLBACK_TO_BATCH_ENABLED': ('task_fallback_to_batch_enabled', True, lambda x: x.lower() == 'true'),
+            'TASK_MAX_INDIVIDUAL_UPDATE_RETRIES': ('task_max_individual_update_retries', 3, int),
+            'TASK_INDIVIDUAL_UPDATE_RETRY_DELAY': ('task_individual_update_retry_delay', 0.1, float),
+            'TASK_FILE_LOCK_TIMEOUT': ('task_file_lock_timeout', 5, int),
+            'TASK_DETAILED_LOGGING_ENABLED': ('task_detailed_logging_enabled', True, lambda x: x.lower() == 'true'),
+            'TASK_RECOVERY_MECHANISM_ENABLED': ('task_recovery_mechanism_enabled', True, lambda x: x.lower() == 'true')
+        }
+        
+        # Combine all framework variables
+        all_framework_vars = {**framework_vars, **task_completion_vars}
+        
+        for env_var, (config_key, default_value, value_type) in all_framework_vars.items():
             value = os.getenv(env_var)
             if value:
                 try:
@@ -382,7 +396,11 @@ class ConfigManager:
             'LLM_BASE_URL', 'LLM_MODEL', 'LLM_API_KEY', 'LLM_TEMPERATURE',
             'LLM_MAX_OUTPUT_TOKENS', 'LLM_TIMEOUT_SECONDS',
             'WORKSPACE_PATH', 'LOG_LEVEL', 'LOG_FILE',
-            'SHELL_TIMEOUT_SECONDS', 'SHELL_MAX_RETRIES'
+            'SHELL_TIMEOUT_SECONDS', 'SHELL_MAX_RETRIES',
+            'TASK_REAL_TIME_UPDATES_ENABLED', 'TASK_FALLBACK_TO_BATCH_ENABLED',
+            'TASK_MAX_INDIVIDUAL_UPDATE_RETRIES', 'TASK_INDIVIDUAL_UPDATE_RETRY_DELAY',
+            'TASK_FILE_LOCK_TIMEOUT', 'TASK_DETAILED_LOGGING_ENABLED',
+            'TASK_RECOVERY_MECHANISM_ENABLED'
         ]
         
         for var in all_vars:

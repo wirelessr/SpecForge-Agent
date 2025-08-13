@@ -296,6 +296,114 @@ class TestTasksAgentTaskGeneration:
         assert len(task.steps) == 2
         assert task.requirements_ref == []
     
+    def test_parse_task_list_with_numbered_tasks(self, tasks_agent):
+        """Test parsing task list with numbered tasks (new functionality)."""
+        task_content = """# Implementation Tasks
+
+- [ ] 1. Create base structure
+  - Create directory
+  - Initialize files
+  - Requirements: 1.1, 2.3
+
+- [ ] 2. Implement functionality
+  - Write code
+  - Add tests
+  - Requirements: 2.1
+
+- [x] 3. Deploy application
+  - Build package
+  - Deploy to server
+  - Requirements: 3.1"""
+        
+        tasks = tasks_agent._parse_task_list(task_content)
+        
+        assert len(tasks) == 3
+        
+        # Check first task - should extract numerical ID
+        task1 = tasks[0]
+        assert task1.id == "1"  # Should use numerical ID directly
+        assert task1.title == "Create base structure"  # Should remove number from title
+        assert task1.description == "Create base structure"
+        assert len(task1.steps) == 2
+        assert "Create directory" in task1.steps
+        assert "Initialize files" in task1.steps
+        assert task1.requirements_ref == ["1.1", "2.3"]
+        
+        # Check second task
+        task2 = tasks[1]
+        assert task2.id == "2"
+        assert task2.title == "Implement functionality"
+        assert len(task2.steps) == 2
+        assert task2.requirements_ref == ["2.1"]
+        
+        # Check third task (completed)
+        task3 = tasks[2]
+        assert task3.id == "3"
+        assert task3.title == "Deploy application"
+        assert task3.requirements_ref == ["3.1"]
+    
+    def test_parse_task_list_mixed_numbered_and_unnumbered(self, tasks_agent):
+        """Test parsing task list with mix of numbered and unnumbered tasks (backward compatibility)."""
+        task_content = """# Implementation Tasks
+
+- [ ] 1. Numbered task
+  - Do something
+  - Requirements: 1.1
+
+- [ ] Unnumbered task
+  - Do something else
+  - Requirements: 2.1
+
+- [ ] 3. Another numbered task
+  - Final step
+  - Requirements: 3.1"""
+        
+        tasks = tasks_agent._parse_task_list(task_content)
+        
+        assert len(tasks) == 3
+        
+        # First task should use numerical ID
+        task1 = tasks[0]
+        assert task1.id == "1"
+        assert task1.title == "Numbered task"
+        
+        # Second task should fall back to sequential ID
+        task2 = tasks[1]
+        assert task2.id == "task_2"  # Fallback for unnumbered
+        assert task2.title == "Unnumbered task"
+        
+        # Third task should use numerical ID
+        task3 = tasks[2]
+        assert task3.id == "3"
+        assert task3.title == "Another numbered task"
+    
+    def test_parse_task_list_numbered_tasks_with_spaces(self, tasks_agent):
+        """Test parsing numbered tasks with various spacing formats."""
+        task_content = """# Implementation Tasks
+
+- [ ] 1.Create task without space
+  - Requirements: 1.1
+
+- [ ] 2. Create task with space
+  - Requirements: 2.1
+
+- [ ] 3.  Create task with multiple spaces
+  - Requirements: 3.1"""
+        
+        tasks = tasks_agent._parse_task_list(task_content)
+        
+        assert len(tasks) == 3
+        
+        # All should extract numerical IDs correctly
+        assert tasks[0].id == "1"
+        assert tasks[0].title == "Create task without space"
+        
+        assert tasks[1].id == "2"
+        assert tasks[1].title == "Create task with space"
+        
+        assert tasks[2].id == "3"
+        assert tasks[2].title == "Create task with multiple spaces"
+    
     def test_build_task_generation_prompt(self, tasks_agent):
         """Test building task generation prompt."""
         design_content = "# Design\nSome design content"
@@ -309,6 +417,12 @@ class TestTasksAgentTaskGeneration:
         assert "markdown checkbox format" in prompt
         assert "Requirements: X.Y, Z.A" in prompt
         assert "shell commands" in prompt
+        # Test new numbered task requirements
+        assert "sequential numerical identifiers" in prompt
+        assert "- [ ] 1. Task title" in prompt
+        assert "- [ ] 2. Task title" in prompt
+        assert "MUST have a sequential numerical identifier (1, 2, 3, 4, 5, etc.)" in prompt
+        assert "Do NOT skip numbers" in prompt
 
 
 class TestTasksAgentFileOperations:
@@ -469,6 +583,84 @@ class TestTasksAgentIntegration:
         task2 = tasks_agent.current_tasks[1]
         assert "Component A" in task2.title
         assert task2.requirements_ref == ["1.1", "1.2"]
+        
+        # Verify file was written correctly
+        with open(result, 'r') as f:
+            content = f.read()
+            assert content == mock_task_content
+    
+    @pytest.mark.asyncio
+    async def test_full_numbered_task_generation_workflow(self, tasks_agent, temp_work_dir):
+        """Test the complete task generation workflow with numbered tasks."""
+        # Create realistic design and requirements files
+        design_path = os.path.join(temp_work_dir, "design.md")
+        requirements_path = os.path.join(temp_work_dir, "requirements.md")
+        
+        design_content = """# Design Document
+
+## Architecture
+- Component A: Handles user input
+- Component B: Processes data"""
+        
+        requirements_content = """# Requirements
+
+## Requirement 1: User Input Handling
+- 1.1: Accept user input via API
+
+## Requirement 2: Data Processing
+- 2.1: Process user data"""
+        
+        with open(design_path, 'w') as f:
+            f.write(design_content)
+        with open(requirements_path, 'w') as f:
+            f.write(requirements_content)
+        
+        # Mock realistic LLM response with numbered tasks
+        mock_task_content = """# Implementation Tasks
+
+- [ ] 1. Set up project structure
+  - Create main directory
+  - Initialize Python project
+  - Requirements: 1.1
+
+- [ ] 2. Implement Component A
+  - Create input handler module
+  - Add input validation
+  - Requirements: 1.1
+
+- [ ] 3. Implement Component B
+  - Create data processor
+  - Add business logic
+  - Requirements: 2.1"""
+        
+        tasks_agent.generate_response = AsyncMock()
+        tasks_agent.generate_response.return_value = mock_task_content
+        
+        # Execute task generation
+        result = await tasks_agent.generate_task_list(
+            design_path, requirements_path, temp_work_dir
+        )
+        
+        # Verify results
+        assert result == os.path.join(temp_work_dir, "tasks.md")
+        assert len(tasks_agent.current_tasks) == 3
+        
+        # Verify numbered task parsing
+        task1 = tasks_agent.current_tasks[0]
+        assert task1.id == "1"  # Should use numerical ID
+        assert task1.title == "Set up project structure"  # Should remove number from title
+        assert len(task1.steps) == 2
+        assert task1.requirements_ref == ["1.1"]
+        
+        task2 = tasks_agent.current_tasks[1]
+        assert task2.id == "2"
+        assert task2.title == "Implement Component A"
+        assert task2.requirements_ref == ["1.1"]
+        
+        task3 = tasks_agent.current_tasks[2]
+        assert task3.id == "3"
+        assert task3.title == "Implement Component B"
+        assert task3.requirements_ref == ["2.1"]
         
         # Verify file was written correctly
         with open(result, 'r') as f:
