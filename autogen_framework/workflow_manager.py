@@ -79,6 +79,17 @@ class WorkflowManager:
             'errors_recovered': []
         }
         
+        # Task completion configuration and tracking
+        self.task_completion_config = self._load_task_completion_config()
+        self.task_update_stats = {
+            'individual_updates_attempted': 0,
+            'individual_updates_successful': 0,
+            'fallback_updates_used': 0,
+            'file_access_errors': 0,
+            'task_identification_errors': 0,
+            'partial_update_recoveries': 0
+        }
+        
         # Load existing session state from SessionManager
         self._load_session_state_from_manager()
         
@@ -673,7 +684,7 @@ class WorkflowManager:
             return {"success": False, "error": str(e)}
     
     async def _execute_implementation_phase(self, tasks_result: Dict[str, Any], workflow_id: str) -> Dict[str, Any]:
-        """Execute the implementation phase by actually running all tasks."""
+        """Execute the implementation phase by running tasks individually with real-time completion marking."""
         self.logger.info("Executing implementation phase")
         self.current_workflow.phase = WorkflowPhase.IMPLEMENTATION
         
@@ -697,22 +708,114 @@ class WorkflowManager:
                     "error": "No tasks found in tasks.md file"
                 }
             
-            self.logger.info(f"Found {len(tasks)} tasks to execute")
+            self.logger.info(f"Found {len(tasks)} tasks to execute individually")
             
-            # Execute all tasks using the ImplementAgent
-            execution_result = await self.agent_manager.coordinate_agents(
-                "execute_multiple_tasks",
-                {
-                    "task_type": "execute_multiple_tasks",
-                    "tasks": tasks,
-                    "work_dir": work_directory,
-                    "stop_on_failure": False  # Continue even if some tasks fail
+            # Execute tasks individually instead of all at once
+            aggregated_results = []
+            completed_count = 0
+            
+            for i, task in enumerate(tasks):
+                self.logger.info(f"Executing task {i+1}/{len(tasks)}: {task.title}")
+                
+                # Execute single task via agent_manager
+                task_execution_result = await self.agent_manager.coordinate_agents(
+                    "task_execution",
+                    {
+                        "task_type": "execute_task",
+                        "task": task,
+                        "work_dir": work_directory
+                    }
+                )
+                
+                # Determine if task was successful
+                task_success = task_execution_result.get("success", False)
+                
+                # Only attempt individual updates if real-time updates are enabled
+                if self.task_completion_config.get('real_time_updates_enabled', True):
+                    # Record individual update attempt (before calling the method)
+                    self._record_task_update_stats('individual_updates_attempted')
+                    
+                    # Immediately update tasks.md for this specific task using numerical ID
+                    try:
+                        update_success = self._update_single_task_completion(tasks_file, task.id, task_success)
+                        
+                        # Record success/failure statistics
+                        if update_success:
+                            self._record_task_update_stats('individual_updates_successful')
+                        else:
+                            self.logger.warning(f"Failed to update completion status for task {task.id}, will use fallback batch update")
+                            
+                    except PermissionError as e:
+                        self.logger.warning(f"File access error updating task {task.id}: {e}")
+                        self._record_task_update_stats('file_access_errors')
+                        update_success = False
+                    except Exception as e:
+                        self.logger.warning(f"Error updating task {task.id}: {e}")
+                        self._record_task_update_stats('task_identification_errors')
+                        update_success = False
+                else:
+                    # Real-time updates disabled, skip individual updates
+                    update_success = False
+                
+                # Collect results for backward compatibility
+                task_result = {
+                    "task_id": task.id,
+                    "task_title": task.title,
+                    "success": task_success,
+                    "execution_result": task_execution_result,
+                    "completion_updated": update_success
                 }
-            )
+                aggregated_results.append(task_result)
+                
+                if task_success:
+                    completed_count += 1
+                else:
+                    self.logger.warning(f"Task {task.id} failed: {task_execution_result.get('error', 'Unknown error')}")
+                
+                # Log individual task completion
+                self._record_execution_event(
+                    event_type="task_completed",
+                    details={
+                        "task_id": task.id,
+                        "task_title": task.title,
+                        "success": task_success,
+                        "workflow_id": workflow_id,
+                        "task_index": i + 1,
+                        "total_tasks": len(tasks)
+                    }
+                )
             
-            # Update tasks.md file with completion status
-            if execution_result.get("success"):
-                self._update_tasks_file_with_completion(tasks_file, execution_result.get("task_results", []))
+            # Determine overall success - implementation phase succeeds if at least one task completes
+            # This matches the behavior of the original execute_multiple_tasks approach
+            overall_success = completed_count > 0
+            
+            # Comprehensive error recovery and fallback mechanisms
+            failed_updates = [r for r in aggregated_results if not r.get("completion_updated", False)]
+            fallback_used = False
+            recovery_successful = False
+            
+            if failed_updates and self.task_completion_config.get('fallback_to_batch_enabled', True):
+                self.logger.info(f"Performing fallback batch update for {len(failed_updates)} tasks with failed individual updates")
+                self._record_task_update_stats('fallback_updates_used')
+                
+                try:
+                    self._update_tasks_file_with_completion(tasks_file, aggregated_results)
+                    fallback_used = True
+                    self._log_task_completion_debug("Fallback batch update completed successfully")
+                except Exception as fallback_error:
+                    self.logger.error(f"Fallback batch update failed: {fallback_error}")
+                    self._log_task_completion_debug("Fallback batch update failed", {"error": str(fallback_error)})
+            
+            # Ensure no tasks are lost due to update failures
+            if self.task_completion_config.get('recovery_mechanism_enabled', True):
+                recovery_successful = self._ensure_no_tasks_lost(tasks_file, tasks, aggregated_results)
+                if recovery_successful:
+                    self._log_task_completion_debug("Task loss prevention successful")
+                else:
+                    self.logger.warning("Task loss prevention check failed - some tasks may not be properly marked")
+            
+            # Log comprehensive task update statistics
+            self._log_task_update_statistics(len(tasks), len(failed_updates), fallback_used, recovery_successful)
             
             # Record phase completion
             self._record_execution_event(
@@ -720,22 +823,37 @@ class WorkflowManager:
                 details={
                     "phase": "implementation",
                     "workflow_id": workflow_id,
-                    "status": "tasks_executed",
+                    "status": "tasks_executed_individually",
                     "total_tasks": len(tasks),
-                    "completed_tasks": execution_result.get("completed_count", 0),
-                    "success_rate": f"{execution_result.get('completed_count', 0)}/{len(tasks)}"
+                    "completed_tasks": completed_count,
+                    "success_rate": f"{completed_count}/{len(tasks)}",
+                    "individual_updates": len(aggregated_results) - len(failed_updates),
+                    "fallback_updates": len(failed_updates)
                 }
             )
             
+            # Maintain aggregated results collection for backward compatibility
             result = {
-                "success": execution_result.get("success", False),
-                "message": f"Implementation phase completed. {execution_result.get('completed_count', 0)}/{len(tasks)} tasks executed successfully.",
+                "success": overall_success,
+                "message": f"Implementation phase completed. {completed_count}/{len(tasks)} tasks executed successfully.",
                 "tasks_file": tasks_file,
                 "work_directory": work_directory,
                 "total_tasks": len(tasks),
-                "completed_tasks": execution_result.get("completed_count", 0),
-                "task_results": execution_result.get("task_results", []),
-                "execution_completed": True
+                "completed_tasks": completed_count,
+                "task_results": aggregated_results,
+                "execution_completed": True,
+                "individual_execution": True,  # Flag to indicate new execution method
+                "error_recovery": {
+                    "individual_updates_attempted": self.task_update_stats['individual_updates_attempted'],
+                    "individual_updates_successful": self.task_update_stats['individual_updates_successful'],
+                    "fallback_updates_used": self.task_update_stats['fallback_updates_used'],
+                    "file_access_errors": self.task_update_stats['file_access_errors'],
+                    "task_identification_errors": self.task_update_stats['task_identification_errors'],
+                    "partial_update_recoveries": self.task_update_stats['partial_update_recoveries'],
+                    "fallback_used": fallback_used,
+                    "recovery_successful": recovery_successful,
+                    "failed_individual_updates": len(failed_updates)
+                }
             }
             
             return result
@@ -743,8 +861,7 @@ class WorkflowManager:
         except Exception as e:
             self.logger.error(f"Implementation phase failed: {e}")
             
-            # Implementation phase uses ImplementAgent's sophisticated error recovery
-            # If implementation fails completely, suggest revising tasks phase
+            # Preserve existing error handling and logging behavior
             self.logger.error(f"Implementation phase failed: {e}")
             self.logger.info("Implementation errors are handled by ImplementAgent. If all tasks fail, consider revising tasks: autogen-framework --revise \"tasks:Please create simpler, more specific tasks\"")
             
@@ -900,9 +1017,16 @@ class WorkflowManager:
         self.logger.debug(f"Recorded execution event: {event_type}")
     
     def _parse_tasks_from_file(self, tasks_file: str) -> List:
-        """Parse tasks from tasks.md file and return TaskDefinition objects."""
+        """
+        Parse tasks from tasks.md file and return TaskDefinition objects.
+        
+        Enhanced to extract numerical IDs from task titles and capture line positions
+        for precise file updates. Supports both numbered and unnumbered tasks for
+        backward compatibility.
+        """
         try:
-            from .models import TaskDefinition
+            from .models import TaskDefinition, TaskFileMapping
+            import re
             
             with open(tasks_file, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -911,9 +1035,14 @@ class WorkflowManager:
             lines = content.split('\n')
             current_task_data = None
             
+            # Store task file mappings for later use
+            self.task_file_mappings = {}
+            
             for i, line in enumerate(lines):
-                # Check for task line (starts with - [ ] or - [x])
-                if line.strip().startswith('- ['):
+                # Check for task line (starts with - [ ], - [x], or - [-])
+                if line.strip().startswith('- [') and (
+                    '- [ ]' in line or '- [x]' in line or '- [-]' in line
+                ):
                     # Save previous task if exists
                     if current_task_data:
                         task_def = TaskDefinition(
@@ -922,20 +1051,51 @@ class WorkflowManager:
                             description=current_task_data["description"],
                             steps=current_task_data["steps"],
                             requirements_ref=current_task_data["requirements_ref"],
-                            completed=current_task_data["completed"]
+                            completed=current_task_data["completed"],
+                            line_number=current_task_data["line_number"],
+                            file_position=current_task_data["file_position"]
                         )
                         tasks.append(task_def)
+                        
+                        # Store task file mapping
+                        self.task_file_mappings[current_task_data["id"]] = TaskFileMapping(
+                            task_id=current_task_data["id"],
+                            line_number=current_task_data["line_number"],
+                            original_line=current_task_data["original_line"],
+                            checkbox_position=current_task_data["checkbox_position"]
+                        )
                     
                     # Extract task title (everything after the checkbox)
                     task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] "
                     
+                    # Try to extract numerical ID from task title using regex
+                    # Pattern matches: "1. Task Title", "2. Task Title", etc.
+                    numerical_id_match = re.match(r'^(\d+)\.\s*(.+)', task_title)
+                    
+                    if numerical_id_match:
+                        # Use numerical ID from task title
+                        numerical_id = numerical_id_match.group(1)
+                        task_id = numerical_id
+                        clean_title = numerical_id_match.group(2).strip()
+                    else:
+                        # Fallback to sequential ID for backward compatibility
+                        task_id = f"task_{len(tasks) + 1}"
+                        clean_title = task_title
+                    
+                    # Find checkbox position for precise updates
+                    checkbox_pos = line.find('- [')
+                    
                     current_task_data = {
-                        "id": f"task_{len(tasks) + 1}",
-                        "title": task_title,
-                        "description": task_title,
+                        "id": task_id,
+                        "title": clean_title,
+                        "description": clean_title,
                         "steps": [],
                         "requirements_ref": [],
-                        "completed": line.strip().startswith('- [x]')
+                        "completed": line.strip().startswith('- [x]'),
+                        "line_number": i,
+                        "file_position": sum(len(l) + 1 for l in lines[:i]),  # Character position
+                        "original_line": line,
+                        "checkbox_position": checkbox_pos
                     }
                 
                 elif current_task_data and line.strip().startswith('- Step'):
@@ -944,9 +1104,23 @@ class WorkflowManager:
                     current_task_data["steps"].append(step)
                 
                 elif current_task_data and line.strip().startswith('- Requirements:'):
-                    # Extract requirements
-                    req_text = line.strip()[14:].strip()  # Remove "- Requirements: "
-                    current_task_data["requirements_ref"] = [r.strip() for r in req_text.split(',')]
+                    # Extract requirements (old format)
+                    # Find the colon and extract everything after it
+                    colon_pos = line.find(':')
+                    if colon_pos != -1:
+                        req_text = line[colon_pos + 1:].strip()
+                        current_task_data["requirements_ref"] = [r.strip() for r in req_text.split(',') if r.strip()]
+                
+                elif current_task_data and line.strip().startswith('- _Requirements:'):
+                    # Handle alternative requirements format (new format)
+                    # Find the colon and extract everything after it
+                    colon_pos = line.find(':')
+                    if colon_pos != -1:
+                        req_text = line[colon_pos + 1:].strip()
+                        # Remove trailing underscore if present
+                        if req_text.endswith('_'):
+                            req_text = req_text[:-1].strip()
+                        current_task_data["requirements_ref"] = [r.strip() for r in req_text.split(',') if r.strip()]
             
             # Add the last task
             if current_task_data:
@@ -956,22 +1130,354 @@ class WorkflowManager:
                     description=current_task_data["description"],
                     steps=current_task_data["steps"],
                     requirements_ref=current_task_data["requirements_ref"],
-                    completed=current_task_data["completed"]
+                    completed=current_task_data["completed"],
+                    line_number=current_task_data["line_number"],
+                    file_position=current_task_data["file_position"]
                 )
                 tasks.append(task_def)
+                
+                # Store task file mapping
+                self.task_file_mappings[current_task_data["id"]] = TaskFileMapping(
+                    task_id=current_task_data["id"],
+                    line_number=current_task_data["line_number"],
+                    original_line=current_task_data["original_line"],
+                    checkbox_position=current_task_data["checkbox_position"]
+                )
             
             # Filter out already completed tasks
             uncompleted_tasks = [task for task in tasks if not task.completed]
             
-            self.logger.info(f"Parsed {len(tasks)} total tasks, {len(uncompleted_tasks)} uncompleted")
+            # Count numbered vs unnumbered tasks
+            numbered_tasks = [t for t in tasks if re.match(r'^\d+$', t.id)]
+            unnumbered_tasks = [t for t in tasks if not re.match(r'^\d+$', t.id)]
+            self.logger.info(f"Parsed {len(tasks)} total tasks ({len(numbered_tasks)} numbered, {len(unnumbered_tasks)} unnumbered), {len(uncompleted_tasks)} uncompleted")
             return uncompleted_tasks
             
         except Exception as e:
             self.logger.error(f"Error parsing tasks file: {e}")
             return []
     
+    def _update_single_task_completion(self, tasks_file: str, task_id: str, success: bool) -> bool:
+        """
+        Update tasks.md file to mark a specific task as completed with comprehensive error recovery.
+        
+        Uses numerical IDs and line number mappings for precise file updates.
+        Implements atomic file update logic with error handling and retry mechanisms.
+        Includes file locking mechanism to prevent corruption during concurrent access.
+        Enhanced with comprehensive error recovery and fallback mechanisms.
+        
+        Args:
+            tasks_file: Path to tasks.md file
+            task_id: ID of the completed task (numerical or sequential)
+            success: Whether the task completed successfully
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        if not self.task_completion_config.get('real_time_updates_enabled', True):
+            self._log_task_completion_debug(f"Real-time updates disabled, skipping individual update for task {task_id}")
+            return False
+        
+        self._log_task_completion_debug(f"Starting individual update for task {task_id}", {
+            "success": success,
+            "tasks_file": tasks_file
+        })
+        
+        import fcntl
+        import time
+        
+        max_retries = self.task_completion_config.get('max_individual_update_retries', 3)
+        retry_delay = self.task_completion_config.get('individual_update_retry_delay', 0.1)
+        file_lock_timeout = self.task_completion_config.get('file_lock_timeout', 5)
+        
+        for attempt in range(max_retries):
+            try:
+                # Check if we have task file mappings
+                if not hasattr(self, 'task_file_mappings') or task_id not in self.task_file_mappings:
+                    self._log_task_completion_debug(f"No file mapping found for task {task_id}")
+                    self._record_task_update_stats('task_identification_errors')
+                    
+                    # Try to recover by re-parsing the file
+                    if self._attempt_task_mapping_recovery(tasks_file, task_id):
+                        self._log_task_completion_debug(f"Successfully recovered mapping for task {task_id}")
+                    else:
+                        self.logger.warning(f"No file mapping found for task {task_id}, falling back to batch update")
+                        return False
+                
+                mapping = self.task_file_mappings[task_id]
+                
+                # Use file locking to prevent concurrent access
+                with open(tasks_file, 'r+', encoding='utf-8') as f:
+                    try:
+                        # Acquire exclusive lock on the file with timeout
+                        start_time = time.time()
+                        while time.time() - start_time < file_lock_timeout:
+                            try:
+                                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                                break
+                            except (OSError, IOError):
+                                time.sleep(0.1)
+                        else:
+                            raise OSError("File lock timeout exceeded")
+                        
+                        # Read entire file into memory for atomic update
+                        f.seek(0)
+                        lines = f.readlines()
+                        
+                        # Verify line number is still valid
+                        if mapping.line_number >= len(lines):
+                            self.logger.error(f"Task {task_id} line number {mapping.line_number} is out of range (file has {len(lines)} lines)")
+                            self._record_task_update_stats('task_identification_errors')
+                            
+                            # Try to recover by finding the task in the file
+                            if self._attempt_line_number_recovery(lines, task_id, mapping):
+                                self._log_task_completion_debug(f"Successfully recovered line number for task {task_id}")
+                            else:
+                                return False
+                        
+                        current_line = lines[mapping.line_number].rstrip('\n')
+                        
+                        # Verify task identification using numerical ID to find correct task line
+                        if not self._verify_task_line(current_line, task_id):
+                            self.logger.error(f"Task {task_id} line verification failed. Expected task not found at line {mapping.line_number}")
+                            self._record_task_update_stats('task_identification_errors')
+                            
+                            # Try to recover by searching for the task in nearby lines
+                            if self._attempt_task_line_recovery(lines, task_id, mapping):
+                                current_line = lines[mapping.line_number].rstrip('\n')
+                                self._log_task_completion_debug(f"Successfully recovered task line for task {task_id}")
+                            else:
+                                return False
+                        
+                        # Update the specific task line
+                        if success:
+                            # Mark as completed - handle different checkbox states
+                            if '- [ ]' in current_line:
+                                updated_line = current_line.replace('- [ ]', '- [x]', 1)
+                            elif '- [-]' in current_line:
+                                updated_line = current_line.replace('- [-]', '- [x]', 1)
+                            else:
+                                updated_line = current_line  # Already completed or unknown format
+                        else:
+                            # Ensure it remains uncompleted (in case of retry)
+                            if '- [x]' in current_line:
+                                updated_line = current_line.replace('- [x]', '- [ ]', 1)
+                            else:
+                                updated_line = current_line  # Already uncompleted or unknown format
+                        
+                        # Only update if there was actually a change
+                        if updated_line != current_line:
+                            lines[mapping.line_number] = updated_line + '\n'
+                            
+                            # Write entire file back atomically
+                            f.seek(0)
+                            f.writelines(lines)
+                            f.truncate()
+                            f.flush()
+                            os.fsync(f.fileno())  # Force write to disk
+                            
+                            self.logger.info(f"Updated task {task_id} completion status to {'completed' if success else 'uncompleted'}")
+                            self._log_task_completion_debug(f"Successfully updated task {task_id}", {
+                                "old_line": current_line,
+                                "new_line": updated_line
+                            })
+                            
+                            # Update the mapping to reflect the new line content
+                            mapping.original_line = updated_line
+                            
+                            return True
+                        else:
+                            self.logger.debug(f"Task {task_id} completion status unchanged")
+                            return True
+                    
+                    except (OSError, IOError) as lock_error:
+                        self._record_task_update_stats('file_access_errors')
+                        if attempt < max_retries - 1:
+                            self.logger.warning(f"File lock failed for task {task_id} (attempt {attempt + 1}/{max_retries}): {lock_error}")
+                            self._log_task_completion_debug(f"File lock error, retrying", {"attempt": attempt + 1, "error": str(lock_error)})
+                            time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                            continue
+                        else:
+                            self.logger.error(f"Failed to acquire file lock after {max_retries} attempts: {lock_error}")
+                            return False
+                    
+                    finally:
+                        # Lock is automatically released when file is closed
+                        pass
+                        
+            except FileNotFoundError:
+                self.logger.error(f"Tasks file not found: {tasks_file}")
+                self._record_task_update_stats('file_access_errors')
+                return False
+            except PermissionError as perm_error:
+                self._record_task_update_stats('file_access_errors')
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Permission denied accessing tasks file (attempt {attempt + 1}/{max_retries}): {perm_error}")
+                    self._log_task_completion_debug(f"Permission error, retrying", {"attempt": attempt + 1, "error": str(perm_error)})
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
+                else:
+                    self.logger.error(f"Permission denied accessing tasks file after {max_retries} attempts: {perm_error}")
+                    return False
+            except Exception as e:
+                self._record_task_update_stats('file_access_errors')
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Error updating single task completion for {task_id} (attempt {attempt + 1}/{max_retries}): {e}")
+                    self._log_task_completion_debug(f"Unexpected error, retrying", {"attempt": attempt + 1, "error": str(e)})
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
+                else:
+                    self.logger.error(f"Error updating single task completion for {task_id} after {max_retries} attempts: {e}")
+                    return False
+        
+        return False
+    
+    def _attempt_task_mapping_recovery(self, tasks_file: str, task_id: str) -> bool:
+        """
+        Attempt to recover task file mapping by re-parsing the tasks file.
+        
+        Args:
+            tasks_file: Path to tasks.md file
+            task_id: ID of the task to recover mapping for
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        try:
+            self._log_task_completion_debug(f"Attempting task mapping recovery for task {task_id}")
+            
+            # Clear existing mappings and re-parse
+            if hasattr(self, 'task_file_mappings'):
+                self.task_file_mappings.clear()
+            
+            # Re-parse tasks from file to rebuild mappings
+            self._parse_tasks_from_file(tasks_file)
+            
+            # Check if the task mapping was recovered
+            if hasattr(self, 'task_file_mappings') and task_id in self.task_file_mappings:
+                self._log_task_completion_debug(f"Successfully recovered mapping for task {task_id}")
+                return True
+            else:
+                self._log_task_completion_debug(f"Failed to recover mapping for task {task_id}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error during task mapping recovery: {e}")
+            return False
+    
+    def _attempt_line_number_recovery(self, lines: List[str], task_id: str, mapping) -> bool:
+        """
+        Attempt to recover correct line number for a task by searching the file.
+        
+        Args:
+            lines: List of file lines
+            task_id: ID of the task to recover line number for
+            mapping: TaskFileMapping object to update
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        try:
+            self._log_task_completion_debug(f"Attempting line number recovery for task {task_id}")
+            
+            import re
+            
+            # Search for the task in all lines
+            for i, line in enumerate(lines):
+                if line.strip().startswith('- [') and ('- [ ]' in line or '- [x]' in line or '- [-]' in line):
+                    task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] "
+                    
+                    # Check for numerical ID pattern
+                    numerical_id_match = re.match(r'^(\d+)\.\s*(.+)', task_title)
+                    
+                    if numerical_id_match:
+                        line_task_id = numerical_id_match.group(1)
+                        if line_task_id == task_id:
+                            # Found the task, update the mapping
+                            mapping.line_number = i
+                            mapping.original_line = line.rstrip('\n')
+                            self._log_task_completion_debug(f"Recovered line number {i} for task {task_id}")
+                            return True
+            
+            self._log_task_completion_debug(f"Failed to recover line number for task {task_id}")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error during line number recovery: {e}")
+            return False
+    
+    def _attempt_task_line_recovery(self, lines: List[str], task_id: str, mapping) -> bool:
+        """
+        Attempt to recover correct task line by searching nearby lines.
+        
+        Args:
+            lines: List of file lines
+            task_id: ID of the task to recover line for
+            mapping: TaskFileMapping object to update
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        try:
+            self._log_task_completion_debug(f"Attempting task line recovery for task {task_id}")
+            
+            # Search in a window around the expected line number
+            search_window = 5
+            start_line = max(0, mapping.line_number - search_window)
+            end_line = min(len(lines), mapping.line_number + search_window + 1)
+            
+            for i in range(start_line, end_line):
+                if self._verify_task_line(lines[i].rstrip('\n'), task_id):
+                    # Found the task, update the mapping
+                    mapping.line_number = i
+                    mapping.original_line = lines[i].rstrip('\n')
+                    self._log_task_completion_debug(f"Recovered task line at line {i} for task {task_id}")
+                    return True
+            
+            self._log_task_completion_debug(f"Failed to recover task line for task {task_id}")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error during task line recovery: {e}")
+            return False
+    
+    def _verify_task_line(self, line: str, expected_task_id: str) -> bool:
+        """
+        Verify that the line contains the expected task by checking the task ID.
+        
+        Args:
+            line: The line content to verify
+            expected_task_id: The expected task ID (numerical or sequential)
+            
+        Returns:
+            True if the line contains the expected task, False otherwise
+        """
+        import re
+        
+        # Extract task title from line (everything after the checkbox)
+        if not (line.strip().startswith('- [') and ('- [ ]' in line or '- [x]' in line or '- [-]' in line)):
+            return False
+        
+        task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] " or "- [-] "
+        
+        # Check for numerical ID pattern
+        numerical_id_match = re.match(r'^(\d+)\.\s*(.+)', task_title)
+        
+        if numerical_id_match:
+            # Line has numerical ID - check if it matches expected
+            line_task_id = numerical_id_match.group(1)
+            return line_task_id == expected_task_id
+        else:
+            # Line doesn't have numerical ID - check if expected is sequential format
+            return expected_task_id.startswith('task_')  # Sequential IDs are acceptable for unnumbered tasks
+
     def _update_tasks_file_with_completion(self, tasks_file: str, task_results: List[Dict[str, Any]]) -> None:
-        """Update tasks.md file to mark completed tasks."""
+        """
+        Update tasks.md file to mark completed tasks (batch update method).
+        
+        This method is kept for backward compatibility and as a fallback
+        when individual task updates fail.
+        """
         try:
             with open(tasks_file, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -991,7 +1497,7 @@ class WorkflowManager:
             with open(tasks_file, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(lines))
             
-            self.logger.info(f"Updated tasks file with completion status")
+            self.logger.info(f"Updated tasks file with completion status (batch update)")
             
         except Exception as e:
             self.logger.error(f"Error updating tasks file: {e}")
@@ -1061,3 +1567,267 @@ class WorkflowManager:
     def get_context_manager(self) -> Optional[ContextManager]:
         """Get the current ContextManager instance."""
         return self.context_manager
+    
+    def _load_task_completion_config(self) -> Dict[str, Any]:
+        """
+        Load task completion configuration from environment variables.
+        
+        Returns:
+            Dictionary containing task completion configuration
+        """
+        return {
+            'real_time_updates_enabled': os.getenv('TASK_REAL_TIME_UPDATES_ENABLED', 'true').lower() == 'true',
+            'fallback_to_batch_enabled': os.getenv('TASK_FALLBACK_TO_BATCH_ENABLED', 'true').lower() == 'true',
+            'max_individual_update_retries': int(os.getenv('TASK_MAX_INDIVIDUAL_UPDATE_RETRIES', '3')),
+            'individual_update_retry_delay': float(os.getenv('TASK_INDIVIDUAL_UPDATE_RETRY_DELAY', '0.1')),
+            'file_lock_timeout': int(os.getenv('TASK_FILE_LOCK_TIMEOUT', '5')),
+            'detailed_logging_enabled': os.getenv('TASK_DETAILED_LOGGING_ENABLED', 'true').lower() == 'true',
+            'recovery_mechanism_enabled': os.getenv('TASK_RECOVERY_MECHANISM_ENABLED', 'true').lower() == 'true'
+        }
+    
+    def _log_task_completion_debug(self, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Log detailed debugging information for task completion updates.
+        
+        Args:
+            message: Debug message
+            details: Optional additional details to log
+        """
+        if self.task_completion_config.get('detailed_logging_enabled', True):
+            if details:
+                self.logger.debug(f"[TaskCompletion] {message}: {details}")
+            else:
+                self.logger.debug(f"[TaskCompletion] {message}")
+    
+    def _record_task_update_stats(self, stat_type: str, increment: int = 1) -> None:
+        """
+        Record task update statistics for monitoring and debugging.
+        
+        Args:
+            stat_type: Type of statistic to record
+            increment: Amount to increment the statistic by
+        """
+        if stat_type in self.task_update_stats:
+            self.task_update_stats[stat_type] += increment
+            self._log_task_completion_debug(f"Updated {stat_type}", {"new_value": self.task_update_stats[stat_type]})
+    
+    def _ensure_no_tasks_lost(self, tasks_file: str, expected_tasks: List, task_results: List[Dict[str, Any]]) -> bool:
+        """
+        Recovery mechanism to ensure no tasks are lost due to update failures.
+        
+        Verifies that all expected tasks are accounted for and attempts recovery
+        if any tasks are missing or incorrectly marked.
+        
+        Args:
+            tasks_file: Path to tasks.md file
+            expected_tasks: List of TaskDefinition objects that should be in the file
+            task_results: List of task execution results
+            
+        Returns:
+            True if all tasks are properly accounted for, False if recovery failed
+        """
+        if not self.task_completion_config.get('recovery_mechanism_enabled', True):
+            return True
+        
+        try:
+            self._log_task_completion_debug("Starting task loss prevention check", {
+                "expected_tasks": len(expected_tasks),
+                "task_results": len(task_results)
+            })
+            
+            # Read current file content
+            with open(tasks_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            lines = content.split('\n')
+            found_tasks = {}
+            
+            # Parse current file to find all tasks
+            for i, line in enumerate(lines):
+                if line.strip().startswith('- [') and ('- [ ]' in line or '- [x]' in line or '- [-]' in line):
+                    task_title = line.strip()[6:].strip()  # Remove "- [ ] " or "- [x] "
+                    
+                    # Try to extract numerical ID
+                    import re
+                    numerical_id_match = re.match(r'^(\d+)\.\s*(.+)', task_title)
+                    if numerical_id_match:
+                        task_id = numerical_id_match.group(1)
+                        clean_title = numerical_id_match.group(2).strip()
+                    else:
+                        # Use line-based ID for unnumbered tasks
+                        task_id = f"task_{len(found_tasks) + 1}"
+                        clean_title = task_title
+                    
+                    found_tasks[task_id] = {
+                        'line_number': i,
+                        'title': clean_title,
+                        'completed': line.strip().startswith('- [x]'),
+                        'original_line': line
+                    }
+            
+            # Check for missing tasks
+            missing_tasks = []
+            for expected_task in expected_tasks:
+                if expected_task.id not in found_tasks:
+                    missing_tasks.append(expected_task)
+            
+            if missing_tasks:
+                self.logger.error(f"Found {len(missing_tasks)} missing tasks in {tasks_file}")
+                self._record_task_update_stats('partial_update_recoveries')
+                
+                # Attempt to recover missing tasks by re-parsing and updating
+                return self._recover_missing_tasks(tasks_file, missing_tasks, task_results)
+            
+            # Verify completion status matches execution results
+            mismatched_tasks = []
+            for task_result in task_results:
+                task_id = task_result.get('task_id')
+                expected_completed = task_result.get('success', False)
+                
+                if task_id in found_tasks:
+                    actual_completed = found_tasks[task_id]['completed']
+                    if expected_completed != actual_completed:
+                        mismatched_tasks.append({
+                            'task_id': task_id,
+                            'expected': expected_completed,
+                            'actual': actual_completed
+                        })
+            
+            if mismatched_tasks:
+                self.logger.warning(f"Found {len(mismatched_tasks)} tasks with mismatched completion status")
+                self._log_task_completion_debug("Mismatched tasks found", {"mismatches": mismatched_tasks})
+                
+                # Attempt to fix mismatched completion status
+                return self._fix_mismatched_completion_status(tasks_file, mismatched_tasks, task_results)
+            
+            self._log_task_completion_debug("Task loss prevention check passed", {
+                "found_tasks": len(found_tasks),
+                "missing_tasks": len(missing_tasks),
+                "mismatched_tasks": len(mismatched_tasks)
+            })
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in task loss prevention check: {e}")
+            return False
+    
+    def _recover_missing_tasks(self, tasks_file: str, missing_tasks: List, task_results: List[Dict[str, Any]]) -> bool:
+        """
+        Attempt to recover missing tasks by re-parsing the original file.
+        
+        Args:
+            tasks_file: Path to tasks.md file
+            missing_tasks: List of missing TaskDefinition objects
+            task_results: List of task execution results
+            
+        Returns:
+            True if recovery was successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Attempting to recover {len(missing_tasks)} missing tasks")
+            
+            # Force re-parse tasks from file to rebuild mappings
+            self.task_file_mappings = {}
+            reparsed_tasks = self._parse_tasks_from_file(tasks_file)
+            
+            if len(reparsed_tasks) >= len(missing_tasks):
+                self.logger.info("Successfully recovered missing tasks through re-parsing")
+                
+                # Apply completion status based on task results
+                for task_result in task_results:
+                    task_id = task_result.get('task_id')
+                    success = task_result.get('success', False)
+                    
+                    # Try individual update first, then fallback to batch
+                    if not self._update_single_task_completion(tasks_file, task_id, success):
+                        self.logger.warning(f"Individual update failed for recovered task {task_id}")
+                
+                return True
+            else:
+                self.logger.error("Failed to recover all missing tasks through re-parsing")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error recovering missing tasks: {e}")
+            return False
+    
+    def _fix_mismatched_completion_status(self, tasks_file: str, mismatched_tasks: List[Dict[str, Any]], 
+                                        task_results: List[Dict[str, Any]]) -> bool:
+        """
+        Fix tasks with mismatched completion status.
+        
+        Args:
+            tasks_file: Path to tasks.md file
+            mismatched_tasks: List of tasks with mismatched completion status
+            task_results: List of task execution results
+            
+        Returns:
+            True if fixes were successful, False otherwise
+        """
+        try:
+            self.logger.info(f"Attempting to fix {len(mismatched_tasks)} tasks with mismatched completion status")
+            
+            fixes_successful = 0
+            for mismatch in mismatched_tasks:
+                task_id = mismatch['task_id']
+                expected_completed = mismatch['expected']
+                
+                # Try to update the task with correct completion status
+                if self._update_single_task_completion(tasks_file, task_id, expected_completed):
+                    fixes_successful += 1
+                    self._log_task_completion_debug(f"Fixed completion status for task {task_id}", {
+                        "expected": expected_completed,
+                        "was": mismatch['actual']
+                    })
+                else:
+                    self.logger.warning(f"Failed to fix completion status for task {task_id}")
+            
+            if fixes_successful == len(mismatched_tasks):
+                self.logger.info("Successfully fixed all mismatched completion statuses")
+                return True
+            else:
+                self.logger.warning(f"Only fixed {fixes_successful}/{len(mismatched_tasks)} mismatched completion statuses")
+                return fixes_successful > 0
+                
+        except Exception as e:
+            self.logger.error(f"Error fixing mismatched completion status: {e}")
+            return False
+    
+    def _log_task_update_statistics(self, total_tasks: int, failed_updates: int, 
+                                  fallback_used: bool, recovery_successful: bool) -> None:
+        """
+        Log comprehensive task update statistics for monitoring and debugging.
+        
+        Args:
+            total_tasks: Total number of tasks processed
+            failed_updates: Number of tasks with failed individual updates
+            fallback_used: Whether fallback batch update was used
+            recovery_successful: Whether recovery mechanisms were successful
+        """
+        stats = self.task_update_stats.copy()
+        stats.update({
+            'total_tasks_processed': total_tasks,
+            'failed_individual_updates': failed_updates,
+            'fallback_batch_update_used': fallback_used,
+            'recovery_mechanism_successful': recovery_successful,
+            'individual_update_success_rate': (
+                stats['individual_updates_successful'] / max(stats['individual_updates_attempted'], 1) * 100
+            )
+        })
+        
+        self.logger.info("Task completion update statistics:")
+        self.logger.info(f"  Total tasks processed: {stats['total_tasks_processed']}")
+        self.logger.info(f"  Individual updates attempted: {stats['individual_updates_attempted']}")
+        self.logger.info(f"  Individual updates successful: {stats['individual_updates_successful']}")
+        self.logger.info(f"  Individual update success rate: {stats['individual_update_success_rate']:.1f}%")
+        self.logger.info(f"  Fallback updates used: {stats['fallback_updates_used']}")
+        self.logger.info(f"  File access errors: {stats['file_access_errors']}")
+        self.logger.info(f"  Task identification errors: {stats['task_identification_errors']}")
+        self.logger.info(f"  Partial update recoveries: {stats['partial_update_recoveries']}")
+        self.logger.info(f"  Fallback batch update used: {stats['fallback_batch_update_used']}")
+        self.logger.info(f"  Recovery mechanism successful: {stats['recovery_mechanism_successful']}")
+        
+        # Log detailed debug information if enabled
+        if self.task_completion_config.get('detailed_logging_enabled', True):
+            self._log_task_completion_debug("Complete task update statistics", stats)

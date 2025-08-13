@@ -70,6 +70,37 @@ class WorkflowState:
 
 
 @dataclass
+class TaskFileMapping:
+    """
+    Maps task IDs to their positions in the tasks.md file for precise updates.
+    
+    This enables individual task completion marking by tracking where each
+    task is located in the file.
+    """
+    task_id: str
+    line_number: int
+    original_line: str
+    checkbox_position: int  # Position of [ ] or [x] in the line
+    
+    def get_updated_line(self, completed: bool) -> str:
+        """Get the line with updated completion status."""
+        if completed:
+            # Mark as completed - handle different checkbox states
+            if '- [ ]' in self.original_line:
+                return self.original_line.replace('- [ ]', '- [x]', 1)
+            elif '- [-]' in self.original_line:
+                return self.original_line.replace('- [-]', '- [x]', 1)
+            else:
+                return self.original_line  # Already completed or unknown format
+        else:
+            # Mark as uncompleted
+            if '- [x]' in self.original_line:
+                return self.original_line.replace('- [x]', '- [ ]', 1)
+            else:
+                return self.original_line  # Already uncompleted or unknown format
+
+
+@dataclass
 class TaskDefinition:
     """
     Defines a specific task to be executed by the implement agent.
@@ -87,6 +118,8 @@ class TaskDefinition:
     attempted_approaches: List[Dict[str, Any]] = field(default_factory=list)
     retry_count: int = 0
     max_retries: int = 3
+    line_number: Optional[int] = None  # Line number in tasks.md file
+    file_position: Optional[int] = None  # Character position in file
     
     def can_retry(self) -> bool:
         """Check if task can be retried based on retry count."""

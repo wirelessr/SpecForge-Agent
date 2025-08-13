@@ -189,23 +189,32 @@ REQUIREMENTS DOCUMENT:
 {requirements_content}
 
 Generate a tasks.md file that:
-1. Uses markdown checkbox format (- [ ] Task title)
-2. Each task should be small, testable, and specific
-3. Include detailed steps for each task (do a, do b, ...)
-4. Reference specific requirements (Requirements: X.Y, Z.A)
-5. Order tasks by dependencies
-6. Focus ONLY on coding tasks that can be executed via shell commands
+1. Uses markdown checkbox format with sequential numerical identifiers (- [ ] 1. Task title, - [ ] 2. Task title, etc.)
+2. Each task MUST have a sequential numerical identifier (1, 2, 3, 4, 5, etc.)
+3. Each task should be small, testable, and specific
+4. Include detailed steps for each task (do a, do b, ...)
+5. Reference specific requirements (Requirements: X.Y, Z.A)
+6. Order tasks by dependencies
+7. Focus ONLY on coding tasks that can be executed via shell commands
 
-Format each task as:
-- [ ] Task Title
+CRITICAL: Each task MUST be formatted with sequential numerical identifiers as:
+- [ ] 1. Task Title
   - Step 1: Specific action
   - Step 2: Another specific action
   - Requirements: X.Y, Z.A
+
+- [ ] 2. Next Task Title
+  - Step 1: Specific action
+  - Requirements: X.Y
+
+Continue with 3, 4, 5, etc. for all tasks. Do NOT skip numbers or use any other numbering format.
 
 Generate the complete tasks.md content now:"""
     
     def _parse_task_list(self, task_list_content: str) -> List[TaskDefinition]:
         """Parse tasks.md content into TaskDefinition objects."""
+        import re
+        
         tasks = []
         lines = task_list_content.split('\n')
         current_task = None
@@ -219,7 +228,17 @@ Generate the complete tasks.md content now:"""
                     tasks.append(current_task)
                 
                 title = line[5:].strip()
-                task_id = f"task_{len(tasks) + 1}"
+                
+                # Extract numerical ID from task title if present (e.g., "1. Task Title" -> "1")
+                numerical_id_match = re.match(r'^(\d+)\.\s*(.+)', title)
+                if numerical_id_match:
+                    numerical_id = numerical_id_match.group(1)
+                    task_id = numerical_id  # Use numerical ID directly
+                    title = numerical_id_match.group(2)  # Remove number from title for clean display
+                else:
+                    # Fallback to sequential ID for backward compatibility
+                    task_id = f"task_{len(tasks) + 1}"
+                
                 current_task = TaskDefinition(
                     id=task_id,
                     title=title,
