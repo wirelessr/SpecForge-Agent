@@ -17,6 +17,7 @@ from autogen_core.models import ModelInfo, ModelFamily
 from autogen_agentchat.messages import TextMessage
 
 from .models import LLMConfig, CompressionResult, AgentContext
+from .config_manager import ConfigManager
 
 
 class ContextCompressor:
@@ -27,17 +28,23 @@ class ContextCompressor:
     directly, without inheriting from BaseLLMAgent to avoid circular dependencies.
     """
     
-    def __init__(self, llm_config: LLMConfig, token_manager=None):
+    def __init__(self, llm_config: LLMConfig, token_manager=None, config_manager: Optional[ConfigManager] = None):
         """
         Initialize the ContextCompressor.
         
         Args:
             llm_config: LLM configuration for compression operations.
             token_manager: Optional TokenManager instance for token tracking.
+            config_manager: Optional ConfigManager instance for dynamic model configuration.
         """
         self.llm_config = llm_config
         self.token_manager = token_manager
+        self.config_manager = config_manager or ConfigManager()
         self.logger = logging.getLogger(f"{__name__}.ContextCompressor")
+        
+        # Get dynamic model configuration
+        self.model_info = self.config_manager.get_model_info(llm_config.model)
+        self.logger.info(f"Using model configuration: {self.model_info}")
         
         # Initialize AutoGen agent for compression
         self._autogen_agent = None
@@ -45,17 +52,46 @@ class ContextCompressor:
         
         self.logger.info("ContextCompressor initialized")
     
+    def get_max_context_size(self) -> int:
+        """
+        Get the maximum context size for the current model.
+        
+        Uses the token limit and context size ratio from configuration.
+        
+        Returns:
+            Maximum context size in tokens.
+        """
+        token_limit = self.model_info["token_limit"]
+        
+        # Get context size ratio from framework config, default to 0.8
+        framework_config = self.config_manager.get_framework_config()
+        context_size_ratio = framework_config.get("context_size_ratio", 0.8)
+        
+        max_context_size = int(token_limit * context_size_ratio)
+        
+        self.logger.debug(f"Max context size: {max_context_size} (token_limit: {token_limit}, ratio: {context_size_ratio})")
+        return max_context_size
+    
     def _initialize_autogen_agent(self) -> bool:
         """Initialize the AutoGen agent for compression operations."""
         try:
-            # Create model info for Gemini 2.0 Flash
+            # Get dynamic model family from configuration
+            model_family_str = self.model_info["family"]
+            model_family = getattr(ModelFamily, model_family_str)
+            
+            # Get model capabilities from configuration
+            capabilities = self.model_info["capabilities"]
+            
+            # Create model info using dynamic configuration
             model_info = ModelInfo(
-                family=ModelFamily.GEMINI_2_0_FLASH,
-                vision=False,
-                function_calling=True,
+                family=model_family,
+                vision=capabilities.get("vision", False),
+                function_calling=capabilities.get("function_calling", True),
                 json_output=True,
                 structured_output=True
             )
+            
+            self.logger.info(f"Using model family: {model_family_str}, capabilities: {capabilities}")
             
             # Create OpenAI client
             client = OpenAIChatCompletionClient(
@@ -118,13 +154,13 @@ COMPRESSION FORMAT:
 
 Your response should be the compressed context only, without additional commentary."""
     
-    async def compress_context(self, context: Dict[str, Any], target_reduction: float = 0.5) -> CompressionResult:
+    async def compress_context(self, context: Dict[str, Any], target_reduction: Optional[float] = None) -> CompressionResult:
         """
         Compress context using LLM while preserving critical information.
         
         Args:
             context: Dictionary containing context to compress.
-            target_reduction: Target compression ratio (0.5 = 50% reduction).
+            target_reduction: Target compression ratio. If None, uses model-specific settings.
             
         Returns:
             CompressionResult with compression details and compressed content.
@@ -133,7 +169,22 @@ Your response should be the compressed context only, without additional commenta
         original_content = self._context_to_string(context)
         original_size = len(original_content)
         
-        self.logger.info(f"Starting context compression. Original size: {original_size} characters")
+        # Get model-specific compression settings
+        if target_reduction is None:
+            framework_config = self.config_manager.get_framework_config()
+            target_reduction = framework_config.get("compression_target_ratio", 0.5)
+        
+        # Get compression threshold from configuration
+        framework_config = self.config_manager.get_framework_config()
+        compression_threshold = framework_config.get("compression_threshold", 0.9)
+        
+        # Get max context size for this model
+        max_context_size = self.get_max_context_size()
+        
+        self.logger.info(
+            f"Starting context compression. Original size: {original_size} characters, "
+            f"Max context size: {max_context_size} tokens, Target reduction: {target_reduction:.1%}"
+        )
         
         try:
             # Create compression prompt
@@ -146,8 +197,10 @@ Your response should be the compressed context only, without additional commenta
             compressed_size = len(compressed_content)
             compression_ratio = (original_size - compressed_size) / original_size if original_size > 0 else 0.0
             
+            # Get minimum compression ratio from configuration
+            min_compression_ratio = framework_config.get("min_compression_ratio", 0.3)
+            
             # Check if compression meets minimum requirements
-            min_compression_ratio = 0.3  # Minimum 30% reduction
             if compression_ratio < min_compression_ratio:
                 self.logger.warning(
                     f"Compression ratio {compression_ratio:.2%} below minimum {min_compression_ratio:.2%}. "
@@ -166,7 +219,7 @@ Your response should be the compressed context only, without additional commenta
                 compressed_size=compressed_size,
                 compression_ratio=compression_ratio,
                 compressed_content=compressed_content,
-                method_used="llm_compression",
+                method_used="llm_compression_dynamic",
                 success=True,
                 timestamp=datetime.now().isoformat()
             )
@@ -178,7 +231,7 @@ Your response should be the compressed context only, without additional commenta
             self.logger.info(
                 f"Context compression successful. "
                 f"Size: {original_size} → {compressed_size} "
-                f"({compression_ratio:.1%} reduction)"
+                f"({compression_ratio:.1%} reduction), Model: {self.llm_config.model}"
             )
             
             return result
@@ -237,7 +290,12 @@ Your response should be the compressed context only, without additional commenta
     
     def _apply_additional_truncation(self, content: str, original_size: int, target_reduction: float) -> str:
         """Apply additional truncation when compression is insufficient."""
-        target_size = int(original_size * (1 - target_reduction))
+        # Calculate target size based on model's max context size
+        max_context_size = self.get_max_context_size()
+        
+        # Use the smaller of: target reduction or max context size
+        target_size_from_reduction = int(original_size * (1 - target_reduction))
+        target_size = min(target_size_from_reduction, max_context_size)
         
         if len(content) <= target_size:
             return content
@@ -265,7 +323,10 @@ Your response should be the compressed context only, without additional commenta
                     truncated_lines.append("... [Content truncated for size limits] ...")
                 break
         
-        self.logger.info(f"Applied additional truncation: {len(content)} → {current_size} characters")
+        self.logger.info(
+            f"Applied additional truncation: {len(content)} → {current_size} characters "
+            f"(target: {target_size}, max_context: {max_context_size})"
+        )
         return '\n'.join(truncated_lines)
     
     def get_capabilities(self) -> List[str]:
@@ -277,6 +338,9 @@ Your response should be the compressed context only, without additional commenta
         """
         return [
             "Intelligent context compression using LLM",
+            "Dynamic model family detection and configuration",
+            "Model-specific token limit and context size calculation",
+            "Configurable compression thresholds and ratios",
             "Preservation of critical workflow information",
             "Fallback truncation strategies",
             "Token usage optimization",
@@ -286,13 +350,13 @@ Your response should be the compressed context only, without additional commenta
         ]
     
     async def compress_multiple_contexts(self, contexts: List[Dict[str, Any]], 
-                                       target_reduction: float = 0.5) -> List[CompressionResult]:
+                                       target_reduction: Optional[float] = None) -> List[CompressionResult]:
         """
         Compress multiple contexts in batch.
         
         Args:
             contexts: List of context dictionaries to compress.
-            target_reduction: Target compression ratio for each context.
+            target_reduction: Target compression ratio for each context. If None, uses model-specific settings.
             
         Returns:
             List of CompressionResult objects.

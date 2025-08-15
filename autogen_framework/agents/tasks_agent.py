@@ -37,6 +37,7 @@ class TasksAgent(BaseLLMAgent):
         memory_manager=None,
         token_manager=None,
         context_manager=None,
+        config_manager=None,
         description: Optional[str] = None
     ):
         """
@@ -47,6 +48,7 @@ class TasksAgent(BaseLLMAgent):
             memory_manager: Optional memory manager for context
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            config_manager: ConfigManager instance for model configuration (optional)
             description: Optional description of the agent's role
         """
         super().__init__(
@@ -55,6 +57,7 @@ class TasksAgent(BaseLLMAgent):
             system_message=self._build_system_message(),
             token_manager=token_manager,
             context_manager=context_manager,
+            config_manager=config_manager,
             description=description or "Task generation agent for creating implementation plans",
         )
 

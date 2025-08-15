@@ -9,6 +9,14 @@ Welcome to the comprehensive documentation for the AutoGen Multi-Agent Framework
 - **[Developer Guide](../autogen_framework/docs/developer-guide.md)** - Comprehensive development guide and architecture
 - **[Troubleshooting Guide](../autogen_framework/docs/troubleshooting.md)** - Common issues and solutions
 
+### ⚙️ Configuration System
+- **[Configuration System Overview](configuration-system-overview.md)** - Complete overview and documentation guide
+- **[Configuration Quick Reference](configuration-quick-reference.md)** - Quick reference for common configuration tasks
+- **[Configuration Guide](configuration-guide.md)** - Complete guide to the three-tier configuration system
+- **[Migration Guide](migration-guide.md)** - Step-by-step migration from old to new configuration
+- **[Configuration Best Practices](configuration-best-practices.md)** - Best practices for secure and maintainable configurations
+- **[Config Directory](../config/README.md)** - Configuration files and examples
+
 ### 🏗️ Architecture and Development
 - **[Autonomous Execution Development Guide](../.kiro/steering/autonomous-execution-development-guide.md)** - Enhanced architecture principles and best practices
 - **[Future Improvements](../autogen_framework/docs/FUTURE_IMPROVEMENTS.md)** - Roadmap and planned enhancements

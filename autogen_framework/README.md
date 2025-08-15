@@ -36,14 +36,39 @@ uv sync
 
 ### Basic Configuration
 
-1.  **Set LLM Configuration**
+The framework uses a three-tier configuration system for maximum flexibility:
+
+1.  **Environment Variables** (Connection & Environment)
     ```bash
-    export LLM_BASE_URL="http://your-llm-endpoint/v1"
-    export LLM_MODEL="your-model-name"
-    export LLM_API_KEY="your-api-key"
+    # Create .env file
+    cat > .env << EOF
+    LLM_BASE_URL=http://your-llm-endpoint/v1
+    LLM_MODEL=your-model-name
+    LLM_API_KEY=your-api-key
+    WORKSPACE_PATH=./workspace
+    LOG_LEVEL=INFO
+    EOF
     ```
 
-2.  **Create a Work Directory**
+2.  **Configuration Files** (Behavior Settings)
+    ```bash
+    # Framework behavior is configured in config/framework.json
+    # Model properties are configured in config/models.json
+    # These files are included with sensible defaults
+    ```
+
+3.  **Command Arguments** (Execution Control)
+    ```bash
+    # Use command arguments for execution-specific overrides
+    autogen-framework --verbose --auto-approve --request "Task"
+    ```
+
+For detailed configuration information, see:
+- **[Configuration Guide](../docs/configuration-guide.md)** - Complete configuration system guide
+- **[Migration Guide](../docs/migration-guide.md)** - Migrating from old configuration
+- **[Configuration Best Practices](../docs/configuration-best-practices.md)** - Best practices and security
+
+4.  **Create a Work Directory**
     ```bash
     mkdir my-project
     cd my-project
@@ -126,19 +151,47 @@ autogen-framework --workspace . --revise "design:Include database schema diagram
 ```
 
 ### Configuration Options
+
+#### Execution Control (Command Arguments)
 ```bash
-# Work directory
---workspace /path/to/project
+# Execution behavior
+--verbose                    # Enable detailed logging
+--auto-approve              # Skip approval prompts
+--reset-session             # Reset session state
 
-# LLM configuration
---llm-base-url http://your-endpoint/v1
---llm-model your-model-name
---llm-api-key your-api-key
-
-# Logging configuration
---verbose
---log-file framework.log
+# Configuration overrides
+--config-dir /path/to/config           # Override config directory
+--models-config /path/to/models.json   # Override models config
+--framework-config /path/to/framework.json # Override framework config
 ```
+
+#### Connection & Environment (Environment Variables)
+```bash
+# Set in .env file or environment
+LLM_BASE_URL=http://your-endpoint/v1    # LLM service endpoint
+LLM_MODEL=your-model-name               # Model to use
+LLM_API_KEY=your-api-key               # Authentication key
+WORKSPACE_PATH=/path/to/workspace       # Work directory
+LOG_LEVEL=INFO                         # Logging level
+```
+
+#### Behavior Settings (Config Files)
+```bash
+# Configured in config/framework.json
+{
+  "llm": {
+    "temperature": 0.7,
+    "max_output_tokens": 4096,
+    "timeout_seconds": 60
+  },
+  "shell": {
+    "timeout_seconds": 30,
+    "max_retries": 2
+  }
+}
+```
+
+**Note**: The framework automatically detects model families and token limits. See the [Configuration Guide](../docs/configuration-guide.md) for supported models and custom configuration.
 
 ## 🏗️ Architecture Overview
 

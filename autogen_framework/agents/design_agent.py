@@ -32,7 +32,7 @@ class DesignAgent(BaseLLMAgent):
     and patterns from previous projects.
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None, token_manager=None, context_manager=None):
+    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None, token_manager=None, context_manager=None, config_manager=None):
         """
         Initialize the Design Agent.
 
@@ -41,6 +41,7 @@ class DesignAgent(BaseLLMAgent):
             memory_context: Optional memory context from MemoryManager
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            config_manager: ConfigManager instance for model configuration (optional)
         """
         system_message = self._build_system_message()
         
@@ -50,6 +51,7 @@ class DesignAgent(BaseLLMAgent):
             system_message=system_message,
             token_manager=token_manager,
             context_manager=context_manager,
+            config_manager=config_manager,
             description="AI agent specialized in generating technical design documents from requirements",
         )
         

@@ -120,6 +120,7 @@ class AgentManager:
                 memory_manager=self.memory_manager,
                 token_manager=token_manager,
                 context_manager=self.context_manager,
+                config_manager=config_manager,
             )
             self.agents["plan"] = self.plan_agent
             
@@ -129,6 +130,7 @@ class AgentManager:
                 memory_context=memory_context,
                 token_manager=token_manager,
                 context_manager=self.context_manager,
+                config_manager=config_manager,
             )
             self.agents["design"] = self.design_agent
             
@@ -138,6 +140,7 @@ class AgentManager:
                 memory_manager=self.memory_manager,
                 token_manager=token_manager,
                 context_manager=self.context_manager,
+                config_manager=config_manager,
             )
             self.agents["tasks"] = self.tasks_agent
             
@@ -150,6 +153,7 @@ class AgentManager:
                 shell_executor=self.shell_executor,
                 token_manager=token_manager,
                 context_manager=self.context_manager,
+                config_manager=config_manager,
             )
             self.agents["implement"] = self.implement_agent
             

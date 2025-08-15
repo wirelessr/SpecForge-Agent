@@ -232,6 +232,53 @@ def mock_context_manager():
     return mock_manager
 
 
+@pytest.fixture
+def mock_config_manager():
+    """Create a mock ConfigManager for unit tests."""
+    mock_manager = Mock()
+    
+    # Configure model information methods
+    mock_manager.get_model_info = Mock(return_value={
+        "family": "GEMINI_2_0_FLASH",
+        "token_limit": 1048576,
+        "capabilities": {
+            "vision": False,
+            "function_calling": True,
+            "streaming": True
+        }
+    })
+    mock_manager.get_model_token_limit = Mock(return_value=1048576)
+    mock_manager.get_model_family = Mock(return_value="GEMINI_2_0_FLASH")
+    mock_manager.get_model_capabilities = Mock(return_value={
+        "vision": False,
+        "function_calling": True,
+        "streaming": True
+    })
+    
+    # Configure configuration loading methods
+    mock_manager.get_llm_config = Mock(return_value={
+        "base_url": "http://test.local:8888/openai/v1",
+        "model": "test-model",
+        "api_key": "test-key",
+        "temperature": 0.7,
+        "max_output_tokens": 4096,
+        "timeout": 30
+    })
+    mock_manager.get_framework_config = Mock(return_value={
+        "workspace_path": "test_workspace",
+        "log_level": "INFO",
+        "shell_timeout": 30,
+        "shell_max_retries": 2
+    })
+    mock_manager.get_token_config = Mock(return_value={
+        "default_token_limit": 8192,
+        "compression_threshold": 0.9,
+        "compression_enabled": True
+    })
+    
+    return mock_manager
+
+
 @pytest.fixture(autouse=True)
 def disable_real_services():
     """

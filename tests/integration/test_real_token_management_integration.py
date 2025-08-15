@@ -143,7 +143,7 @@ class TestRealTokenManagementIntegration:
             assert result.original_size > 0
             assert result.compressed_size > 0
             assert result.compression_ratio > 0
-            assert result.method_used == "llm_compression"
+            assert result.method_used == "llm_compression_dynamic"
             assert "Compressed context" in result.compressed_content
     
     @pytest.mark.asyncio

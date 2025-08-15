@@ -151,7 +151,7 @@ class TestRealTokenManagement:
         assert compression_result.original_size > 0
         assert compression_result.compressed_size > 0
         assert compression_result.compression_ratio > 0.3  # 至少30%壓縮率
-        assert compression_result.method_used == "llm_compression"
+        assert compression_result.method_used == "llm_compression_dynamic"
         assert len(compression_result.compressed_content) > 0
         
         # 記錄壓縮效果

@@ -91,7 +91,7 @@ class TestConfigManager:
             config = config_manager.get_llm_config()
             
             assert config['temperature'] == 0.7  # default
-            assert config['max_output_tokens'] == 8192  # default
+            assert config['max_output_tokens'] == 4096  # default
             assert config['timeout'] == 60  # default
     
     def test_validate_llm_config_invalid_url(self):

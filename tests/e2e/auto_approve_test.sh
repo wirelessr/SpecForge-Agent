@@ -38,9 +38,9 @@ if [ ! -f "pyproject.toml" ] || [ ! -d "autogen_framework" ]; then
     exit 1
 fi
 
-# Check if .env.integration file exists
-if [ ! -f ".env.integration" ]; then
-    echo "Error: .env.integration file does not exist. Please create it and configure real LLM settings"
+# Check if .env file exists
+if [ ! -f ".env" ]; then
+    echo "Error: .env file does not exist. Please create it and configure real LLM settings"
     exit 1
 fi
 

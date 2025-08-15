@@ -1,0 +1,25 @@
+{
+  "llm": {
+    "temperature": 0.1,
+    "max_output_tokens": 2048,
+    "timeout_seconds": 30
+  },
+  "shell": {
+    "timeout_seconds": 15,
+    "max_retries": 1
+  },
+  "context": {
+    "compression_threshold": 0.95,
+    "context_size_ratio": 0.9
+  },
+  "workflow": {
+    "auto_approve": true,
+    "verbose": false,
+    "reset_session_on_start": true
+  },
+  "memory": {
+    "max_history_entries": 20,
+    "compression_enabled": false,
+    "pattern_learning_enabled": false
+  }
+}
