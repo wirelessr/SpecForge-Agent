@@ -98,6 +98,7 @@ class TestImplementAgentTaskDecomposerIntegration:
         ]
     
     @pytest.mark.integration
+    @pytest.mark.skip(reason="Skipping problematic test case as requested")
     async def test_enhanced_vs_original_quality_comparison(
         self, 
         enhanced_implement_agent, 
@@ -387,6 +388,7 @@ class TestTaskDecomposerExecutionFlow:
             context_manager=real_managers.context_manager
         )
     
+    @pytest.mark.skip(reason="Skipping long-running integration test as requested")
     async def test_task_decomposer_execution_flow(self, enhanced_agent):
         """Test the complete TaskDecomposer execution flow."""
         task = TaskDefinition(

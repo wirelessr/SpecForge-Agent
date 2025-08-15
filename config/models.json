@@ -1,0 +1,148 @@
+{
+  "models": {
+    "models/gemini-2.0-flash": {
+      "family": "GEMINI_2_0_FLASH",
+      "token_limit": 1048576,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "models/gemini-1.5-pro": {
+      "family": "GEMINI_1_5_PRO",
+      "token_limit": 2097152,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "models/gemini-1.5-flash": {
+      "family": "GEMINI_1_5_FLASH",
+      "token_limit": 1048576,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "gpt-4-turbo": {
+      "family": "GPT_4",
+      "token_limit": 128000,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "gpt-4": {
+      "family": "GPT_4",
+      "token_limit": 8192,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "claude-3-opus": {
+      "family": "CLAUDE_3_OPUS",
+      "token_limit": 200000,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "gpt-oss:20b": {
+      "family": "GPT_4",
+      "token_limit": 128000,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    }
+  },
+  "patterns": [
+    {
+      "pattern": "^models/gemini-2\\.0",
+      "family": "GEMINI_2_0_FLASH",
+      "token_limit": 1048576,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "^models/gemini-1\\.5-pro",
+      "family": "GEMINI_1_5_PRO",
+      "token_limit": 2097152,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "^models/gemini-1\\.5",
+      "family": "GEMINI_1_5_FLASH",
+      "token_limit": 1048576,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "gpt-4-turbo",
+      "family": "GPT_4",
+      "token_limit": 128000,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "gpt-4",
+      "family": "GPT_4",
+      "token_limit": 8192,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "claude-3-opus",
+      "family": "CLAUDE_3_OPUS",
+      "token_limit": 200000,
+      "capabilities": {
+        "vision": true,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "^gpt-oss:",
+      "family": "GPT_4",
+      "token_limit": 128000,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    }
+  ],
+  "defaults": {
+    "family": "GPT_4",
+    "token_limit": 8192,
+    "capabilities": {
+      "vision": false,
+      "function_calling": false,
+      "streaming": false
+    }
+  }
+}

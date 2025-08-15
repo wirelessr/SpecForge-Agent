@@ -28,6 +28,43 @@ class TestTokenManager:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        
+        # Mock the enhanced model configuration methods
+        def mock_get_model_token_limit(model_name):
+            # Return known model limits or default
+            known_limits = {
+                'models/gemini-2.0-flash': 1048576,
+                'models/gemini-1.5-pro': 2097152,
+                'models/gemini-1.5-flash': 1048576,
+                'gpt-4': 8192,
+                'gpt-4-turbo': 128000,
+                'gpt-3.5-turbo': 16385,
+                'claude-3-opus': 200000,
+                'claude-3-sonnet': 200000,
+                'claude-3-haiku': 200000,
+            }
+            return known_limits.get(model_name, 8192)  # Default limit
+        
+        def mock_get_model_info(model_name):
+            token_limit = mock_get_model_token_limit(model_name)
+            return {
+                'family': 'GPT_4',  # Default family
+                'token_limit': token_limit,
+                'capabilities': {
+                    'vision': False,
+                    'function_calling': True,
+                    'streaming': True
+                }
+            }
+        
+        mock_config.get_model_token_limit.side_effect = mock_get_model_token_limit
+        mock_config.get_model_info.side_effect = mock_get_model_info
+        mock_config.get_framework_config.return_value = {
+            'context_size_ratio': 0.8,
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
         return mock_config
     
     @pytest.fixture
@@ -65,8 +102,8 @@ class TestTokenManager:
         mock_config_manager.get_token_config.assert_called_once()
     
     def test_load_model_limits(self, token_manager):
-        """Test model limits loading with defaults."""
-        # Test known models
+        """Test model limits loading with dynamic ConfigManager detection."""
+        # Test known models (now using ConfigManager)
         assert token_manager.get_model_limit('models/gemini-2.0-flash') == 1048576
         assert token_manager.get_model_limit('gpt-4') == 8192
         assert token_manager.get_model_limit('claude-3-opus') == 200000
@@ -212,6 +249,49 @@ class TestTokenManager:
             mock_debug.assert_called_once()
             assert limit == 8192
     
+    def test_get_model_context_size(self, token_manager):
+        """Test calculated context size using ratio."""
+        # Test with default ratio (0.8)
+        context_size = token_manager.get_model_context_size('gpt-4')
+        expected_size = int(8192 * 0.8)  # 6553
+        assert context_size == expected_size
+        
+        # Test with larger model
+        context_size = token_manager.get_model_context_size('models/gemini-2.0-flash')
+        expected_size = int(1048576 * 0.8)  # 838860
+        assert context_size == expected_size
+    
+    def test_get_model_context_size_custom_ratio(self, mock_config_manager):
+        """Test calculated context size with custom ratio."""
+        # Set custom context size ratio
+        mock_config_manager.get_framework_config.return_value = {
+            'context_size_ratio': 0.7,  # Custom 70% ratio
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
+        token_manager = TokenManager(mock_config_manager)
+        
+        context_size = token_manager.get_model_context_size('gpt-4')
+        expected_size = int(8192 * 0.7)  # 5734
+        assert context_size == expected_size
+    
+    def test_check_token_limit_with_context_size(self, token_manager):
+        """Test token limit checking using calculated context size."""
+        # Set context size that will trigger compression with context size but not with token limit
+        token_manager.current_context_size = 6000  # Below context size (6553) but above 90% of token limit
+        
+        # Test with full token limit (backward compatibility)
+        result_token = token_manager.check_token_limit('gpt-4', use_context_size=False)
+        assert result_token.model_limit == 8192
+        assert result_token.needs_compression is False  # 6000/8192 = 73% < 90%
+        
+        # Test with calculated context size
+        result_context = token_manager.check_token_limit('gpt-4', use_context_size=True)
+        expected_context_size = int(8192 * 0.8)  # 6553
+        assert result_context.model_limit == expected_context_size
+        assert result_context.needs_compression is True  # 6000/6553 = 91% >= 90%
+    
     def test_log_token_usage_normal_logging(self, token_manager):
         """Test token usage logging with normal verbosity."""
         token_manager.current_context_size = 1000
@@ -327,7 +407,7 @@ class TestTokenManagerIntegration:
     """Integration tests for TokenManager with real configuration."""
     
     @pytest.fixture
-    def mock_config_manager(self):
+    def mock_config_manager_integration(self):
         """Create a mock ConfigManager for integration testing."""
         mock_config = Mock(spec=ConfigManager)
         mock_config.get_token_config.return_value = {
@@ -337,12 +417,43 @@ class TestTokenManagerIntegration:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        
+        # Mock the enhanced model configuration methods
+        def mock_get_model_token_limit(model_name):
+            known_limits = {
+                'models/gemini-2.0-flash': 1048576,
+                'models/gemini-1.5-pro': 2097152,
+                'gpt-4': 8192,
+                'test-model': 4096,  # For integration tests
+            }
+            return known_limits.get(model_name, 8192)
+        
+        def mock_get_model_info(model_name):
+            token_limit = mock_get_model_token_limit(model_name)
+            return {
+                'family': 'GPT_4',
+                'token_limit': token_limit,
+                'capabilities': {
+                    'vision': False,
+                    'function_calling': True,
+                    'streaming': True
+                }
+            }
+        
+        mock_config.get_model_token_limit.side_effect = mock_get_model_token_limit
+        mock_config.get_model_info.side_effect = mock_get_model_info
+        mock_config.get_framework_config.return_value = {
+            'context_size_ratio': 0.8,
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
         return mock_config
     
     @pytest.fixture
-    def token_manager(self, mock_config_manager):
+    def token_manager_integration(self, mock_config_manager_integration):
         """Create a TokenManager instance for integration testing."""
-        return TokenManager(mock_config_manager)
+        return TokenManager(mock_config_manager_integration)
     
     def test_with_real_config_manager(self):
         """Test TokenManager with real ConfigManager instance."""
@@ -351,14 +462,30 @@ class TestTokenManagerIntegration:
         # Create real config manager
         config_manager = ConfigManager(load_env=False)  # Don't load .env for test
         
-        # Mock the get_token_config method to return test values
-        with patch.object(config_manager, 'get_token_config') as mock_get_config:
+        # Mock the methods to return test values
+        with patch.object(config_manager, 'get_token_config') as mock_get_config, \
+             patch.object(config_manager, 'get_model_token_limit') as mock_get_limit, \
+             patch.object(config_manager, 'get_model_info') as mock_get_info, \
+             patch.object(config_manager, 'get_framework_config') as mock_get_framework:
+            
             mock_get_config.return_value = {
                 'default_token_limit': 4096,
                 'compression_threshold': 0.8,
                 'compression_enabled': True,
                 'compression_target_ratio': 0.4,
                 'verbose_logging': True
+            }
+            
+            mock_get_limit.return_value = 4096
+            mock_get_info.return_value = {
+                'family': 'GPT_4',
+                'token_limit': 4096,
+                'capabilities': {'vision': False, 'function_calling': True, 'streaming': True}
+            }
+            mock_get_framework.return_value = {
+                'context_size_ratio': 0.8,
+                'workspace_path': '.',
+                'log_level': 'INFO'
             }
             
             token_manager = TokenManager(config_manager)
@@ -373,35 +500,35 @@ class TestTokenManagerIntegration:
             
             result = token_manager.check_token_limit('test-model')
             assert result.current_tokens == 1000
-            assert result.model_limit == 4096  # Uses default for unknown model
+            assert result.model_limit == 4096  # Uses ConfigManager
             assert result.needs_compression is False  # Below 80% threshold
     
-    def test_edge_case_zero_model_limit(self, token_manager):
+    def test_edge_case_zero_model_limit(self, token_manager_integration):
         """Test behavior with zero model limit."""
-        # Mock a model with zero limit
-        token_manager.model_limits['zero-limit-model'] = 0
+        # Mock ConfigManager to return zero limit for a specific model
+        token_manager_integration.config_manager.get_model_token_limit.side_effect = lambda model: 0 if model == 'zero-limit-model' else 8192
         
-        result = token_manager.check_token_limit('zero-limit-model')
+        result = token_manager_integration.check_token_limit('zero-limit-model')
         
         assert result.model_limit == 0
         assert result.percentage_used == 0  # Should handle division by zero
         assert result.needs_compression is False
     
-    def test_peak_usage_tracking(self, token_manager):
+    def test_peak_usage_tracking(self, token_manager_integration):
         """Test peak usage tracking across multiple operations."""
         # Simulate varying token usage
-        token_manager.update_token_usage('gpt-4', 1000, 'op1')  # Peak: 1000
-        token_manager.update_token_usage('gpt-4', 500, 'op2')   # Peak: 1500
-        token_manager.reset_context_size()                      # Context: 0, Peak: 1500
-        token_manager.update_token_usage('gpt-4', 800, 'op3')   # Context: 800, Peak: 1500
-        token_manager.update_token_usage('gpt-4', 1200, 'op4')  # Context: 2000, Peak: 2000
+        token_manager_integration.update_token_usage('gpt-4', 1000, 'op1')  # Peak: 1000
+        token_manager_integration.update_token_usage('gpt-4', 500, 'op2')   # Peak: 1500
+        token_manager_integration.reset_context_size()                      # Context: 0, Peak: 1500
+        token_manager_integration.update_token_usage('gpt-4', 800, 'op3')   # Context: 800, Peak: 1500
+        token_manager_integration.update_token_usage('gpt-4', 1200, 'op4')  # Context: 2000, Peak: 2000
         
-        stats = token_manager.get_usage_statistics()
+        stats = token_manager_integration.get_usage_statistics()
         assert stats.peak_token_usage == 2000
         assert stats.total_tokens_used == 3500  # 1000 + 500 + 800 + 1200
         assert stats.requests_made == 4
     
-    def test_usage_history_management(self, token_manager):
+    def test_usage_history_management(self, token_manager_integration):
         """Test usage history recording and management."""
         # Generate multiple operations
         operations = [
@@ -411,18 +538,18 @@ class TestTokenManagerIntegration:
         ]
         
         for model, tokens, operation in operations:
-            token_manager.update_token_usage(model, tokens, operation)
+            token_manager_integration.update_token_usage(model, tokens, operation)
         
         # Add compression and reset events
-        token_manager.increment_compression_count()
-        token_manager.reset_context_size()
+        token_manager_integration.increment_compression_count()
+        token_manager_integration.reset_context_size()
         
         # Verify history contains all events
-        history = token_manager.usage_stats['usage_history']
+        history = token_manager_integration.usage_stats['usage_history']
         assert len(history) == 5  # 3 updates + 1 compression + 1 reset
         
         # Verify detailed report limits history to 10 entries
-        report = token_manager.get_detailed_usage_report()
+        report = token_manager_integration.get_detailed_usage_report()
         assert len(report['usage_history']) == 5  # All entries since < 10
 
 
@@ -430,7 +557,7 @@ class TestTokenManagerEdgeCases:
     """Additional edge case tests for TokenManager functionality."""
     
     @pytest.fixture
-    def mock_config_manager(self):
+    def mock_config_manager_edge(self):
         """Create a mock ConfigManager for edge case testing."""
         mock_config = Mock(spec=ConfigManager)
         mock_config.get_token_config.return_value = {
@@ -440,39 +567,68 @@ class TestTokenManagerEdgeCases:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        
+        # Mock the enhanced model configuration methods
+        def mock_get_model_token_limit(model_name):
+            known_limits = {
+                'models/gemini-2.0-flash': 1048576,
+                'gpt-4': 8192,
+            }
+            return known_limits.get(model_name, 8192)
+        
+        def mock_get_model_info(model_name):
+            token_limit = mock_get_model_token_limit(model_name)
+            return {
+                'family': 'GPT_4',
+                'token_limit': token_limit,
+                'capabilities': {
+                    'vision': False,
+                    'function_calling': True,
+                    'streaming': True
+                }
+            }
+        
+        mock_config.get_model_token_limit.side_effect = mock_get_model_token_limit
+        mock_config.get_model_info.side_effect = mock_get_model_info
+        mock_config.get_framework_config.return_value = {
+            'context_size_ratio': 0.8,
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
         return mock_config
     
     @pytest.fixture
-    def token_manager(self, mock_config_manager):
+    def token_manager_edge(self, mock_config_manager_edge):
         """Create a TokenManager instance for edge case testing."""
-        return TokenManager(mock_config_manager)
+        return TokenManager(mock_config_manager_edge)
     
-    def test_check_token_limit_exactly_at_threshold(self, token_manager):
+    def test_check_token_limit_exactly_at_threshold(self, token_manager_edge):
         """Test token limit checking when exactly at threshold."""
         # Set context size exactly at threshold (90% of 8192 = 7372.8, round up to ensure >= 90%)
-        token_manager.current_context_size = int(8192 * 0.9) + 1  # 7373
+        token_manager_edge.current_context_size = int(8192 * 0.9) + 1  # 7373
         
-        result = token_manager.check_token_limit('gpt-4')
+        result = token_manager_edge.check_token_limit('gpt-4')
         
         assert result.current_tokens == 7373
         assert result.model_limit == 8192
         assert result.percentage_used >= 0.9  # Should be at or above 90%
         assert result.needs_compression is True  # Should trigger at exactly 90%
     
-    def test_check_token_limit_just_below_threshold(self, token_manager):
+    def test_check_token_limit_just_below_threshold(self, token_manager_edge):
         """Test token limit checking when just below threshold."""
         # Set context size just below threshold
-        token_manager.current_context_size = int(8192 * 0.9) - 1  # 7371
+        token_manager_edge.current_context_size = int(8192 * 0.9) - 1  # 7371
         
-        result = token_manager.check_token_limit('gpt-4')
+        result = token_manager_edge.check_token_limit('gpt-4')
         
         assert result.current_tokens == 7371
         assert result.needs_compression is False  # Should not trigger below 90%
     
-    def test_check_token_limit_custom_threshold(self, mock_config_manager):
+    def test_check_token_limit_custom_threshold(self, mock_config_manager_edge):
         """Test token limit checking with custom threshold."""
         # Set custom threshold
-        mock_config_manager.get_token_config.return_value = {
+        mock_config_manager_edge.get_token_config.return_value = {
             'default_token_limit': 8192,
             'compression_threshold': 0.75,  # Custom 75% threshold
             'compression_enabled': True,
@@ -480,69 +636,69 @@ class TestTokenManagerEdgeCases:
             'verbose_logging': False
         }
         
-        token_manager = TokenManager(mock_config_manager)
+        token_manager = TokenManager(mock_config_manager_edge)
         token_manager.current_context_size = int(8192 * 0.8)  # 6553 (80% usage)
         
         result = token_manager.check_token_limit('gpt-4')
         
         assert result.needs_compression is True  # Should trigger at 80% with 75% threshold
     
-    def test_update_token_usage_large_numbers(self, token_manager):
+    def test_update_token_usage_large_numbers(self, token_manager_edge):
         """Test token usage update with very large token counts."""
         large_token_count = 1000000
         
-        token_manager.update_token_usage('models/gemini-2.0-flash', large_token_count, 'large_operation')
+        token_manager_edge.update_token_usage('models/gemini-2.0-flash', large_token_count, 'large_operation')
         
-        assert token_manager.current_context_size == large_token_count
-        assert token_manager.usage_stats['total_tokens_used'] == large_token_count
-        assert token_manager.usage_stats['peak_token_usage'] == large_token_count
+        assert token_manager_edge.current_context_size == large_token_count
+        assert token_manager_edge.usage_stats['total_tokens_used'] == large_token_count
+        assert token_manager_edge.usage_stats['peak_token_usage'] == large_token_count
         
         # Verify it doesn't cause overflow or other issues
-        result = token_manager.check_token_limit('models/gemini-2.0-flash')
+        result = token_manager_edge.check_token_limit('models/gemini-2.0-flash')
         assert result.current_tokens == large_token_count
         assert result.model_limit == 1048576  # Gemini limit
         assert result.needs_compression is True  # Should need compression
     
-    def test_multiple_resets_and_usage_tracking(self, token_manager):
+    def test_multiple_resets_and_usage_tracking(self, token_manager_edge):
         """Test multiple context resets and usage tracking."""
         # First session
-        token_manager.update_token_usage('gpt-4', 1000, 'session1_op1')
-        token_manager.update_token_usage('gpt-4', 500, 'session1_op2')
-        assert token_manager.current_context_size == 1500
+        token_manager_edge.update_token_usage('gpt-4', 1000, 'session1_op1')
+        token_manager_edge.update_token_usage('gpt-4', 500, 'session1_op2')
+        assert token_manager_edge.current_context_size == 1500
         
         # Reset context
-        token_manager.reset_context_size()
-        assert token_manager.current_context_size == 0
+        token_manager_edge.reset_context_size()
+        assert token_manager_edge.current_context_size == 0
         
         # Second session
-        token_manager.update_token_usage('gpt-4', 800, 'session2_op1')
-        assert token_manager.current_context_size == 800
+        token_manager_edge.update_token_usage('gpt-4', 800, 'session2_op1')
+        assert token_manager_edge.current_context_size == 800
         
         # Verify total usage is cumulative but context is reset
-        stats = token_manager.get_usage_statistics()
+        stats = token_manager_edge.get_usage_statistics()
         assert stats.total_tokens_used == 2300  # 1000 + 500 + 800
         assert stats.requests_made == 3
         assert stats.peak_token_usage == 1500  # Peak from first session
         
         # Verify history includes reset event
-        history = token_manager.usage_stats['usage_history']
+        history = token_manager_edge.usage_stats['usage_history']
         reset_entries = [entry for entry in history if entry.get('operation') == 'context_reset']
         assert len(reset_entries) == 1
     
-    def test_compression_count_tracking(self, token_manager):
+    def test_compression_count_tracking(self, token_manager_edge):
         """Test compression count tracking and statistics."""
-        initial_stats = token_manager.get_usage_statistics()
+        initial_stats = token_manager_edge.get_usage_statistics()
         assert initial_stats.compressions_performed == 0
         
         # Perform multiple compressions
         for i in range(3):
-            token_manager.increment_compression_count()
+            token_manager_edge.increment_compression_count()
         
-        final_stats = token_manager.get_usage_statistics()
+        final_stats = token_manager_edge.get_usage_statistics()
         assert final_stats.compressions_performed == 3
         
         # Verify compression events in history
-        history = token_manager.usage_stats['usage_history']
+        history = token_manager_edge.usage_stats['usage_history']
         compression_entries = [entry for entry in history if entry.get('operation') == 'compression_performed']
         assert len(compression_entries) == 3
         
@@ -550,9 +706,9 @@ class TestTokenManagerEdgeCases:
         for i, entry in enumerate(compression_entries):
             assert entry['compressions_total'] == i + 1
     
-    def test_detailed_report_with_empty_history(self, token_manager):
+    def test_detailed_report_with_empty_history(self, token_manager_edge):
         """Test detailed usage report with no usage history."""
-        report = token_manager.get_detailed_usage_report()
+        report = token_manager_edge.get_detailed_usage_report()
         
         assert report['current_context_size'] == 0
         assert report['statistics']['total_tokens_used'] == 0
@@ -564,34 +720,34 @@ class TestTokenManagerEdgeCases:
         assert 'configuration' in report
         assert 'model_limits' in report
     
-    def test_average_tokens_calculation_edge_cases(self, token_manager):
+    def test_average_tokens_calculation_edge_cases(self, token_manager_edge):
         """Test average tokens per request calculation edge cases."""
         # Initially should be 0
-        stats = token_manager.get_usage_statistics()
+        stats = token_manager_edge.get_usage_statistics()
         assert stats.average_tokens_per_request == 0.0
         
         # Single request
-        token_manager.update_token_usage('gpt-4', 100, 'single_request')
-        stats = token_manager.get_usage_statistics()
+        token_manager_edge.update_token_usage('gpt-4', 100, 'single_request')
+        stats = token_manager_edge.get_usage_statistics()
         assert stats.average_tokens_per_request == 100.0
         
         # Multiple requests with different sizes
-        token_manager.update_token_usage('gpt-4', 200, 'request2')
-        token_manager.update_token_usage('gpt-4', 300, 'request3')
+        token_manager_edge.update_token_usage('gpt-4', 200, 'request2')
+        token_manager_edge.update_token_usage('gpt-4', 300, 'request3')
         
-        stats = token_manager.get_usage_statistics()
+        stats = token_manager_edge.get_usage_statistics()
         expected_average = (100 + 200 + 300) / 3  # 200.0
         assert stats.average_tokens_per_request == expected_average
     
-    def test_model_limits_case_sensitivity(self, token_manager):
+    def test_model_limits_case_sensitivity(self, token_manager_edge):
         """Test model limits handling with different case variations."""
         # Test exact match
-        assert token_manager.get_model_limit('gpt-4') == 8192
+        assert token_manager_edge.get_model_limit('gpt-4') == 8192
         
         # Test case variations (should use default for unknown)
-        assert token_manager.get_model_limit('GPT-4') == 8192  # Uses default
-        assert token_manager.get_model_limit('Gpt-4') == 8192  # Uses default
+        assert token_manager_edge.get_model_limit('GPT-4') == 8192  # Uses default
+        assert token_manager_edge.get_model_limit('Gpt-4') == 8192  # Uses default
         
         # Test partial matches (should use default)
-        assert token_manager.get_model_limit('gpt-4-custom') == 8192  # Uses default
-        assert token_manager.get_model_limit('gpt') == 8192  # Uses default
+        assert token_manager_edge.get_model_limit('gpt-4-custom') == 8192  # Uses default
+        assert token_manager_edge.get_model_limit('gpt') == 8192  # Uses default

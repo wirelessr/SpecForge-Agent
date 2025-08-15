@@ -117,17 +117,29 @@ def print_help():
    4. Implementation - Execute tasks with shell commands
 
 ⚙️  CONFIGURATION:
-   The framework uses environment variables for configuration. Create a .env file:
+   The framework uses a three-tier configuration system:
    
-   # Required LLM Configuration
+   1. Command-line arguments (highest precedence)
+   2. Environment variables 
+   3. Configuration files (lowest precedence)
+   
+   # Required LLM Configuration (.env file)
    LLM_BASE_URL=http://your-llm-server:8888/openai/v1
    LLM_MODEL=your-model-name
    LLM_API_KEY=your-api-key
    
-   # Optional Framework Configuration
+   # Optional Environment Configuration
    WORKSPACE_PATH=.
    LOG_FILE=logs/framework.log
    LOG_LEVEL=INFO
+   CONFIG_DIR=./config
+   MODELS_CONFIG_FILE=./config/models.json
+   FRAMEWORK_CONFIG_FILE=./config/framework.json
+   
+   # Configuration File Overrides
+   --config-dir /path/to/config
+   --models-config /path/to/models.json
+   --framework-config /path/to/framework.json
    
    Commands:
    - autogen-framework config init     # Create .env from template
@@ -194,10 +206,17 @@ def print_help():
               help='Execute a specific task from tasks.md (format: task_number or task_title)')
 @click.option('--auto-approve', is_flag=True,
               help='Automatically approve all workflow phases without manual intervention')
+@click.option('--config-dir',
+              help='Configuration directory path (overrides CONFIG_DIR env var)')
+@click.option('--models-config',
+              help='Models configuration file path (overrides MODELS_CONFIG_FILE env var)')
+@click.option('--framework-config',
+              help='Framework configuration file path (overrides FRAMEWORK_CONFIG_FILE env var)')
 def main(workspace: str, request: Optional[str], continue_workflow: bool,
          status: bool, verbose: bool, log_file: Optional[str],
          llm_base_url: str, llm_model: str, llm_api_key: str,
-         help_examples: bool, reset_session: bool, approve: Optional[str], reject: Optional[str], revise: Optional[str], execute_task: Optional[str], auto_approve: bool):
+         help_examples: bool, reset_session: bool, approve: Optional[str], reject: Optional[str], revise: Optional[str], execute_task: Optional[str], auto_approve: bool,
+         config_dir: Optional[str], models_config: Optional[str], framework_config: Optional[str]):
     """
     AutoGen Multi-Agent Framework
     
@@ -223,8 +242,12 @@ def main(workspace: str, request: Optional[str], continue_workflow: bool,
         return
     
     try:
-        # Initialize configuration manager first
-        config_manager = ConfigManager()
+        # Initialize configuration manager with path overrides
+        config_manager = ConfigManager(
+            config_dir=config_dir,
+            models_config_file=models_config,
+            framework_config_file=framework_config
+        )
         
         # Get framework configuration
         framework_config = config_manager.get_framework_config()

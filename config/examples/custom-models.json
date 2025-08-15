@@ -1,0 +1,44 @@
+{
+  "models": {
+    "custom-provider:llama-70b": {
+      "family": "GPT_4",
+      "token_limit": 32000,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    "local-model:mistral-7b": {
+      "family": "GPT_4",
+      "token_limit": 8192,
+      "capabilities": {
+        "vision": false,
+        "function_calling": false,
+        "streaming": true
+      }
+    }
+  },
+  "patterns": [
+    {
+      "pattern": "^custom-provider:",
+      "family": "GPT_4",
+      "token_limit": 16000,
+      "capabilities": {
+        "vision": false,
+        "function_calling": true,
+        "streaming": true
+      }
+    },
+    {
+      "pattern": "^local-model:",
+      "family": "GPT_4",
+      "token_limit": 4096,
+      "capabilities": {
+        "vision": false,
+        "function_calling": false,
+        "streaming": false
+      }
+    }
+  ]
+}

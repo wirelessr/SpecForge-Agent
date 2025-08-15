@@ -142,6 +142,7 @@ class ErrorRecovery(BaseLLMAgent):
         system_message: str,
         token_manager,
         context_manager,
+        config_manager=None,
         description: Optional[str] = None
     ):
         """
@@ -153,6 +154,7 @@ class ErrorRecovery(BaseLLMAgent):
             system_message: System instructions for the agent
             token_manager: TokenManager instance for token tracking
             context_manager: ContextManager instance for context management
+            config_manager: ConfigManager instance for model configuration (optional)
             description: Optional description of the agent's role
         """
         super().__init__(
@@ -161,6 +163,7 @@ class ErrorRecovery(BaseLLMAgent):
             system_message=system_message,
             token_manager=token_manager,
             context_manager=context_manager,
+            config_manager=config_manager,
             description=description or "Error recovery agent for intelligent failure analysis and recovery"
         )
         

@@ -39,9 +39,30 @@ class TestContextCompressor:
         return mock_manager
     
     @pytest.fixture
-    def context_compressor(self, test_llm_config, mock_token_manager):
+    def mock_config_manager(self):
+        """Create mock ConfigManager."""
+        mock_manager = Mock(spec=ConfigManager)
+        mock_manager.get_model_info.return_value = {
+            "family": "GEMINI_2_0_FLASH",
+            "token_limit": 1048576,
+            "capabilities": {
+                "vision": False,
+                "function_calling": True,
+                "streaming": True
+            }
+        }
+        mock_manager.get_framework_config.return_value = {
+            "context_size_ratio": 0.8,
+            "compression_threshold": 0.9,
+            "compression_target_ratio": 0.5,
+            "min_compression_ratio": 0.3
+        }
+        return mock_manager
+    
+    @pytest.fixture
+    def context_compressor(self, test_llm_config, mock_token_manager, mock_config_manager):
         """Create ContextCompressor instance for testing."""
-        return ContextCompressor(test_llm_config, mock_token_manager)
+        return ContextCompressor(test_llm_config, mock_token_manager, mock_config_manager)
     
     @pytest.fixture
     def sample_context(self):
@@ -63,20 +84,34 @@ class TestContextCompressor:
             }
         }
     
-    def test_initialization(self, test_llm_config, mock_token_manager):
+    def test_initialization(self, test_llm_config, mock_token_manager, mock_config_manager):
         """Test ContextCompressor initialization."""
-        compressor = ContextCompressor(test_llm_config, mock_token_manager)
+        compressor = ContextCompressor(test_llm_config, mock_token_manager, mock_config_manager)
         
         assert compressor.llm_config == test_llm_config
         assert compressor.token_manager == mock_token_manager
-        # ContextCompressor doesn't inherit from BaseLLMAgent, so it doesn't have name or description attributes
+        assert compressor.config_manager == mock_config_manager
+        assert compressor.model_info is not None
+        # Verify that model info was retrieved
+        mock_config_manager.get_model_info.assert_called_once_with(test_llm_config.model)
     
     def test_initialization_without_token_manager(self, test_llm_config):
         """Test ContextCompressor initialization without token manager."""
-        compressor = ContextCompressor(test_llm_config)
-        
-        assert compressor.token_manager is None
-        # ContextCompressor doesn't inherit from BaseLLMAgent, so it doesn't have name attribute
+        with patch('autogen_framework.context_compressor.ConfigManager') as mock_config_class:
+            mock_config_instance = Mock()
+            mock_config_instance.get_model_info.return_value = {
+                "family": "GPT_4",
+                "token_limit": 8192,
+                "capabilities": {"vision": False, "function_calling": False}
+            }
+            mock_config_class.return_value = mock_config_instance
+            
+            compressor = ContextCompressor(test_llm_config)
+            
+            assert compressor.token_manager is None
+            assert compressor.config_manager is not None
+            # Verify ConfigManager was created when not provided
+            mock_config_class.assert_called_once()
     
     def test_build_compression_system_message(self, context_compressor):
         """Test compression system message building."""
@@ -89,12 +124,23 @@ class TestContextCompressor:
         assert "workflow state" in system_message.lower()
         assert "user requirements" in system_message.lower()
     
+    def test_get_max_context_size(self, context_compressor):
+        """Test getting maximum context size calculation."""
+        max_context_size = context_compressor.get_max_context_size()
+        
+        # Should be token_limit * context_size_ratio = 1048576 * 0.8 = 838860
+        expected_size = int(1048576 * 0.8)
+        assert max_context_size == expected_size
+    
     def test_get_capabilities(self, context_compressor):
         """Test getting compressor capabilities."""
         capabilities = context_compressor.get_capabilities()
         
         assert isinstance(capabilities, list)
         assert len(capabilities) > 0
+        # Check for new dynamic configuration capabilities
+        assert any("dynamic model" in cap.lower() for cap in capabilities)
+        assert any("model-specific" in cap.lower() for cap in capabilities)
     
     @pytest.mark.asyncio
     async def test_compress_multiple_contexts(self, context_compressor, sample_context):
@@ -107,7 +153,7 @@ class TestContextCompressor:
             compressed_size=600,
             compression_ratio=0.4,
             compressed_content="Compressed content",
-            method_used="llm_compression",
+            method_used="llm_compression_dynamic",
             success=True
         )
         
@@ -117,6 +163,32 @@ class TestContextCompressor:
             assert len(results) == 2
             assert all(result.success for result in results)
             assert all(result.compression_ratio == 0.4 for result in results)
+            assert all(result.method_used == "llm_compression_dynamic" for result in results)
+    
+    @pytest.mark.asyncio
+    async def test_compress_context_with_dynamic_settings(self, context_compressor, sample_context):
+        """Test context compression using dynamic model settings."""
+        # Mock the AutoGen response
+        with patch.object(context_compressor, '_generate_autogen_response', return_value="Compressed content"):
+            result = await context_compressor.compress_context(sample_context)
+            
+            assert result.success is True
+            assert result.method_used == "llm_compression_dynamic"
+            assert result.compressed_content == "Compressed content"
+    
+    def test_dynamic_model_configuration_integration(self, context_compressor, mock_config_manager):
+        """Test that ContextCompressor properly integrates with dynamic model configuration."""
+        # Verify model info was loaded
+        assert context_compressor.model_info["family"] == "GEMINI_2_0_FLASH"
+        assert context_compressor.model_info["token_limit"] == 1048576
+        
+        # Verify max context size calculation
+        max_context_size = context_compressor.get_max_context_size()
+        expected_size = int(1048576 * 0.8)  # token_limit * context_size_ratio
+        assert max_context_size == expected_size
+        
+        # Verify framework config was accessed
+        mock_config_manager.get_framework_config.assert_called()
     
     # ContextCompressor doesn't have compress_agent_contexts method
 

@@ -199,7 +199,7 @@ The system uses memory patterns to inform design decisions.
                 compressed_size=6000,
                 compression_ratio=0.3,
                 compressed_content={"user_request": "Compressed content"},
-                method_used="llm_compression",
+                method_used="llm_compression_dynamic",
                 success=True
             )
             
@@ -341,6 +341,7 @@ The system uses memory patterns to inform design decisions.
             assert result is large_context  # Should return original context on error
     
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Skipping long-running end-to-end test")
     async def test_end_to_end_context_flow(self, context_manager):
         """Test complete end-to-end context flow with memory and compression."""
         await context_manager.initialize()

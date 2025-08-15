@@ -31,6 +31,37 @@ class TestTokenManagementIntegration:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        
+        # Mock the enhanced model configuration methods
+        def mock_get_model_token_limit(model_name):
+            # Return known model limits or default
+            known_limits = {
+                'test-model': 8192,
+                'gpt-4': 8192,
+                'models/gemini-2.0-flash': 1048576,
+            }
+            return known_limits.get(model_name, 8192)  # Default limit
+        
+        def mock_get_model_info(model_name):
+            token_limit = mock_get_model_token_limit(model_name)
+            return {
+                'family': 'GPT_4',  # Default family
+                'token_limit': token_limit,
+                'capabilities': {
+                    'vision': False,
+                    'function_calling': True,
+                    'streaming': True
+                }
+            }
+        
+        config_manager.get_model_token_limit.side_effect = mock_get_model_token_limit
+        config_manager.get_model_info.side_effect = mock_get_model_info
+        config_manager.get_framework_config.return_value = {
+            'context_size_ratio': 0.8,
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
         return config_manager
     
     @pytest.fixture
@@ -309,6 +340,38 @@ class TestTokenManagementEdgeCases:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        
+        # Mock the enhanced model configuration methods
+        def mock_get_model_token_limit(model_name):
+            # Return known model limits or default
+            known_limits = {
+                'test-model': 8192,
+                'gpt-4': 8192,
+                'models/gemini-2.0-flash': 1048576,
+                'unknown-model': 8192,
+            }
+            return known_limits.get(model_name, 8192)  # Default limit
+        
+        def mock_get_model_info(model_name):
+            token_limit = mock_get_model_token_limit(model_name)
+            return {
+                'family': 'GPT_4',  # Default family
+                'token_limit': token_limit,
+                'capabilities': {
+                    'vision': False,
+                    'function_calling': True,
+                    'streaming': True
+                }
+            }
+        
+        config_manager.get_model_token_limit.side_effect = mock_get_model_token_limit
+        config_manager.get_model_info.side_effect = mock_get_model_info
+        config_manager.get_framework_config.return_value = {
+            'context_size_ratio': 0.8,
+            'workspace_path': '.',
+            'log_level': 'INFO'
+        }
+        
         return config_manager
     
     @pytest.fixture

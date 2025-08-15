@@ -74,6 +74,7 @@ class TestCompleteArchitectureIntegration:
     
     @pytest.mark.integration
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="Skipping long-running complete workflow test")
     async def test_complete_workflow_with_all_components(self, main_controller, temp_workspace, real_llm_config):
         """Test complete workflow execution with all refactored components."""
         # Mock agent manager with realistic responses

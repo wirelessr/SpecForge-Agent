@@ -81,35 +81,35 @@ class TokenManager:
     
     def _load_model_limits(self) -> Dict[str, int]:
         """
-        Load model-specific token limits with safe defaults for unknown models.
+        Load model-specific token limits using ConfigManager's dynamic detection.
+        
+        This method is kept for backward compatibility but now delegates to
+        ConfigManager for dynamic model configuration lookup.
         
         Returns:
             Dictionary mapping model names to their token limits.
         """
-        # Common model limits - can be extended based on actual models used
-        default_limits = {
-            'models/gemini-2.0-flash': 1048576,  # Gemini 2.0 Flash
-            'models/gemini-1.5-pro': 2097152,    # Gemini 1.5 Pro
-            'models/gemini-1.5-flash': 1048576,  # Gemini 1.5 Flash
-            'gpt-4': 8192,                       # GPT-4
-            'gpt-4-turbo': 128000,               # GPT-4 Turbo
-            'gpt-3.5-turbo': 16385,              # GPT-3.5 Turbo
-            'claude-3-opus': 200000,             # Claude 3 Opus
-            'claude-3-sonnet': 200000,           # Claude 3 Sonnet
-            'claude-3-haiku': 200000,            # Claude 3 Haiku
-        }
-        
         # Use default token limit for unknown models
         default_limit = self.token_config.get('default_token_limit', 8192)
         
-        # Create a defaultdict-like behavior
+        # Create a defaultdict-like behavior that uses ConfigManager
         class ModelLimits(dict):
+            def __init__(self, config_manager, default_limit):
+                super().__init__()
+                self.config_manager = config_manager
+                self.default_limit = default_limit
+            
             def __missing__(self, key):
-                return default_limit
+                # Use ConfigManager's dynamic model detection
+                try:
+                    return self.config_manager.get_model_token_limit(key)
+                except Exception:
+                    # Fallback to default if ConfigManager fails
+                    return self.default_limit
         
-        limits = ModelLimits(default_limits)
+        limits = ModelLimits(self.config_manager, default_limit)
         
-        self.logger.info(f"Loaded model limits with default: {default_limit}")
+        self.logger.info(f"Loaded dynamic model limits with default: {default_limit}")
         return limits
     
     # --- Estimation and extraction utilities (centralized) ---
@@ -195,7 +195,8 @@ class TokenManager:
             # For estimated usage, just log but don't update persistent stats
             self.logger.debug(f"Estimated token usage: {tokens_used} for {operation} (not counted in stats)")
     
-    def check_token_limit(self, model: str, estimated_static_tokens: Optional[int] = None) -> TokenCheckResult:
+    def check_token_limit(self, model: str, estimated_static_tokens: Optional[int] = None, 
+                         use_context_size: bool = False) -> TokenCheckResult:
         """
         Check if current context size exceeds token limits.
         
@@ -205,11 +206,19 @@ class TokenManager:
         Args:
             model: The model name to check limits for.
             estimated_static_tokens: Estimated tokens for static content (used when no actual usage yet).
+            use_context_size: If True, use calculated context size instead of full token limit.
             
         Returns:
             TokenCheckResult with current usage and compression recommendation.
         """
-        model_limit = self.get_model_limit(model)
+        if use_context_size:
+            # Use calculated context size (token_limit * context_size_ratio)
+            model_limit = self.get_model_context_size(model)
+            limit_type = "context"
+        else:
+            # Use full token limit (backward compatibility)
+            model_limit = self.get_model_limit(model)
+            limit_type = "token"
         
         # Determine current token count based on phase
         if self.current_context_size > 0:
@@ -240,7 +249,7 @@ class TokenManager:
         
         if needs_compression:
             self.logger.warning(
-                f"Token limit threshold reached ({phase} phase): {current_tokens}/{model_limit} "
+                f"Token {limit_type} limit threshold reached ({phase} phase): {current_tokens}/{model_limit} "
                 f"({percentage_used:.1%}) for model {model}"
             )
         
@@ -248,7 +257,7 @@ class TokenManager:
     
     def get_model_limit(self, model: str) -> int:
         """
-        Get token limit for specific model.
+        Get token limit for specific model using ConfigManager's dynamic detection.
         
         Args:
             model: The model name to get limit for.
@@ -256,12 +265,74 @@ class TokenManager:
         Returns:
             Token limit for the model, or default limit if model is unknown.
         """
-        limit = self.model_limits[model]  # Uses __missing__ for unknown models
+        try:
+            # Use ConfigManager's dynamic model detection
+            limit = self.config_manager.get_model_token_limit(model)
+            
+            if self.token_config.get('verbose_logging', False):
+                self.logger.debug(f"Token limit for model '{model}': {limit} (from ConfigManager)")
+            
+            return limit
+        except Exception as e:
+            # Fallback to default limit if ConfigManager fails
+            default_limit = self.token_config.get('default_token_limit', 8192)
+            
+            self.logger.warning(f"Failed to get token limit for model '{model}' from ConfigManager: {e}. Using default: {default_limit}")
+            
+            if self.token_config.get('verbose_logging', False):
+                self.logger.debug(f"Token limit for model '{model}': {default_limit} (fallback default)")
+            
+            return default_limit
+    
+    def get_model_context_size(self, model: str) -> int:
+        """
+        Get calculated context size for specific model using context size ratio.
         
-        if self.token_config.get('verbose_logging', False):
-            self.logger.debug(f"Token limit for model '{model}': {limit}")
+        This calculates the maximum context size by applying the context_size_ratio
+        to the model's token limit, reserving the remainder for output tokens.
         
-        return limit
+        Args:
+            model: The model name to get context size for.
+            
+        Returns:
+            Calculated maximum context size for the model.
+        """
+        try:
+            # Get model info from ConfigManager
+            model_info = self.config_manager.get_model_info(model)
+            token_limit = model_info["token_limit"]
+            
+            # Get context size ratio from framework config
+            framework_config = self.config_manager.get_framework_config()
+            context_size_ratio = framework_config.get('context_size_ratio', 0.8)  # Default 80% for context
+            
+            # Validate context size ratio
+            if context_size_ratio <= 0 or context_size_ratio > 1:
+                self.logger.warning(f"Invalid context_size_ratio: {context_size_ratio}. Using default: 0.8")
+                context_size_ratio = 0.8
+            
+            # Calculate context size
+            context_size = int(token_limit * context_size_ratio)
+            
+            if self.token_config.get('verbose_logging', False):
+                self.logger.debug(
+                    f"Context size for model '{model}': {context_size} "
+                    f"(token_limit: {token_limit}, ratio: {context_size_ratio})"
+                )
+            
+            return context_size
+        except Exception as e:
+            # Fallback calculation using basic token limit
+            token_limit = self.get_model_limit(model)
+            default_ratio = 0.8  # Default 80% for context
+            context_size = int(token_limit * default_ratio)
+            
+            self.logger.warning(
+                f"Failed to get context size for model '{model}' from ConfigManager: {e}. "
+                f"Using fallback calculation: {context_size}"
+            )
+            
+            return context_size
     
     def log_token_usage(self, model: str, tokens_used: int, operation: str) -> None:
         """

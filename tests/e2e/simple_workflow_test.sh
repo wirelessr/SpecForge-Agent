@@ -36,9 +36,9 @@ if [ ! -f "pyproject.toml" ] || [ ! -d "autogen_framework" ]; then
     exit 1
 fi
 
-# 檢查 .env.integration 文件是否存在
-if [ ! -f ".env.integration" ]; then
-    echo "錯誤: .env.integration 文件不存在，請創建該文件並配置真實的 LLM 設定"
+# 檢查 .env 文件是否存在
+if [ ! -f ".env" ]; then
+    echo "錯誤: .env 文件不存在，請創建該文件並配置真實的 LLM 設定"
     exit 1
 fi
 
@@ -48,14 +48,14 @@ if ! command -v autogen-framework &> /dev/null; then
     exit 1
 fi
 
-# 載入 integration 環境變數
-echo "載入 integration 測試配置..."
+# 載入環境變數
+echo "載入測試配置..."
 set -a  # 自動導出變數
-source .env.integration
+source .env
 set +a
 
 echo "✓ 環境檢查通過"
-echo "✓ Integration 配置已載入"
+echo "✓ 配置已載入"
 echo "  - LLM Model: $LLM_MODEL"
 echo "  - LLM Base URL: $LLM_BASE_URL"
 echo ""

@@ -29,6 +29,8 @@ class TestTokenPhaseLogic:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        # Mock the get_model_token_limit method to return an integer
+        config_manager.get_model_token_limit.return_value = 8192
         return TokenManager(config_manager)
     
     @pytest.fixture
@@ -254,6 +256,8 @@ class TestTokenPhaseIntegration:
             'compression_target_ratio': 0.5,
             'verbose_logging': False
         }
+        # Mock the get_model_token_limit method to return an integer
+        config_manager.get_model_token_limit.return_value = 8192
         
         token_manager = TokenManager(config_manager)
         

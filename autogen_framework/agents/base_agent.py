@@ -56,6 +56,7 @@ class BaseLLMAgent(ABC):
         system_message: str,
         token_manager: 'TokenManager',
         context_manager: 'ContextManager',
+        config_manager: Optional['ConfigManager'] = None,
         description: Optional[str] = None,
     ):
         """
@@ -67,6 +68,7 @@ class BaseLLMAgent(ABC):
             system_message: System message/instructions for the agent
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            config_manager: ConfigManager instance for model configuration (optional, will create if not provided)
             description: Optional description of the agent's role
         """
         self.name = name
@@ -85,6 +87,14 @@ class BaseLLMAgent(ABC):
         
         # Token management (mandatory)
         self.token_manager = token_manager
+        
+        # Configuration management (create if not provided)
+        if config_manager is not None:
+            self.config_manager = config_manager
+        else:
+            # Import here to avoid circular imports
+            from ..config_manager import ConfigManager
+            self.config_manager = ConfigManager()
         
         # AutoGen agent instance (will be initialized when needed)
         self._autogen_agent: Optional[AssistantAgent] = None
@@ -114,14 +124,38 @@ class BaseLLMAgent(ABC):
         try:
             from autogen_core.models import ModelInfo, ModelFamily
             
-            # Create model info for Gemini 2.0 Flash
-            model_info = ModelInfo(
-                family=ModelFamily.GEMINI_2_0_FLASH,
-                vision=False,
-                function_calling=True,
-                json_output=True,
-                structured_output=True
-            )
+            # Get dynamic model information from ConfigManager
+            try:
+                model_info_dict = self.config_manager.get_model_info(self.llm_config.model)
+                family_str = model_info_dict["family"]
+                capabilities = model_info_dict["capabilities"]
+                
+                # Convert family string to ModelFamily enum with comprehensive error handling
+                model_family = self._convert_to_model_family(family_str)
+                
+                # Create model info with dynamic configuration
+                model_info = ModelInfo(
+                    family=model_family,
+                    vision=capabilities.get("vision", False),
+                    function_calling=capabilities.get("function_calling", True),
+                    json_output=True,
+                    structured_output=True
+                )
+                
+                self.logger.info(f"Using dynamic model configuration for {self.llm_config.model}: family={family_str}, capabilities={capabilities}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to get dynamic model info for {self.llm_config.model}: {e}")
+                self.logger.warning("Falling back to default model configuration")
+                
+                # Fallback to default configuration
+                model_info = ModelInfo(
+                    family=ModelFamily.GPT_4,
+                    vision=False,
+                    function_calling=True,
+                    json_output=True,
+                    structured_output=True
+                )
             
             # Create OpenAI client for new AutoGen
             client = OpenAIChatCompletionClient(
@@ -146,6 +180,72 @@ class BaseLLMAgent(ABC):
         except Exception as e:
             self.logger.error(f"Failed to initialize AutoGen agent for {self.name}: {e}")
             return False
+    
+    def _convert_to_model_family(self, family_str: str):
+        """
+        Convert family string to ModelFamily enum with comprehensive error handling.
+        
+        Args:
+            family_str: Model family string from configuration
+            
+        Returns:
+            ModelFamily enum value
+        """
+        try:
+            from autogen_core.models import ModelFamily
+            
+            # Try direct attribute access first
+            if hasattr(ModelFamily, family_str):
+                model_family = getattr(ModelFamily, family_str)
+                self.logger.debug(f"Successfully mapped '{family_str}' to ModelFamily.{family_str}")
+                return model_family
+            
+            # Try common variations and mappings
+            family_mappings = {
+                'GEMINI_2_0_FLASH': 'GEMINI_2_0_FLASH',
+                'GEMINI_1_5_PRO': 'GEMINI_1_5_PRO', 
+                'GEMINI_1_5_FLASH': 'GEMINI_1_5_FLASH',
+                'GPT_4': 'GPT_4',
+                'GPT_3_5_TURBO': 'GPT_3_5_TURBO',
+                'CLAUDE_3': 'CLAUDE_3',
+                'CLAUDE_3_OPUS': 'CLAUDE_3_OPUS',
+                'CLAUDE_3_SONNET': 'CLAUDE_3_SONNET',
+                'CLAUDE_3_HAIKU': 'CLAUDE_3_HAIKU',
+                # Add lowercase variations
+                'gemini_2_0_flash': 'GEMINI_2_0_FLASH',
+                'gemini_1_5_pro': 'GEMINI_1_5_PRO',
+                'gemini_1_5_flash': 'GEMINI_1_5_FLASH',
+                'gpt_4': 'GPT_4',
+                'gpt_3_5_turbo': 'GPT_3_5_TURBO',
+                'claude_3': 'CLAUDE_3',
+                'claude_3_opus': 'CLAUDE_3_OPUS',
+                'claude_3_sonnet': 'CLAUDE_3_SONNET',
+                'claude_3_haiku': 'CLAUDE_3_HAIKU',
+            }
+            
+            if family_str in family_mappings:
+                mapped_family = family_mappings[family_str]
+                if hasattr(ModelFamily, mapped_family):
+                    model_family = getattr(ModelFamily, mapped_family)
+                    self.logger.debug(f"Successfully mapped '{family_str}' to ModelFamily.{mapped_family}")
+                    return model_family
+            
+            # If no mapping found, log available families and fall back to GPT_4
+            available_families = [attr for attr in dir(ModelFamily) if not attr.startswith('_')]
+            self.logger.warning(
+                f"Unknown model family '{family_str}' for model {self.llm_config.model}. "
+                f"Available families: {available_families}. Falling back to GPT_4"
+            )
+            return ModelFamily.GPT_4
+            
+        except ImportError as e:
+            self.logger.error(f"Failed to import ModelFamily: {e}. Falling back to GPT_4")
+            from autogen_core.models import ModelFamily
+            return ModelFamily.GPT_4
+        except Exception as e:
+            self.logger.error(f"Unexpected error converting model family '{family_str}': {e}. Falling back to GPT_4")
+            from autogen_core.models import ModelFamily
+            return ModelFamily.GPT_4
     
     def _build_complete_system_message(self) -> str:
         """

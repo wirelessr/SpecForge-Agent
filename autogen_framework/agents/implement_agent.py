@@ -46,6 +46,7 @@ class ImplementAgent(BaseLLMAgent):
         shell_executor: ShellExecutor,
         token_manager,
         context_manager,
+        config_manager=None,
         task_decomposer: Optional[TaskDecomposer] = None,
         error_recovery: Optional[ErrorRecovery] = None,
         description: Optional[str] = None
@@ -60,6 +61,7 @@ class ImplementAgent(BaseLLMAgent):
             shell_executor: ShellExecutor instance for command execution
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            config_manager: ConfigManager instance for model configuration (optional)
             task_decomposer: Optional TaskDecomposer for intelligent task breakdown
             error_recovery: Optional ErrorRecovery for intelligent error handling
             description: Optional description of the agent's role
@@ -70,6 +72,7 @@ class ImplementAgent(BaseLLMAgent):
             system_message=system_message,
             token_manager=token_manager,
             context_manager=context_manager,
+            config_manager=config_manager,
             description=description or "Enhanced implementation agent with intelligent task decomposition",
         )
         
@@ -79,14 +82,16 @@ class ImplementAgent(BaseLLMAgent):
             llm_config=llm_config,
             system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
             token_manager=token_manager,
-            context_manager=context_manager
+            context_manager=context_manager,
+            config_manager=config_manager
         )
         self.error_recovery = error_recovery or ErrorRecovery(
             name=f"{name}_error_recovery",
             llm_config=llm_config,
             system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
             token_manager=token_manager,
-            context_manager=context_manager
+            context_manager=context_manager,
+            config_manager=config_manager
         )
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
@@ -898,8 +903,12 @@ Provide the shell commands:"""
     async def _write_file_content(self, file_path: str, content: str) -> None:
         """Write content to a file."""
         try:
-            # Use heredoc with EOF delimiter to avoid escaping issues
-            command = f'cat > "{file_path}" << \'EOF\'\n{content}\nEOF'
+            # Use a unique delimiter to avoid conflicts with content
+            import uuid
+            delimiter = f"EOF_{uuid.uuid4().hex[:8]}"
+            
+            # Use heredoc with unique delimiter to avoid escaping issues
+            command = f'cat > "{file_path}" << \'{delimiter}\'\n{content}\n{delimiter}'
             
             result = await self.shell_executor.execute_command(command)
             if not result.success:
@@ -911,8 +920,12 @@ Provide the shell commands:"""
     async def _append_file_content(self, file_path: str, content: str) -> None:
         """Append content to a file."""
         try:
-            # Use heredoc with EOF delimiter to avoid escaping issues
-            command = f'cat >> "{file_path}" << \'EOF\'\n{content}\nEOF'
+            # Use a unique delimiter to avoid conflicts with content
+            import uuid
+            delimiter = f"EOF_{uuid.uuid4().hex[:8]}"
+            
+            # Use heredoc with unique delimiter to avoid escaping issues
+            command = f'cat >> "{file_path}" << \'{delimiter}\'\n{content}\n{delimiter}'
             
             result = await self.shell_executor.execute_command(command)
             if not result.success:

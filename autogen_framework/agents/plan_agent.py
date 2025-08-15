@@ -31,7 +31,7 @@ class PlanAgent(BaseLLMAgent):
     4. Integrating memory context for better understanding
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager, token_manager, context_manager):
+    def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager, token_manager, context_manager, config_manager=None):
         """
         Initialize the Plan Agent.
 
@@ -40,6 +40,7 @@ class PlanAgent(BaseLLMAgent):
             memory_manager: Memory manager instance for context loading
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            config_manager: ConfigManager instance for model configuration (optional)
         """
         system_message = self._build_system_message()
         
@@ -49,6 +50,7 @@ class PlanAgent(BaseLLMAgent):
             system_message=system_message,
             token_manager=token_manager,
             context_manager=context_manager,
+            config_manager=config_manager,
             description="Plan Agent responsible for parsing user requests and generating requirements",
         )
         
