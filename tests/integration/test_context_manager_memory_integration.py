@@ -341,7 +341,7 @@ The system uses memory patterns to inform design decisions.
             assert result is large_context  # Should return original context on error
     
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Skipping long-running end-to-end test")
+    @pytest.mark.skip(reason="Long-running end-to-end test - excluded from performance analysis")
     async def test_end_to_end_context_flow(self, context_manager):
         """Test complete end-to-end context flow with memory and compression."""
         await context_manager.initialize()

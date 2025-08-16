@@ -130,7 +130,7 @@ class TestContextManagerWorkflowSimulation:
         )
     
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Skipping long-running workflow simulation test")
+    @pytest.mark.skip(reason="Long-running workflow simulation test - excluded from performance analysis")
     async def test_complete_workflow_simulation(self, context_manager, project_workspace):
         """
         Test complete workflow simulation from planning through implementation.

@@ -185,7 +185,7 @@ Always respond with valid JSON when requested.
         ]
     
     @pytest.mark.integration
-    @pytest.mark.skip(reason="Skipping long-running quality comparison test")
+    @pytest.mark.skip(reason="Long-running quality comparison test - excluded from performance analysis")
     async def test_error_recovery_quality_impact_comparison(self, error_recovery_agent, sample_tasks, real_managers):
         """Test quality impact by comparing execution with and without ErrorRecovery."""
         # Test without ErrorRecovery
