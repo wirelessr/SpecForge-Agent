@@ -230,31 +230,60 @@ class ErrorRecovery(BaseLLMAgent):
     
     async def recover(self, failed_result: CommandResult, execution_plan: Optional[Dict[str, Any]] = None) -> RecoveryResult:
         """
-        Analyzes failure and generates alternative approaches.
-        
+        Analyzes failure and generates alternative approaches. This method first
+        tries simple, pre-computed fallback strategies from the execution plan
+        before resorting to a full LLM-based analysis to improve performance.
+
         Args:
             failed_result: Result of failed command
-            execution_plan: Optional current execution plan context
-            
+            execution_plan: Optional current execution plan, which may contain
+                          pre-computed fallback_strategies.
+
         Returns:
             RecoveryResult with alternative strategies and outcomes
         """
         self.logger.info(f"Starting error recovery for command: {failed_result.command}")
         start_time = datetime.now()
-        
-        try:
-            self.recovery_stats['total_recoveries_attempted'] += 1
+        self.recovery_stats['total_recoveries_attempted'] += 1
+
+        # Step 1: Try pre-computed fallback strategies first for efficiency
+        if execution_plan and execution_plan.get("fallback_strategies"):
+            self.logger.info("Attempting pre-computed fallback strategies.")
+            precomputed_strategies = [
+                RecoveryStrategy(
+                    name=f"precomputed_fallback_{i}",
+                    description=strategy_str,
+                    commands=[strategy_str],  # Assume the string is a command
+                    success_probability=0.6 # Assign a default moderate probability
+                )
+                for i, strategy_str in enumerate(execution_plan["fallback_strategies"])
+            ]
             
-            # Step 1: Categorize error type and analyze root cause
+            # Pass a dummy error analysis since we are using pre-computed strategies
+            dummy_analysis = self._classify_error_by_patterns(failed_result)
+            precomputed_result = await self._execute_recovery_strategies(precomputed_strategies, failed_result, dummy_analysis)
+
+            if precomputed_result.success:
+                self.logger.info("Recovery successful using a pre-computed strategy.")
+                self.recovery_stats['successful_recoveries'] += 1
+                precomputed_result.recovery_time = (datetime.now() - start_time).total_seconds()
+                await self._learn_from_recovery(precomputed_result, dummy_analysis)
+                return precomputed_result
+
+            self.logger.warning("Pre-computed fallback strategies failed. Proceeding with full LLM-based recovery.")
+
+        # Step 2: If pre-computed strategies fail or don't exist, proceed with full analysis
+        try:
+            # Categorize error type and analyze root cause
             error_analysis = await self._analyze_error(failed_result)
             
-            # Step 2: Generate ranked alternative strategies
+            # Generate ranked alternative strategies
             strategies = await self._generate_strategies(error_analysis, execution_plan)
             
-            # Step 3: Try strategies in order of likelihood
+            # Try strategies in order of likelihood
             recovery_result = await self._execute_recovery_strategies(strategies, failed_result, error_analysis)
             
-            # Step 4: Learn from the recovery attempt
+            # Learn from the recovery attempt
             await self._learn_from_recovery(recovery_result, error_analysis)
             
             # Calculate recovery time
