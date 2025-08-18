@@ -46,9 +46,9 @@ class ImplementAgent(BaseLLMAgent):
         shell_executor: ShellExecutor,
         token_manager,
         context_manager,
+        task_decomposer: TaskDecomposer,
+        error_recovery: ErrorRecovery,
         config_manager=None,
-        task_decomposer: Optional[TaskDecomposer] = None,
-        error_recovery: Optional[ErrorRecovery] = None,
         description: Optional[str] = None
     ):
         """
@@ -61,9 +61,9 @@ class ImplementAgent(BaseLLMAgent):
             shell_executor: ShellExecutor instance for command execution
             token_manager: TokenManager instance for token operations (mandatory)
             context_manager: ContextManager instance for context operations (mandatory)
+            task_decomposer: TaskDecomposer instance for intelligent task breakdown (mandatory)
+            error_recovery: ErrorRecovery instance for intelligent error handling (mandatory)
             config_manager: ConfigManager instance for model configuration (optional)
-            task_decomposer: Optional TaskDecomposer for intelligent task breakdown
-            error_recovery: Optional ErrorRecovery for intelligent error handling
             description: Optional description of the agent's role
         """
         super().__init__(
@@ -77,22 +77,8 @@ class ImplementAgent(BaseLLMAgent):
         )
         
         self.shell_executor = shell_executor
-        self.task_decomposer = task_decomposer or TaskDecomposer(
-            name=f"{name}_decomposer",
-            llm_config=llm_config,
-            system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager
-        )
-        self.error_recovery = error_recovery or ErrorRecovery(
-            name=f"{name}_error_recovery",
-            llm_config=llm_config,
-            system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager
-        )
+        self.task_decomposer = task_decomposer
+        self.error_recovery = error_recovery
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
         self.execution_context: Dict[str, Any] = {}
@@ -146,149 +132,86 @@ class ImplementAgent(BaseLLMAgent):
 
     async def execute_task(self, task: TaskDefinition, work_dir: str) -> Dict[str, Any]:
         """
-        Execute a specific coding task with retry mechanism.
-        
+        Executes a specific coding task using a streamlined, single-path flow.
+        This method relies exclusively on the enhanced TaskDecomposer -> ErrorRecovery
+        path and removes the legacy fallback mechanism for improved performance
+        and code clarity.
+
         Args:
             task: TaskDefinition object containing task details
             work_dir: Working directory for task execution
-            
+
         Returns:
             Dictionary containing execution results and metadata
         """
         self.current_work_directory = work_dir
-        
-        self.logger.info(f"Executing task: {task.title}")
-        
+        self.logger.info(f"Executing task with streamlined flow: {task.title}")
+
+        # Initialize a default result structure
         execution_result = {
             "task_id": task.id,
             "task_title": task.title,
             "success": False,
             "attempts": [],
-            "final_approach": None,
-            "execution_time": 0,
+            "final_approach": "enhanced_execution_flow",
             "shell_commands": [],
             "files_modified": [],
-            "learning_outcomes": []
         }
-        
-        # Use TaskDecomposer for intelligent task breakdown and execution
+
         try:
-            self.logger.info(f"Starting TaskDecomposer execution for task: {task.title}")
+            # The one and only execution path
             enhanced_result = await self._execute_with_task_decomposer(task, work_dir)
-            self.logger.info(f"TaskDecomposer execution completed successfully")
-            
-            # Add quality metrics and decomposition plan to execution_result
-            if enhanced_result.get("quality_metrics"):
-                execution_result["quality_metrics"] = enhanced_result["quality_metrics"]
-            if enhanced_result.get("decomposition_plan"):
-                execution_result["decomposition_plan"] = enhanced_result["decomposition_plan"]
-            
-            # Check if TaskDecomposer was successful
-            if enhanced_result["success"]:
-                # TaskDecomposer succeeded
-                execution_result.update({
-                    "success": enhanced_result["success"],
-                    "final_approach": enhanced_result.get("successful_approach"),
-                    "attempts": enhanced_result["approaches_attempted"],
-                    "execution_time": enhanced_result["execution_time"],
-                    "task_analysis": enhanced_result.get("task_analysis", {}),
-                    "detailed_log": enhanced_result.get("detailed_log", [])
-                })
-                
-                # Extract shell commands and files modified from all attempts
-                for attempt in enhanced_result["approaches_attempted"]:
-                    execution_result["shell_commands"].extend(attempt.get("commands", []))
-                    execution_result["files_modified"].extend(attempt.get("files_modified", []))
-                
-                # Mark task as completed
+
+            # Populate the final result from the enhanced flow's output
+            execution_result.update({
+                "success": enhanced_result.get("success", False),
+                "attempts": enhanced_result.get("approaches_attempted", []),
+                "execution_time": enhanced_result.get("execution_time", 0),
+                "task_analysis": enhanced_result.get("task_analysis", {}),
+                "detailed_log": enhanced_result.get("detailed_log", []),
+                "quality_metrics": enhanced_result.get("quality_metrics", {}),
+                "decomposition_plan": enhanced_result.get("decomposition_plan", {})
+            })
+
+            # Extract shell commands and files modified from all attempts
+            for attempt in execution_result["attempts"]:
+                execution_result["shell_commands"].extend(attempt.get("commands", []))
+                # Use a set to avoid duplicate file entries
+                files = set(execution_result["files_modified"])
+                files.update(attempt.get("files_modified", []))
+                execution_result["files_modified"] = list(files)
+
+            if execution_result["success"]:
                 task.mark_completed(execution_result)
-            else:
-                # TaskDecomposer failed, trigger fallback
-                self.logger.warning(f"TaskDecomposer failed for task: {task.title}, triggering fallback")
-                execution_result["attempts"].extend(enhanced_result["approaches_attempted"])
-                
-                # Fallback to original retry mechanism
-                for attempt in range(task.max_retries + 1):
-                    try:
-                        approach_result = await self._try_task_execution(task, work_dir, attempt)
-                        
-                        execution_result["attempts"].append(approach_result)
-                        execution_result["shell_commands"].extend(approach_result.get("commands", []))
-                        execution_result["files_modified"].extend(approach_result.get("files_modified", []))
-                        
-                        if approach_result["success"]:
-                            execution_result["success"] = True
-                            execution_result["final_approach"] = approach_result["approach"]
-                            task.mark_completed(execution_result)
-                            break
-                            
-                        task.increment_retry()
-                        
-                    except Exception as fallback_e:
-                        self.logger.error(f"Fallback attempt {attempt + 1} failed: {fallback_e}")
-                        execution_result["attempts"].append({
-                            "attempt": attempt + 1,
-                            "approach": f"fallback_attempt_{attempt + 1}",
-                            "success": False,
-                            "error": str(fallback_e),
-                            "commands": []
-                        })
-            
+
         except Exception as e:
-            self.logger.error(f"TaskDecomposer execution failed: {e}")
+            self.logger.error(f"Critical failure in streamlined execution flow for task {task.title}: {e}", exc_info=True)
+            execution_result["success"] = False
             execution_result["attempts"].append({
-                "approach": "taskdecomposer_fallback",
+                "approach": "enhanced_execution_flow",
                 "success": False,
-                "error": str(e),
+                "error": f"A critical exception occurred: {str(e)}",
                 "commands": []
             })
-            
-            # Fallback to original retry mechanism
-            for attempt in range(task.max_retries + 1):
-                try:
-                    approach_result = await self._try_task_execution(task, work_dir, attempt)
-                    
-                    execution_result["attempts"].append(approach_result)
-                    execution_result["shell_commands"].extend(approach_result.get("commands", []))
-                    execution_result["files_modified"].extend(approach_result.get("files_modified", []))
-                    
-                    if approach_result["success"]:
-                        execution_result["success"] = True
-                        execution_result["final_approach"] = approach_result["approach"]
-                        task.mark_completed(execution_result)
-                        break
-                        
-                    task.increment_retry()
-                    
-                except Exception as fallback_e:
-                    self.logger.error(f"Fallback attempt {attempt + 1} failed: {fallback_e}")
-                    execution_result["attempts"].append({
-                        "attempt": attempt + 1,
-                        "approach": f"fallback_attempt_{attempt + 1}",
-                        "success": False,
-                        "error": str(fallback_e),
-                        "commands": []
-                    })
-        
+
         # Record task completion regardless of success/failure
         await self.record_task_completion(task, execution_result, work_dir)
-        
+
         # Update ContextManager with execution history if available
         if self.context_manager and execution_result.get("success"):
-            from ..models import ExecutionResult
             exec_result = ExecutionResult(
                 command=" && ".join(execution_result.get("shell_commands", [])),
-                return_code=0 if execution_result["success"] else 1,
-                stdout="Task completed successfully",
+                return_code=0,
+                stdout="Task completed successfully via streamlined flow.",
                 stderr="",
                 execution_time=execution_result.get("execution_time", 0),
                 working_directory=work_dir,
                 timestamp=self._get_current_timestamp(),
-                success=execution_result["success"],
-                approach_used=execution_result.get("final_approach", "unknown")
+                success=True,
+                approach_used=execution_result.get("final_approach", "enhanced_execution_flow")
             )
             await self.context_manager.update_execution_history(exec_result)
-        
+
         return execution_result
     
     async def try_multiple_approaches(
@@ -626,227 +549,7 @@ class ImplementAgent(BaseLLMAgent):
             "total_count": len(results)
         }
     
-    async def _try_task_execution(
-        self, 
-        task: TaskDefinition, 
-        work_dir: str, 
-        attempt: int
-    ) -> Dict[str, Any]:
-        """Try executing a task with a specific approach."""
-        approaches = ["patch_first", "direct_implementation", "step_by_step"]
-        approach = approaches[min(attempt, len(approaches) - 1)]
-        
-        return await self._execute_with_approach(task, work_dir, approach)
     
-    async def _execute_with_approach(
-        self, 
-        task: TaskDefinition, 
-        work_dir: str, 
-        approach: str
-    ) -> Dict[str, Any]:
-        """Execute task with a specific approach."""
-        context = {
-            "task": task.description,
-            "steps": task.steps,
-            "approach": approach,
-            "work_directory": work_dir,
-            "requirements_ref": task.requirements_ref
-        }
-        
-        prompt = self._build_execution_prompt(task, approach)
-        
-        try:
-            execution_plan = await self.generate_response(prompt, context)
-            result = await self._execute_plan_with_shell(execution_plan, work_dir)
-            
-            return {
-                "approach": approach,
-                "success": result["success"],
-                "execution_plan": execution_plan,
-                "commands": result["commands"],
-                "files_modified": result["files_modified"],
-                "output": result["output"]
-            }
-            
-        except Exception as e:
-            return {
-                "approach": approach,
-                "success": False,
-                "error": str(e),
-                "commands": []
-            }
-    
-    async def _execute_plan_with_shell(
-        self, 
-        execution_plan: str, 
-        work_dir: str
-    ) -> Dict[str, Any]:
-        """Execute a plan using shell commands with optimization and enhanced error handling."""
-        # Parse execution plan to extract shell commands
-        raw_commands = self._extract_shell_commands(execution_plan)
-        
-        # Optimize commands to remove redundancy
-        commands = await self._optimize_shell_commands(raw_commands)
-        
-        executed_commands = []
-        files_modified = []
-        output_lines = []
-        success = True
-        errors = []
-        
-        self.logger.info(f"Executing {len(commands)} optimized shell commands")
-        
-        for i, command in enumerate(commands):
-            try:
-                self.logger.debug(f"Executing command {i+1}/{len(commands)}: {command}")
-                
-                result = await self.shell_executor.execute_command(command, work_dir)
-                executed_commands.append(command)
-                
-                if result.success:
-                    output_lines.append(f"✓ [{i+1}/{len(commands)}] {command}")
-                    if result.stdout and result.stdout.strip():
-                        output_lines.append(f"  Output: {result.stdout.strip()}")
-                    
-                    # Track file modifications with enhanced detection
-                    if self._command_modifies_files(command):
-                        modified_files = self._extract_filenames_from_command(command)
-                        files_modified.extend(modified_files)
-                        if modified_files:
-                            output_lines.append(f"  Modified: {', '.join(modified_files)}")
-                else:
-                    error_msg = f"✗ [{i+1}/{len(commands)}] {command}"
-                    output_lines.append(error_msg)
-                    if result.stderr:
-                        output_lines.append(f"  Error: {result.stderr}")
-                        errors.append(f"Command '{command}': {result.stderr}")
-                    
-                    # Decide whether to continue or stop based on error type
-                    if self._is_critical_error(result.stderr, command):
-                        success = False
-                        break
-                    else:
-                        # Log warning but continue with non-critical errors
-                        self.logger.warning(f"Non-critical error in command '{command}': {result.stderr}")
-                        
-            except Exception as e:
-                error_msg = f"✗ [{i+1}/{len(commands)}] {command}"
-                output_lines.append(error_msg)
-                output_lines.append(f"  Exception: {str(e)}")
-                errors.append(f"Command '{command}': {str(e)}")
-                
-                # Exceptions are typically critical
-                success = False
-                break
-        
-        # Final success determination
-        if success and executed_commands:
-            self.logger.info(f"Successfully executed {len(executed_commands)} commands")
-        elif not success:
-            self.logger.error(f"Execution failed after {len(executed_commands)} commands")
-        
-        return {
-            "success": success,
-            "commands": executed_commands,
-            "files_modified": list(set(files_modified)),
-            "output": "\n".join(output_lines),
-            "errors": errors,
-            "total_commands": len(commands),
-            "executed_commands": len(executed_commands)
-        }
-    
-    def _command_modifies_files(self, command: str) -> bool:
-        """Check if a command modifies files."""
-        file_modifying_ops = [
-            'touch', 'echo', 'cat >', 'cat>>', 'patch', 'diff', 
-            'cp', 'mv', 'sed', 'awk', 'python', 'pip install',
-            'npm install', 'git', 'make', 'cmake'
-        ]
-        command_lower = command.lower()
-        return any(op in command_lower for op in file_modifying_ops)
-    
-    def _is_critical_error(self, stderr: str, command: str) -> bool:
-        """Determine if an error is critical and should stop execution."""
-        if not stderr:
-            return False
-        
-        stderr_lower = stderr.lower()
-        
-        # Critical errors that should stop execution
-        critical_indicators = [
-            'permission denied',
-            'no such file or directory',
-            'command not found',
-            'syntax error',
-            'fatal error',
-            'segmentation fault',
-            'out of memory',
-            'disk full'
-        ]
-        
-        # Non-critical warnings that can be ignored
-        non_critical_indicators = [
-            'warning',
-            'deprecated',
-            'already exists',
-            'skipping'
-        ]
-        
-        # Check for non-critical first
-        if any(indicator in stderr_lower for indicator in non_critical_indicators):
-            return False
-        
-        # Check for critical errors
-        if any(indicator in stderr_lower for indicator in critical_indicators):
-            return True
-        
-        # Default to non-critical for unknown errors
-        return False
-    
-
-    def _build_patch_execution_prompt(self, task: TaskDefinition) -> str:
-        """Build prompt for patch-first execution strategy."""
-        return f"""Execute the following task using a patch-first strategy for file modifications:
-
-TASK: {task.title}
-DESCRIPTION: {task.description}
-
-STEPS:
-{chr(10).join(f"- {step}" for step in task.steps)}
-
-REQUIREMENTS ADDRESSED: {', '.join(task.requirements_ref)}
-
-Use patch-first strategy:
-1. For file modifications, use 'diff' to create patches
-2. Apply patches using 'patch' command
-3. Only use full file overwrite if patch fails
-4. Create backups before modifications
-
-Generate specific shell commands to complete this task:"""
-    
-    def _build_execution_prompt(self, task: TaskDefinition, approach: str) -> str:
-        """Build prompt for task execution with specific approach."""
-        return f"""Execute the following coding task using the {approach} approach:
-
-TASK: {task.title}
-DESCRIPTION: {task.description}
-
-STEPS TO COMPLETE:
-{chr(10).join(f"- {step}" for step in task.steps)}
-
-REQUIREMENTS ADDRESSED: {', '.join(task.requirements_ref)}
-
-APPROACH: {approach}
-
-Generate the specific shell commands needed to complete this task. Focus on:
-- Creating/modifying files as needed
-- Running tests if applicable
-- Verifying the implementation works
-- Following best practices for the approach
-
-Provide the shell commands:"""
-    
-
     
     def _extract_shell_commands(self, execution_plan: str) -> List[str]:
         """Extract shell commands from execution plan."""
@@ -1199,110 +902,6 @@ Task '{record['task_title']}' was {'successfully completed' if record['completio
         
         return unique_approaches
     
-    async def _execute_with_enhanced_retry(
-        self, 
-        task: TaskDefinition, 
-        work_dir: str
-    ) -> Dict[str, Any]:
-        """
-        Execute task with enhanced retry mechanism and intelligent approach selection.
-        
-        Args:
-            task: TaskDefinition to execute
-            work_dir: Working directory
-            
-        Returns:
-            Dictionary containing comprehensive execution results
-        """
-        # Analyze task to determine optimal approaches
-        analysis = self._analyze_task_complexity(task)
-        approaches = analysis["recommended_approaches"]
-        
-        execution_result = {
-            "task_id": task.id,
-            "task_analysis": analysis,
-            "approaches_attempted": [],
-            "successful_approach": None,
-            "total_attempts": 0,
-            "success": False,
-            "execution_time": 0,
-            "detailed_log": []
-        }
-        
-        start_time = asyncio.get_event_loop().time()
-        
-        # Try each approach in priority order
-        for approach in approaches:
-            if task.completed or not task.can_retry():
-                break
-            
-            execution_result["total_attempts"] += 1
-            attempt_start = asyncio.get_event_loop().time()
-            
-            try:
-                self.logger.info(f"Attempting approach '{approach}' for task {task.title}")
-                
-                # Execute with current approach
-                approach_result = await self._execute_with_approach(task, work_dir, approach)
-                
-                attempt_time = asyncio.get_event_loop().time() - attempt_start
-                approach_result["execution_time"] = attempt_time
-                
-                execution_result["approaches_attempted"].append(approach_result)
-                execution_result["detailed_log"].append(
-                    f"Attempt {execution_result['total_attempts']}: {approach} - "
-                    f"{'SUCCESS' if approach_result['success'] else 'FAILED'}"
-                )
-                
-                if approach_result["success"]:
-                    execution_result["success"] = True
-                    execution_result["successful_approach"] = approach
-                    task.mark_completed(approach_result)
-                    break
-                else:
-                    # Record the attempt and increment retry counter
-                    task.add_attempt(approach, approach_result)
-                    task.increment_retry()
-                    
-                    # Log the failure reason
-                    error_msg = approach_result.get("error", "Unknown error")
-                    self.logger.warning(f"Approach '{approach}' failed: {error_msg}")
-                    
-            except Exception as e:
-                attempt_time = asyncio.get_event_loop().time() - attempt_start
-                error_result = {
-                    "approach": approach,
-                    "success": False,
-                    "error": str(e),
-                    "execution_time": attempt_time,
-                    "commands": []
-                }
-                
-                execution_result["approaches_attempted"].append(error_result)
-                execution_result["detailed_log"].append(
-                    f"Attempt {execution_result['total_attempts']}: {approach} - EXCEPTION: {str(e)}"
-                )
-                
-                task.add_attempt(approach, error_result)
-                task.increment_retry()
-                
-                self.logger.error(f"Exception in approach '{approach}': {e}")
-        
-        execution_result["execution_time"] = asyncio.get_event_loop().time() - start_time
-        
-        # Log final result
-        if execution_result["success"]:
-            self.logger.info(
-                f"Task '{task.title}' completed successfully using '{execution_result['successful_approach']}' "
-                f"after {execution_result['total_attempts']} attempts"
-            )
-        else:
-            self.logger.error(
-                f"Task '{task.title}' failed after {execution_result['total_attempts']} attempts. "
-                f"Max retries ({task.max_retries}) exceeded."
-            )
-        
-        return execution_result
     
     async def _optimize_shell_commands(self, commands: List[str]) -> List[str]:
         """
@@ -2710,13 +2309,14 @@ Generate the complete file contents now:"""
     
     async def _execute_command_with_recovery(self, shell_command, work_dir: str, execution_plan: ExecutionPlan) -> Dict[str, Any]:
         """
-        Execute a single command with error recovery capabilities.
-        
+        Execute a single command with error recovery capabilities, passing the
+        full execution plan to the recovery agent.
+
         Args:
             shell_command: ShellCommand object from execution plan
             work_dir: Working directory
             execution_plan: Full execution plan for context
-            
+
         Returns:
             Dictionary containing command execution results
         """
@@ -2726,15 +2326,15 @@ Generate the complete file contents now:"""
             "recovery_attempts": [],
             "files_modified": []
         }
-        
+
         # Initial command execution
         self.logger.info(f"Executing command: {shell_command.command}")
         exec_result = await self.shell_executor.execute_command(
-            shell_command.command, 
+            shell_command.command,
             working_dir=work_dir,
             timeout=shell_command.timeout
         )
-        
+
         # Convert to CommandResult for ErrorRecovery
         command_result = CommandResult(
             command=shell_command.command,
@@ -2744,7 +2344,7 @@ Generate the complete file contents now:"""
             execution_time=exec_result.execution_time,
             success=exec_result.success
         )
-        
+
         result["attempts"].append({
             "attempt": 1,
             "command": shell_command.command,
@@ -2753,28 +2353,28 @@ Generate the complete file contents now:"""
             "stdout": exec_result.stdout[:500],  # Truncate for logging
             "stderr": exec_result.stderr[:500]
         })
-        
+
         # Track files modified by this command
         files_modified = self._extract_filenames_from_command(shell_command.command)
         result["files_modified"] = files_modified
-        
+
         if exec_result.success:
             result["success"] = True
             return result
-        
+
         # Command failed - attempt error recovery
         self.logger.warning(f"Command failed, attempting error recovery: {shell_command.command}")
-        
+
         try:
-            # Create execution plan context for recovery
-            recovery_context = {
-                "execution_plan": {
-                    "task": execution_plan.task.to_dict() if hasattr(execution_plan.task, 'to_dict') else str(execution_plan.task),
-                    "commands": [cmd.command for cmd in execution_plan.commands],
-                    "current_command_index": execution_plan.commands.index(shell_command)
-                },
-                "work_directory": work_dir
+            # Create a serializable dictionary from the execution_plan dataclass
+            plan_dict = {
+                "task": execution_plan.task.to_dict() if hasattr(execution_plan.task, 'to_dict') else str(execution_plan.task),
+                "commands": [cmd.command for cmd in execution_plan.commands],
+                "success_criteria": execution_plan.success_criteria,
+                "fallback_strategies": execution_plan.fallback_strategies,
+                "current_command_index": execution_plan.commands.index(shell_command)
             }
+            recovery_context = {"execution_plan": plan_dict, "work_directory": work_dir}
             
             recovery_result = await self.error_recovery.recover(command_result, recovery_context)
             
@@ -2804,7 +2404,7 @@ Generate the complete file contents now:"""
                 self.logger.error(f"Error recovery failed for command: {shell_command.command}")
                 
         except Exception as e:
-            self.logger.error(f"Error recovery process failed: {e}")
+            self.logger.error(f"Error recovery process failed: {e}", exc_info=True)
             result["recovery_attempts"].append({
                 "success": False,
                 "error": str(e),

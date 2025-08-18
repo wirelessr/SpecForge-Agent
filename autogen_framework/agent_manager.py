@@ -16,8 +16,10 @@ from pathlib import Path
 from .agents.base_agent import BaseLLMAgent
 from .agents.plan_agent import PlanAgent
 from .agents.design_agent import DesignAgent
-from .agents.implement_agent import ImplementAgent
 from .agents.tasks_agent import TasksAgent
+from .agents.implement_agent import ImplementAgent
+from .agents.task_decomposer import TaskDecomposer
+from .agents.error_recovery import ErrorRecovery
 from .models import LLMConfig, WorkflowState, WorkflowPhase, AgentContext
 from .memory_manager import MemoryManager
 from .token_manager import TokenManager
@@ -144,7 +146,26 @@ class AgentManager:
             )
             self.agents["tasks"] = self.tasks_agent
             
-            # Initialize Implement Agent
+            # Initialize supporting agents for ImplementAgent
+            task_decomposer = TaskDecomposer(
+                name="TaskDecomposer",
+                llm_config=llm_config,
+                system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+                config_manager=config_manager
+            )
+
+            error_recovery = ErrorRecovery(
+                name="ErrorRecovery",
+                llm_config=llm_config,
+                system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
+                token_manager=token_manager,
+                context_manager=self.context_manager,
+                config_manager=config_manager
+            )
+
+            # Initialize Implement Agent and provide its dependencies
             implement_system_message = self._build_implement_agent_system_message()
             self.implement_agent = ImplementAgent(
                 name="ImplementAgent",
@@ -154,6 +175,8 @@ class AgentManager:
                 token_manager=token_manager,
                 context_manager=self.context_manager,
                 config_manager=config_manager,
+                task_decomposer=task_decomposer,
+                error_recovery=error_recovery
             )
             self.agents["implement"] = self.implement_agent
             

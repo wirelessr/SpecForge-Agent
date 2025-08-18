@@ -171,174 +171,48 @@ class TaskDecomposer(BaseLLMAgent):
     
     async def decompose_task(self, task: TaskDefinition) -> ExecutionPlan:
         """
-        Converts a high-level task into executable shell command sequence.
-        
+        Converts a high-level task into an executable shell command sequence
+        using a single, comprehensive LLM call for efficiency.
+
         Args:
             task: Task definition from tasks.md
-            
+
         Returns:
             ExecutionPlan with conditional shell commands
         """
-        self.logger.info(f"Decomposing task: {task.title}")
-        
+        self.logger.info(f"Decomposing task with comprehensive method: {task.title}")
         try:
-            # Step 1: Analyze task complexity and requirements
-            complexity = await self._analyze_complexity(task)
-            
-            # Step 2: Generate shell command sequence with decision points
-            commands = await self._generate_command_sequence(task, complexity)
-            
-            # Step 3: Identify decision points and conditional logic
-            decision_points = await self._identify_decision_points(commands, task)
-            
-            # Step 4: Define success criteria and fallback strategies
-            success_criteria = await self._define_success_criteria(task)
-            fallback_strategies = await self._generate_fallback_strategies(task, complexity)
-            
-            # Step 5: Estimate execution duration
-            estimated_duration = self._estimate_duration(commands, complexity)
-            
-            # Create execution plan
-            plan = ExecutionPlan(
-                task=task,
-                complexity_analysis=complexity,
-                commands=commands,
-                decision_points=decision_points,
-                success_criteria=success_criteria,
-                fallback_strategies=fallback_strategies,
-                estimated_duration=estimated_duration
-            )
-            
-            self.logger.info(f"Task decomposition completed: {len(commands)} commands, {len(decision_points)} decision points")
+            plan = await self._generate_comprehensive_execution_plan(task)
+            self.logger.info(f"Comprehensive task decomposition completed: {len(plan.commands)} commands")
             return plan
-            
         except Exception as e:
-            self.logger.error(f"Error decomposing task {task.title}: {e}")
-            raise
-    
-    async def _analyze_complexity(self, task: TaskDefinition) -> ComplexityAnalysis:
+            self.logger.error(f"Error in comprehensive task decomposition for {task.title}: {e}")
+            # As a fallback, create a minimal plan to avoid total failure
+            return ExecutionPlan(
+                task=task,
+                complexity_analysis=ComplexityAnalysis(
+                    complexity_level="unknown",
+                    estimated_steps=0,
+                    analysis_reasoning=f"Decomposition failed: {e}"
+                ),
+                commands=[],
+                success_criteria=[f"Investigate failure in task: {task.title}"],
+                fallback_strategies=[f"Manual investigation required due to decomposition error: {e}"]
+            )
+
+    async def _generate_comprehensive_execution_plan(self, task: TaskDefinition) -> ExecutionPlan:
         """
-        Analyzes task complexity based on requirements and context.
-        
+        Generates a full execution plan using a single, consolidated prompt.
+
         Args:
-            task: Task definition to analyze
-            
+            task: The task to decompose.
+
         Returns:
-            ComplexityAnalysis with detailed assessment
+            A complete ExecutionPlan.
         """
-        self.logger.debug(f"Analyzing complexity for task: {task.title}")
-        
-        # Build context-aware analysis prompt
-        analysis_prompt = self._build_complexity_analysis_prompt(task)
-        
-        # Get LLM analysis
-        analysis_response = await self.generate_response(analysis_prompt)
-        
-        # Parse the LLM response into structured analysis
-        complexity = self._parse_complexity_analysis(analysis_response, task)
-        
-        self.logger.info(f"Complexity analysis completed: {complexity.complexity_level} ({complexity.estimated_steps} steps)")
-        return complexity
-    
-    async def _generate_command_sequence(self, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
-        """
-        Generates conditional shell command sequence based on task and complexity.
-        
-        Args:
-            task: Task definition
-            complexity: Complexity analysis results
-            
-        Returns:
-            List of ShellCommand objects with metadata
-        """
-        self.logger.debug(f"Generating command sequence for {complexity.complexity_level} task")
-        
-        # Build command generation prompt
-        command_prompt = self._build_command_generation_prompt(task, complexity)
-        
-        # Get LLM-generated command sequence
-        commands_response = await self.generate_response(command_prompt)
-        
-        # Parse commands from LLM response
-        commands = self._parse_command_sequence(commands_response, task, complexity)
-        
-        self.logger.info(f"Generated {len(commands)} shell commands")
-        return commands
-    
-    async def _identify_decision_points(self, commands: List[ShellCommand], task: TaskDefinition) -> List[DecisionPoint]:
-        """
-        Identifies decision points and branching logic in command sequence.
-        
-        Args:
-            commands: List of shell commands
-            task: Task definition
-            
-        Returns:
-            List of DecisionPoint objects
-        """
-        decision_points = []
-        
-        # Identify commands marked as decision points
-        for i, command in enumerate(commands):
-            if command.decision_point:
-                # Build decision point analysis prompt
-                decision_prompt = self._build_decision_point_prompt(command, task, i)
-                
-                # Get LLM analysis for decision logic
-                decision_response = await self.generate_response(decision_prompt)
-                
-                # Parse decision point from response
-                decision_point = self._parse_decision_point(decision_response, i)
-                if decision_point:
-                    decision_points.append(decision_point)
-        
-        self.logger.info(f"Identified {len(decision_points)} decision points")
-        return decision_points
-    
-    async def _define_success_criteria(self, task: TaskDefinition) -> List[str]:
-        """
-        Defines success criteria for task completion.
-        
-        Args:
-            task: Task definition
-            
-        Returns:
-            List of success criteria strings
-        """
-        # Build success criteria prompt
-        criteria_prompt = self._build_success_criteria_prompt(task)
-        
-        # Get LLM-generated criteria
-        criteria_response = await self.generate_response(criteria_prompt)
-        
-        # Parse criteria from response
-        criteria = self._parse_success_criteria(criteria_response)
-        
-        self.logger.info(f"Defined {len(criteria)} success criteria")
-        return criteria
-    
-    async def _generate_fallback_strategies(self, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[str]:
-        """
-        Generates fallback strategies for error recovery.
-        
-        Args:
-            task: Task definition
-            complexity: Complexity analysis
-            
-        Returns:
-            List of fallback strategy descriptions
-        """
-        # Build fallback strategies prompt
-        fallback_prompt = self._build_fallback_strategies_prompt(task, complexity)
-        
-        # Get LLM-generated strategies
-        strategies_response = await self.generate_response(fallback_prompt)
-        
-        # Parse strategies from response
-        strategies = self._parse_fallback_strategies(strategies_response)
-        
-        self.logger.info(f"Generated {len(strategies)} fallback strategies")
-        return strategies
+        prompt = self._build_comprehensive_prompt(task)
+        llm_response = await self.generate_response(prompt)
+        return self._parse_comprehensive_response(llm_response, task)
     
     # Private helper methods for task handling
     
@@ -387,446 +261,195 @@ class TaskDecomposer(BaseLLMAgent):
             }
     
     # Private helper methods for prompt building
-    
-    def _build_complexity_analysis_prompt(self, task: TaskDefinition) -> str:
-        """Build prompt for task complexity analysis."""
+
+    def _build_comprehensive_prompt(self, task: TaskDefinition) -> str:
+        """Builds a single, comprehensive prompt for generating a full execution plan."""
         context_info = self._get_context_summary()
-        
         prompt = f"""
-Analyze the complexity of the following task and provide a detailed assessment.
+You are an expert task decomposer. Analyze the following task and generate a complete execution plan in a single JSON response.
 
-Task Information:
-- Title: {task.title}
-- Description: {task.description}
-- Steps: {task.steps}
-- Requirements References: {task.requirements_ref}
-- Dependencies: {task.dependencies}
+**Task Information:**
+- **Title:** {task.title}
+- **Description:** {task.description}
+- **Steps:** {task.steps}
+- **Requirements References:** {task.requirements_ref}
+- **Dependencies:** {task.dependencies}
 
+**Available Context:**
 {context_info}
 
-Please analyze this task and provide:
+**Instructions:**
+Generate a single JSON object that contains the entire execution plan. The JSON object should have the following structure:
 
-1. Complexity Level: Choose from "simple", "moderate", "complex", "very_complex"
-2. Estimated Steps: Number of discrete steps needed
-3. Required Tools: List of tools/technologies needed
-4. Dependencies: External dependencies or prerequisites
-5. Risk Factors: Potential challenges or failure points
-6. Confidence Score: Your confidence in this analysis (0.0-1.0)
-7. Analysis Reasoning: Explanation of your assessment
+1.  **`complexity_analysis` (object):**
+    *   `complexity_level`: (string) "simple", "moderate", "complex", or "very_complex".
+    *   `estimated_steps`: (integer) Total number of discrete steps.
+    *   `required_tools`: (array of strings) Tools/technologies needed.
+    *   `dependencies`: (array of strings) External dependencies or prerequisites.
+    *   `risk_factors`: (array of strings) Potential challenges or failure points.
+    *   `confidence_score`: (float) Your confidence in this analysis (0.0-1.0).
+    *   `analysis_reasoning`: (string) Brief explanation of your assessment.
 
-Format your response as JSON:
+2.  **`commands` (array of objects):**
+    *   `command`: (string) The actual, executable shell command.
+    *   `description`: (string) What this command does.
+    *   `timeout`: (integer) Max execution time in seconds.
+    *   `retry_on_failure`: (boolean) Whether to retry this specific command on failure.
+    *   `success_indicators`: (array of strings) Keywords in output that indicate success.
+    *   `failure_indicators`: (array of strings) Keywords in output that indicate failure.
+
+3.  **`success_criteria` (array of strings):**
+    *   Specific, measurable, and verifiable criteria that confirm the entire task is complete.
+
+4.  **`fallback_strategies` (array of strings):**
+    *   Simple, alternative approaches to try if the main plan fails (e.g., "Retry after running `pip install`").
+
+5.  **`estimated_duration` (integer):**
+    *   Total estimated time to complete the task in minutes.
+
+**Example JSON Structure:**
+```json
 {{
-    "complexity_level": "...",
-    "estimated_steps": ...,
-    "required_tools": [...],
-    "dependencies": [...],
-    "risk_factors": [...],
-    "confidence_score": ...,
-    "analysis_reasoning": "..."
-}}
-"""
-        return prompt
-    
-    def _build_command_generation_prompt(self, task: TaskDefinition, complexity: ComplexityAnalysis) -> str:
-        """Build prompt for shell command sequence generation."""
-        context_info = self._get_context_summary()
-        
-        prompt = f"""
-Generate a sequence of shell commands to accomplish the following task.
-
-Task Information:
-- Title: {task.title}
-- Description: {task.description}
-- Steps: {task.steps}
-- Complexity Level: {complexity.complexity_level}
-- Estimated Steps: {complexity.estimated_steps}
-- Required Tools: {complexity.required_tools}
-- Risk Factors: {complexity.risk_factors}
-
-{context_info}
-
-Generate shell commands that:
-1. Are executable and practical
-2. Include proper error handling
-3. Have clear success/failure indicators
-4. Include decision points where branching logic is needed
-5. Are optimized for the identified complexity level
-
-For each command, provide:
-- command: The actual shell command
-- description: What this command does
-- expected_outputs: What outputs indicate success
-- error_patterns: What outputs indicate failure
-- timeout: Maximum execution time in seconds
-- retry_on_failure: Whether to retry on failure
-- decision_point: Whether this is a decision point
-- success_indicators: Specific success indicators
-- failure_indicators: Specific failure indicators
-
-Format your response as JSON array:
-[
+  "complexity_analysis": {{
+    "complexity_level": "moderate",
+    "estimated_steps": 5,
+    "required_tools": ["python", "pip"],
+    "dependencies": ["requests"],
+    "risk_factors": ["API rate limiting"],
+    "confidence_score": 0.9,
+    "analysis_reasoning": "Standard Python script with external API calls."
+  }},
+  "commands": [
     {{
-        "command": "...",
-        "description": "...",
-        "expected_outputs": [...],
-        "error_patterns": [...],
-        "timeout": ...,
-        "retry_on_failure": ...,
-        "decision_point": ...,
-        "success_indicators": [...],
-        "failure_indicators": [...]
+      "command": "pip install requests",
+      "description": "Install the necessary requests library.",
+      "timeout": 120,
+      "retry_on_failure": true,
+      "success_indicators": ["Successfully installed"],
+      "failure_indicators": ["Could not find a version", "error"]
     }},
-    ...
-]
-"""
-        return prompt
-    
-    def _build_decision_point_prompt(self, command: ShellCommand, task: TaskDefinition, index: int) -> str:
-        """Build prompt for decision point analysis."""
-        prompt = f"""
-Analyze the following command as a decision point and define the branching logic.
-
-Command: {command.command}
-Description: {command.description}
-Task: {task.title}
-Command Index: {index}
-
-Define the decision logic:
-1. Condition: What condition determines the branch?
-2. True Path: What command indices to execute if condition is true?
-3. False Path: What command indices to execute if condition is false?
-4. Evaluation Method: How to evaluate the condition? (output_check, file_exists, exit_code)
-5. Description: Brief description of the decision logic
-
-Format your response as JSON:
-{{
-    "condition": "...",
-    "true_path": [...],
-    "false_path": [...],
-    "evaluation_method": "...",
-    "description": "..."
+    {{
+      "command": "python create_api_client.py",
+      "description": "Run the python script to implement the feature.",
+      "timeout": 300,
+      "retry_on_failure": false,
+      "success_indicators": ["API client created successfully"],
+      "failure_indicators": ["Traceback", "Error"]
+    }}
+  ],
+  "success_criteria": [
+    "The file `api_client.py` is created.",
+    "The script runs without any Python errors.",
+    "A sample request using the client is successful."
+  ],
+  "fallback_strategies": [
+    "If 'pip install' fails, try 'pip install --user requests'.",
+    "If script fails, check for correct API keys in environment variables."
+  ],
+  "estimated_duration": 10
 }}
-"""
-        return prompt
-    
-    def _build_success_criteria_prompt(self, task: TaskDefinition) -> str:
-        """Build prompt for success criteria definition."""
-        context_info = self._get_context_summary()
-        
-        prompt = f"""
-Define clear success criteria for the following task completion.
+```
 
-Task Information:
-- Title: {task.title}
-- Description: {task.description}
-- Steps: {task.steps}
-- Requirements References: {task.requirements_ref}
-
-{context_info}
-
-Define specific, measurable success criteria that indicate the task has been completed successfully.
-Each criterion should be:
-1. Specific and measurable
-2. Verifiable through shell commands or file checks
-3. Directly related to the task objectives
-
-Format your response as JSON array of strings:
-[
-    "Criterion 1: ...",
-    "Criterion 2: ...",
-    ...
-]
-"""
-        return prompt
-    
-    def _build_fallback_strategies_prompt(self, task: TaskDefinition, complexity: ComplexityAnalysis) -> str:
-        """Build prompt for fallback strategies generation."""
-        prompt = f"""
-Generate fallback strategies for the following task in case of failures.
-
-Task Information:
-- Title: {task.title}
-- Description: {task.description}
-- Complexity Level: {complexity.complexity_level}
-- Risk Factors: {complexity.risk_factors}
-
-Consider the identified risk factors and generate alternative approaches that could be used if the primary execution plan fails.
-
-Each strategy should:
-1. Address specific failure scenarios
-2. Provide alternative implementation approaches
-3. Be practical and executable
-4. Have lower complexity than the original approach when possible
-
-Format your response as JSON array of strings:
-[
-    "Strategy 1: ...",
-    "Strategy 2: ...",
-    ...
-]
+Now, generate the complete JSON response for the provided task.
 """
         return prompt
     
     # Private helper methods for parsing LLM responses
-    
-    def _parse_complexity_analysis(self, response: str, task: TaskDefinition) -> ComplexityAnalysis:
-        """Parse complexity analysis from LLM response."""
+
+    def _parse_comprehensive_response(self, response: str, task: TaskDefinition) -> ExecutionPlan:
+        """Parses the comprehensive JSON response into an ExecutionPlan."""
         try:
-            # Try to parse as JSON first
-            if response.strip().startswith('{'):
-                data = json.loads(response)
-                return ComplexityAnalysis(
-                    complexity_level=data.get("complexity_level", "moderate"),
-                    estimated_steps=data.get("estimated_steps", 5),
-                    required_tools=data.get("required_tools", []),
-                    dependencies=data.get("dependencies", []),
-                    risk_factors=data.get("risk_factors", []),
-                    confidence_score=data.get("confidence_score", 0.5),
-                    analysis_reasoning=data.get("analysis_reasoning", "")
-                )
-            else:
-                # Fallback to text parsing
-                return self._parse_complexity_from_text(response, task)
-                
-        except json.JSONDecodeError:
-            # Fallback to text parsing
-            return self._parse_complexity_from_text(response, task)
-    
-    def _parse_complexity_from_text(self, response: str, task: TaskDefinition) -> ComplexityAnalysis:
-        """Parse complexity analysis from text response."""
-        # Simple text-based parsing as fallback
-        lines = response.lower().split('\n')
-        
-        complexity_level = "moderate"
-        estimated_steps = len(task.steps) if task.steps else 5
-        
-        # Look for complexity indicators
-        if any(word in response.lower() for word in ["simple", "easy", "basic"]):
-            complexity_level = "simple"
-            estimated_steps = max(3, estimated_steps)
-        elif any(word in response.lower() for word in ["complex", "difficult", "challenging"]):
-            complexity_level = "complex"
-            estimated_steps = max(8, estimated_steps)
-        elif any(word in response.lower() for word in ["very complex", "extremely", "highly complex"]):
-            complexity_level = "very_complex"
-            estimated_steps = max(12, estimated_steps)
-        
-        return ComplexityAnalysis(
-            complexity_level=complexity_level,
-            estimated_steps=estimated_steps,
-            required_tools=["shell", "basic_tools"],
-            dependencies=[],
-            risk_factors=["execution_failure"],
-            confidence_score=0.6,
-            analysis_reasoning="Parsed from text response"
-        )
-    
-    def _parse_command_sequence(self, response: str, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
-        """Parse shell command sequence from LLM response."""
-        try:
-            # Extract JSON from response (handle code blocks)
             json_content = self._extract_json_from_response(response)
-            
-            if json_content:
-                data = json.loads(json_content)
-                commands = []
-                
-                for cmd_data in data:
-                    command = ShellCommand(
-                        command=cmd_data.get("command", ""),
-                        description=cmd_data.get("description", ""),
-                        expected_outputs=cmd_data.get("expected_outputs", []),
-                        error_patterns=cmd_data.get("error_patterns", []),
-                        timeout=cmd_data.get("timeout", 30),
-                        retry_on_failure=cmd_data.get("retry_on_failure", True),
-                        decision_point=cmd_data.get("decision_point", False),
-                        success_indicators=cmd_data.get("success_indicators", []),
-                        failure_indicators=cmd_data.get("failure_indicators", [])
-                    )
-                    commands.append(command)
-                
-                self.logger.info(f"Successfully parsed {len(commands)} commands from LLM JSON response")
-                return commands
-            else:
-                # Fallback to text parsing
-                self.logger.warning("No JSON found in response, falling back to text parsing")
-                return self._parse_commands_from_text(response, task, complexity)
-                
-        except json.JSONDecodeError as e:
-            # Fallback to text parsing
-            self.logger.warning(f"JSON parsing failed: {e}, falling back to text parsing")
-            return self._parse_commands_from_text(response, task, complexity)
+            if not json_content:
+                self.logger.error("No JSON content found in LLM response for comprehensive plan.")
+                raise ValueError("No JSON content found in LLM response.")
+
+            data = json.loads(json_content)
+
+            # Parse ComplexityAnalysis
+            complexity_data = data.get("complexity_analysis", {})
+            complexity = ComplexityAnalysis(
+                complexity_level=complexity_data.get("complexity_level", "moderate"),
+                estimated_steps=complexity_data.get("estimated_steps", 3),
+                required_tools=complexity_data.get("required_tools", []),
+                dependencies=complexity_data.get("dependencies", []),
+                risk_factors=complexity_data.get("risk_factors", []),
+                confidence_score=complexity_data.get("confidence_score", 0.7),
+                analysis_reasoning=complexity_data.get("analysis_reasoning", "Parsed from comprehensive response.")
+            )
+
+            # Parse ShellCommands
+            commands_data = data.get("commands", [])
+            commands = [
+                ShellCommand(
+                    command=cmd.get("command", ""),
+                    description=cmd.get("description", ""),
+                    timeout=cmd.get("timeout", 60),
+                    retry_on_failure=cmd.get("retry_on_failure", False),
+                    success_indicators=cmd.get("success_indicators", []),
+                    failure_indicators=cmd.get("failure_indicators", [])
+                ) for cmd in commands_data
+            ]
+
+            # Create the final ExecutionPlan
+            plan = ExecutionPlan(
+                task=task,
+                complexity_analysis=complexity,
+                commands=commands,
+                decision_points=[],  # Simplified model does not generate complex decision points
+                success_criteria=data.get("success_criteria", []),
+                fallback_strategies=data.get("fallback_strategies", []),
+                estimated_duration=data.get("estimated_duration", 15)
+            )
+            return plan
+
+        except (json.JSONDecodeError, ValueError) as e:
+            self.logger.error(f"Failed to parse comprehensive execution plan: {e}. Response: {response[:500]}")
+            # Create a fallback plan indicating failure
+            return ExecutionPlan(
+                task=task,
+                complexity_analysis=ComplexityAnalysis(
+                    complexity_level="unknown",
+                    estimated_steps=0,
+                    analysis_reasoning=f"Failed to parse LLM response: {e}"
+                ),
+                commands=[ShellCommand(command=f"echo 'Error: Failed to parse execution plan from LLM. Please check logs.'", description="Report parsing error")],
+                success_criteria=["Manual verification required."],
+                fallback_strategies=[f"Parsing failed: {e}"]
+            )
     
     def _extract_json_from_response(self, response: str) -> Optional[str]:
         """Extract JSON content from LLM response, handling code blocks."""
         import re
-        
-        # Try to find JSON in code blocks first
-        json_block_pattern = r'```(?:json)?\s*(\[.*?\])\s*```'
+
+        # Pattern to find a JSON object within triple backticks
+        json_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
         match = re.search(json_block_pattern, response, re.DOTALL)
         if match:
             return match.group(1)
-        
-        # Try to find JSON array directly
-        json_pattern = r'(\[.*?\])'
-        match = re.search(json_pattern, response, re.DOTALL)
-        if match:
-            return match.group(1)
-        
-        # Check if response starts with [ after stripping
-        stripped = response.strip()
-        if stripped.startswith('[') and stripped.endswith(']'):
-            return stripped
-        
+
+        # If no code block found, try to find the first '{' and last '}'
+        start_index = response.find('{')
+        end_index = response.rfind('}')
+        if start_index != -1 and end_index != -1 and end_index > start_index:
+            return response[start_index:end_index+1]
+
         return None
-    
-    def _parse_commands_from_text(self, response: str, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
-        """Parse commands from text response."""
-        commands = []
-        lines = response.split('\n')
-        
-        current_command = None
-        for line in lines:
-            line = line.strip()
-            
-            # Look for command patterns
-            if line.startswith('$') or line.startswith('> ') or 'command:' in line.lower():
-                if current_command:
-                    commands.append(current_command)
-                
-                # Extract command
-                cmd = line.replace('$', '').replace('> ', '').replace('command:', '').strip()
-                if cmd:
-                    current_command = ShellCommand(
-                        command=cmd,
-                        description=f"Execute: {cmd}",
-                        timeout=30,
-                        retry_on_failure=True
-                    )
-        
-        if current_command:
-            commands.append(current_command)
-        
-        # If no commands found, create basic commands based on task
-        if not commands:
-            commands = self._generate_basic_commands(task, complexity)
-        
-        return commands
-    
-    def _parse_decision_point(self, response: str, index: int) -> Optional[DecisionPoint]:
-        """Parse decision point from LLM response."""
-        try:
-            if response.strip().startswith('{'):
-                data = json.loads(response)
-                return DecisionPoint(
-                    condition=data.get("condition", ""),
-                    true_path=data.get("true_path", []),
-                    false_path=data.get("false_path", []),
-                    evaluation_method=data.get("evaluation_method", "exit_code"),
-                    description=data.get("description", "")
-                )
-        except json.JSONDecodeError:
-            pass
-        
-        return None
-    
-    def _parse_success_criteria(self, response: str) -> List[str]:
-        """Parse success criteria from LLM response."""
-        try:
-            if response.strip().startswith('['):
-                return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-        
-        # Fallback to text parsing
-        criteria = []
-        lines = response.split('\n')
-        for line in lines:
-            line = line.strip()
-            if line and (line.startswith('-') or line.startswith('*') or 'criterion' in line.lower()):
-                criteria.append(line.replace('-', '').replace('*', '').strip())
-        
-        return criteria if criteria else ["Task execution completed without errors"]
-    
-    def _parse_fallback_strategies(self, response: str) -> List[str]:
-        """Parse fallback strategies from LLM response."""
-        try:
-            if response.strip().startswith('['):
-                return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-        
-        # Fallback to text parsing
-        strategies = []
-        lines = response.split('\n')
-        for line in lines:
-            line = line.strip()
-            if line and (line.startswith('-') or line.startswith('*') or 'strategy' in line.lower()):
-                strategies.append(line.replace('-', '').replace('*', '').strip())
-        
-        return strategies if strategies else ["Retry with simplified approach"]
     
     # Private helper methods for utilities
-    
+
     def _get_context_summary(self) -> str:
         """Get summary of current context for prompts."""
         context_parts = []
-        
-        if hasattr(self, 'context') and self.context:
-            if 'requirements' in self.context:
-                context_parts.append("Requirements document is available")
-            if 'design' in self.context:
-                context_parts.append("Design document is available")
-            if 'project_structure' in self.context:
-                context_parts.append("Project structure is analyzed")
-        
-        if context_parts:
-            return f"Context Available: {', '.join(context_parts)}"
-        else:
-            return "Context: Limited context available"
-    
-    def _generate_basic_commands(self, task: TaskDefinition, complexity: ComplexityAnalysis) -> List[ShellCommand]:
-        """Generate basic commands when parsing fails."""
-        commands = []
-        
-        # Create basic commands based on task description
-        if "create" in task.description.lower() or "implement" in task.description.lower():
-            commands.append(ShellCommand(
-                command="echo 'Starting task implementation'",
-                description="Initialize task execution",
-                timeout=5
-            ))
-        
-        if "test" in task.description.lower():
-            commands.append(ShellCommand(
-                command="echo 'Running tests'",
-                description="Execute tests",
-                timeout=60
-            ))
-        
-        # Add completion command
-        commands.append(ShellCommand(
-            command="echo 'Task completed'",
-            description="Mark task as completed",
-            timeout=5
-        ))
-        
-        return commands
-    
-    def _estimate_duration(self, commands: List[ShellCommand], complexity: ComplexityAnalysis) -> int:
-        """Estimate execution duration in minutes."""
-        base_duration = len(commands) * 2  # 2 minutes per command base
-        
-        # Adjust based on complexity
-        complexity_multipliers = {
-            "simple": 0.5,
-            "moderate": 1.0,
-            "complex": 1.5,
-            "very_complex": 2.0
-        }
-        
-        multiplier = complexity_multipliers.get(complexity.complexity_level, 1.0)
-        return max(5, int(base_duration * multiplier))
+        if self.context_manager:
+            # This is a simplified representation. A real implementation might fetch
+            # actual summaries from the context manager.
+            context_parts.append("Project context (requirements, design, file structure) is available.")
+            context_parts.append("Execution history for previous tasks is available.")
+
+        if not context_parts:
+            return "No additional context is available."
+        return "\n".join(context_parts)
     
     def _load_decomposition_patterns(self) -> Dict[str, Any]:
         """Load decomposition patterns from configuration."""
