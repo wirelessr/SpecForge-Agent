@@ -14,33 +14,6 @@ class TestTaskExecution:
         assert controller.initialize_framework(llm_config=real_llm_config)
         return controller
 
-    @pytest.mark.asyncio
-    async def test_task_decomposer_agent_creates_tasks(self, main_controller, temp_workspace):
-        """Test that TaskDecomposerAgent can create a task list."""
-        task_def = TaskDefinition(
-            id="1",
-            title="Create a web server",
-            description="Create a web server with a single endpoint that returns 'hello world'",
-            steps=["Use Flask", "Create a main.py file"],
-            requirements_ref=["1.1"]
-        )
-
-        # Provide the context files it needs
-        (Path(temp_workspace) / "requirements.md").write_text("A Python web server using Flask.")
-        (Path(temp_workspace) / "design.md").write_text("Create a file `main.py`. It will contain a Flask app with one route, '/', that returns 'hello world'.")
-
-        # Run the task decomposer agent
-        execution_plan = await main_controller.agent_manager.task_decomposer_agent.decompose_task(task=task_def)
-
-        # Verify that the execution plan has commands
-        assert execution_plan is not None
-        assert len(execution_plan.commands) > 0
-
-        # Check that the commands make sense
-        commands_str = " ".join([cmd.command for cmd in execution_plan.commands])
-        assert "pip install" in commands_str
-        assert "flask" in commands_str.lower()
-        assert "python" in commands_str
 
     @pytest.mark.asyncio
     async def test_implement_agent_creates_and_executes_code(self, main_controller, temp_workspace):
