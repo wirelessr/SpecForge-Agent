@@ -2397,7 +2397,11 @@ Generate the complete file contents now:"""
             })
             
             if recovery_result.success:
-                result["success"] = True
+                # The recovery agent succeeded, but we will still consider the
+                # overall command as failed to ensure the plan executor
+                # knows an error occurred. The details of the successful
+                # recovery are logged for analysis.
+                result["success"] = False
                 result["attempts"].append({
                     "attempt": 2,
                     "command": f"Recovery: {recovery_result.strategy_used.name}",
