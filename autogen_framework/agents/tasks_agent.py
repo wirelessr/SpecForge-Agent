@@ -275,7 +275,7 @@ Generate the complete tasks.md content now:"""
         
         return {
             "success": True,
-            "tasks_path": tasks_path,
+            "tasks_file": tasks_path,
             "task_count": len(self.current_tasks),
             "work_directory": work_dir
         }
