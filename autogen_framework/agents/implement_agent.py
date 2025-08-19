@@ -2145,11 +2145,21 @@ Generate the complete file contents now:"""
             result["decomposition_plan"] = {
                 "complexity_level": execution_plan.complexity_analysis.complexity_level,
                 "estimated_steps": execution_plan.complexity_analysis.estimated_steps,
-                "commands_count": len(execution_plan.commands),  # Fixed: use commands_count (with 's')
-                "command_count": len(execution_plan.commands),   # Keep both for compatibility
+                "commands_count": len(execution_plan.commands),
+                "command_count": len(execution_plan.commands),
                 "estimated_duration": execution_plan.estimated_duration,
-                "decomposition_time": decomposition_result.get("decomposition_time", 0.1)  # Add decomposition_time
+                "decomposition_time": decomposition_result.get("decomposition_time", 0.1)
             }
+
+            if not execution_plan.commands:
+                self.logger.error("Task decomposition resulted in an empty execution plan. Cannot proceed.")
+                result["approaches_attempted"].append({
+                    "approach": "task_decomposition",
+                    "success": False,
+                    "error": "Task decomposition resulted in an empty command list.",
+                    "commands": []
+                })
+                return result
             result["task_analysis"] = decomposition_result.get("task_analysis", {})
             
             # Step 2: Enhanced Command Execution with Error Recovery

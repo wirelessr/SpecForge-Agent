@@ -94,8 +94,9 @@ class TestDocumentGeneration:
 
         content = tasks_path.read_text()
         assert len(content) > 50
-        assert "task" in content.lower()
-        assert "1." in content or "- " in content
+        # Check for list items instead of the word "task" to make the test more robust
+        assert "- [" in content
+        assert "1." in content
 
         await asyncio.sleep(20)
 
