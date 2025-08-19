@@ -1,5 +1,7 @@
 # AutoGen Multi-Agent Framework
 
+[![Run Unit Tests](https://github.com/wirelessr/SpecForge-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/wirelessr/SpecForge-Agent/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/wirelessr/SpecForge-Agent/graph/badge.svg)](https://codecov.io/gh/wirelessr/SpecForge-Agent)
+
 A sophisticated multi-agent collaboration framework built on AutoGen that automates the complete software development lifecycle from requirements analysis to code implementation.
 
 For a comprehensive guide on features, architecture, and advanced usage, please see the **[Framework Documentation](autogen_framework/README.md)**.
