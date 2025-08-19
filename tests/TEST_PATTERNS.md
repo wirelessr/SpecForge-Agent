@@ -947,4 +947,4 @@ class TestRealServiceIntegration:
 
 ---
 
-These patterns ensure consistent, reliable, and maintainable tests across the entire AutoGen Multi-Agent Framework with Autonomous Execution Enhancement.
+These patterns ensure consistent, reliable, and maintainable tests across the entire AutoGen Multi-Agent Framework.

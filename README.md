@@ -2,17 +2,7 @@
 
 A sophisticated multi-agent collaboration framework built on AutoGen that automates the complete software development lifecycle from requirements analysis to code implementation.
 
-## 🌟 Overview
-
-This framework implements an intelligent multi-agent system that follows a structured workflow: **Requirements → Design → Tasks → Implementation**. Each phase is handled by specialized agents with built-in approval checkpoints and revision capabilities.
-
-### Key Features
-
-- **🤖 Intelligent Agent Collaboration**: Four specialized agents (Plan, Design, Tasks, Implement) work together
-- **🔄 Complete Development Workflow**: End-to-end automation with human oversight
-- **🛠️ Advanced Architecture**: Modular design with session management and context retention
-- **📊 Quality-First Approach**: Built-in quality metrics and testing standards
-- **🔧 Autonomous Execution**: Enhanced implementation with intelligent error recovery
+For a comprehensive guide on features, architecture, and advanced usage, please see the **[Framework Documentation](autogen_framework/README.md)**.
 
 ## 🚀 Quick Start
 
@@ -26,7 +16,7 @@ This framework implements an intelligent multi-agent system that follows a struc
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd autogen-framework
+# cd into the repository directory you just cloned
 
 # Install dependencies
 uv sync
@@ -38,112 +28,42 @@ cp .env.example .env
 
 ### Basic Usage
 
+For detailed instructions and examples, refer to the **[Framework Documentation](autogen_framework/README.md)**.
+
 ```bash
+# Create a workspace directory
+mkdir my-project && cd my-project
+
 # Submit a development request
-autogen-framework --request "Create a REST API for user management"
+autogen-framework --workspace . --request "Create a REST API for user management"
 
 # Review and approve each phase
-autogen-framework --status
-autogen-framework --approve requirements
-autogen-framework --approve design
-autogen-framework --approve tasks
+autogen-framework --workspace . --status
+autogen-framework --workspace . --approve requirements
+# ... and so on for design and tasks
 
 # Execute implementation
-autogen-framework --execute-tasks
+autogen-framework --workspace . --execute-tasks
 ```
-
-## 🏗️ Architecture
-
-### Core Components
-
-- **MainController**: Thin I/O layer for user interactions
-- **WorkflowManager**: Central orchestrator managing workflow state
-- **SessionManager**: Handles session persistence across commands
-- **AgentManager**: Factory for creating and managing agents
-
-### Specialized Agents
-
-- **PlanAgent**: Analyzes requirements and generates requirements.md
-- **DesignAgent**: Creates technical design from requirements
-- **TasksAgent**: Decomposes design into actionable tasks
-- **ImplementAgent**: Executes tasks with intelligent error recovery
-
-### Support Systems
-
-- **MemoryManager**: Context retention and learning capabilities
-- **ShellExecutor**: Command execution with error handling
-- **TokenManager**: Context compression and optimization
-- **ContextManager**: Project context integration
 
 ## 📖 Documentation
 
-- **[Framework Documentation](autogen_framework/README.md)** - Detailed usage guide
-- **[Configuration Guide](docs/configuration-guide.md)** - Setup and configuration
-- **[Testing Standards](tests/TESTING_STANDARDS_SUMMARY.md)** - Testing guidelines
-- **[Development Guide](.kiro/steering/workflow-execution-guide.md)** - Development workflow
-
-## 🧪 Testing
-
-The framework follows a comprehensive testing strategy:
-
-```bash
-# Fast unit tests
-pytest tests/unit/ -x --tb=short -q
-
-# Integration tests
-pytest tests/integration/ -x --tb=short -q
-
-# End-to-end workflow tests
-./tests/e2e/workflow_test.sh
-```
-
-### Test Structure
-
-- **Unit Tests**: Fast, isolated tests with mocked dependencies
-- **Integration Tests**: Real service interactions
-- **E2E Tests**: Complete workflow validation
-- **Quality Tests**: Metrics and regression testing
-
-## 🔧 Configuration
-
-The framework uses a three-tier configuration system:
-
-1. **Environment Variables** (.env file)
-2. **Configuration Files** (config/ directory)
-3. **Command Arguments** (runtime overrides)
-
-See the [Configuration Guide](docs/configuration-guide.md) for details.
+- **[Framework Documentation](autogen_framework/README.md)** - Detailed usage guide, architecture, and examples.
+- **[Configuration Guide](docs/configuration-guide.md)** - Full guide to the three-tier configuration system.
+- **[Developer Guide](autogen_framework/docs/developer-guide.md)** - Guide for developing and contributing to the framework.
+- **[Testing Overview](tests/README.md)** - Information on testing standards and practices.
 
 ## 🎯 Development Principles
 
-### User Requirements First
+This framework is built on three core principles:
 
-- Trust user requirements and configuration
-- No unauthorized feature additions
-- Transparent error reporting
-- Real configuration testing
-
-### Quality-First Development
-
-- Comprehensive testing at all levels
-- Quality metrics and baselines
-- Continuous improvement tracking
-- Error recovery and learning
-
-### Autonomous Execution
-
-- Intelligent task decomposition
-- Multi-strategy error recovery
-- Context-aware execution
-- Learning from successful patterns
+1.  **User Requirements First**: The system should faithfully implement user requirements without adding unsolicited features.
+2.  **Quality-First Development**: We are committed to high-quality code through comprehensive testing, quality metrics, and continuous improvement.
+3.  **Autonomous Execution**: Agents should execute tasks intelligently, with robust error recovery and learning capabilities.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our development guidelines:
-
-1. Follow the [User Requirements First](.kiro/steering/user-requirements-first.md) principle
-2. Use the [Testing Standards](tests/TESTING_STANDARDS_SUMMARY.md)
-3. Follow the [Development Workflow](.kiro/steering/workflow-execution-guide.md)
+We welcome contributions! Before you start, please review our **[Developer Guide](autogen_framework/docs/developer-guide.md)** and **[Testing Overview](tests/README.md)**.
 
 ### Development Setup
 
@@ -160,10 +80,10 @@ black autogen_framework/
 
 ## 📊 Project Status
 
-- **Version**: 0.1.0
+- **Version**: 1.0.0
 - **Python**: 3.11+
 - **Status**: Active Development
-- **License**: [Add License]
+- **License**: See LICENSE file.
 
 ## 🙏 Acknowledgments
 
@@ -172,4 +92,4 @@ Built on the excellent AutoGen framework. Thanks to all contributors and the ope
 ---
 
 **Maintained by**: Kiro AI Assistant  
-**Last Updated**: 2025-08-16
+**Last Updated**: 2025-08-18

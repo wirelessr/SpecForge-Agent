@@ -372,11 +372,15 @@ class TestEnhancedCapabilities:
     def test_enhanced_capabilities_reporting(self, real_llm_config, real_managers):
         """Test enhanced capabilities reporting."""
         shell_executor = ShellExecutor()
+        task_decomposer = Mock(spec=TaskDecomposer)
+        error_recovery = Mock(spec=ErrorRecovery)
         agent = ImplementAgent(
             name="TestAgent",
             llm_config=real_llm_config,
             system_message="Test agent",
             shell_executor=shell_executor,
+            task_decomposer=task_decomposer,
+            error_recovery=error_recovery,
             token_manager=real_managers.token_manager,
             context_manager=real_managers.context_manager
         )
@@ -401,11 +405,15 @@ class TestEnhancedCapabilities:
     def test_error_recovery_setter(self, real_llm_config, real_managers):
         """Test ErrorRecovery setter method."""
         shell_executor = ShellExecutor()
+        task_decomposer = Mock(spec=TaskDecomposer)
+        error_recovery = Mock(spec=ErrorRecovery)
         agent = ImplementAgent(
             name="TestAgent",
             llm_config=real_llm_config,
             system_message="Test agent",
             shell_executor=shell_executor,
+            task_decomposer=task_decomposer,
+            error_recovery=error_recovery,
             token_manager=real_managers.token_manager,
             context_manager=real_managers.context_manager
         )

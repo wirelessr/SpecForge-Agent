@@ -425,4 +425,4 @@ Through this simple example, you can see how the AutoGen Framework can significa
 **Example Difficulty**: Beginner  
 **Estimated Time**: 15-30 minutes  
 **Technology Stack**: FastAPI, Pydantic, Python 3.11+  
-**Last Updated**: 2025-08-01
+**Last Updated**: 2025-08-18

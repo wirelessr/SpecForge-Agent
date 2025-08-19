@@ -543,5 +543,5 @@ Briefly describe the purpose and applicable scenarios of this example.
 ---
 
 **Maintainer**: AutoGen Framework Team  
-**Last Updated**: 2025-08-01  
+**Last Updated**: 2025-08-18
 **Version**: 1.0.0
