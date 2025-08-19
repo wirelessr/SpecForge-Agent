@@ -32,7 +32,6 @@ class TestDocumentGeneration:
         assert "tic-tac-toe" in content.lower()
         assert "python" in content.lower()
 
-        await asyncio.sleep(20)
 
     @pytest.mark.asyncio
     async def test_design_agent_generates_design(self, main_controller, temp_workspace):
@@ -62,7 +61,6 @@ class TestDocumentGeneration:
         assert len(content) > 50
         assert "class" in content.lower() or "function" in content.lower()
 
-        await asyncio.sleep(20)
 
     @pytest.mark.asyncio
     async def test_tasks_agent_generates_tasks(self, main_controller, temp_workspace):
@@ -98,7 +96,6 @@ class TestDocumentGeneration:
         assert "- [" in content
         assert "1." in content
 
-        await asyncio.sleep(20)
 
     @pytest.mark.asyncio
     async def test_revise_command_modifies_document(self, main_controller, temp_workspace):
@@ -115,7 +112,6 @@ class TestDocumentGeneration:
         assert "snake" in initial_content.lower()
         assert "javascript" in initial_content.lower()
 
-        await asyncio.sleep(20) # Add delay before the next LLM call
 
         revision_task = {
             "task_type": "revision",
@@ -133,4 +129,3 @@ class TestDocumentGeneration:
         assert "javascript" not in revised_content.lower()
         assert "snake" in revised_content.lower()
 
-        await asyncio.sleep(20)

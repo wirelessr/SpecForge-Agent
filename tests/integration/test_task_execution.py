@@ -60,4 +60,3 @@ class TestTaskExecution:
         except Exception as e:
             pytest.fail(f"The generated Python code failed to execute or was incorrect: {e}\nCode:\n{code_content}")
 
-        await asyncio.sleep(20)

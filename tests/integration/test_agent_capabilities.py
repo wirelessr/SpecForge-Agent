@@ -60,7 +60,6 @@ class TestAgentCapabilities:
         # Make the error check more general to be robust
         assert "fake_command" in last_attempt.get("error", "").lower()
 
-        await asyncio.sleep(20)
 
     @pytest.mark.asyncio
     async def test_context_is_passed_between_agents(self, main_controller, temp_workspace):
@@ -102,4 +101,3 @@ class TestAgentCapabilities:
         assert "fastapi" in content
         assert "calculator" not in content
 
-        await asyncio.sleep(20)
