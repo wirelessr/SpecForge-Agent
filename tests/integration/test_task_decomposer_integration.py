@@ -144,6 +144,7 @@ def complex_testing_task():
 class TestTaskDecomposerIntegration:
     """Integration tests for TaskDecomposer with real LLM."""
     
+    @pytest.mark.skip(reason="This test is flaky due to rate limits and model dependency.")
     @pytest.mark.asyncio
     async def test_decompose_simple_task_with_real_llm(self, real_task_decomposer, simple_python_task):
         """Test task decomposition with real LLM for simple task."""
