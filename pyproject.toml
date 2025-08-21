@@ -55,7 +55,8 @@ testpaths = ["tests"]
 markers = [
     "integration: marks tests as integration tests (require real services)",
     "slow: marks tests as slow running",
-    "real: marks tests that use real LLM endpoints"
+    "real: marks tests that use real LLM endpoints",
+    "sequential: marks tests that should run sequentially to avoid rate limiting"
 ]
 
 [dependency-groups]

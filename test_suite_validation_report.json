@@ -1,0 +1,125 @@
+{
+  "validation_timestamp": "2025-08-21 14:05:05",
+  "coverage_report": {
+    "total_integration_points": 9,
+    "covered_integration_points": 3,
+    "missing_integration_points": [
+      "plan_agent_requirements_generation: Missing 3/4 methods",
+      "design_agent_design_generation: Missing 4/4 methods",
+      "tasks_agent_task_generation: Missing 3/4 methods",
+      "error_recovery_analysis: Missing 3/4 methods",
+      "context_compressor_summarization: Missing 2/4 methods",
+      "interactive_features: Missing 3/4 methods"
+    ],
+    "test_files_analyzed": [
+      "tests/integration/test_llm_plan_agent.py",
+      "tests/integration/test_llm_design_agent.py",
+      "tests/integration/test_llm_tasks_agent.py",
+      "tests/integration/test_llm_task_decomposer.py",
+      "tests/integration/test_llm_error_recovery.py",
+      "tests/integration/test_llm_context_compressor.py",
+      "tests/integration/test_llm_memory_integration.py",
+      "tests/integration/test_llm_interactive_features.py",
+      "tests/integration/test_llm_document_consistency.py"
+    ],
+    "coverage_percentage": 33.33333333333333
+  },
+  "quality_threshold_reports": [
+    {
+      "test_type": "requirements_generation",
+      "current_thresholds": {
+        "structure_score": 0.8,
+        "completeness_score": 0.85,
+        "accuracy_score": 0.75,
+        "coherence_score": 0.8
+      },
+      "recommended_thresholds": {
+        "structure_score": 0.8,
+        "completeness_score": 0.85,
+        "accuracy_score": 0.75,
+        "coherence_score": 0.8
+      },
+      "threshold_issues": [],
+      "is_appropriate": true
+    },
+    {
+      "test_type": "design_generation",
+      "current_thresholds": {
+        "structure_score": 0.85,
+        "completeness_score": 0.8,
+        "accuracy_score": 0.8,
+        "coherence_score": 0.85
+      },
+      "recommended_thresholds": {
+        "structure_score": 0.85,
+        "completeness_score": 0.8,
+        "accuracy_score": 0.8,
+        "coherence_score": 0.85
+      },
+      "threshold_issues": [],
+      "is_appropriate": true
+    },
+    {
+      "test_type": "task_decomposition",
+      "current_thresholds": {
+        "structure_score": 0.9,
+        "completeness_score": 0.85,
+        "accuracy_score": 0.9,
+        "coherence_score": 0.8
+      },
+      "recommended_thresholds": {
+        "structure_score": 0.9,
+        "completeness_score": 0.85,
+        "accuracy_score": 0.9,
+        "coherence_score": 0.8
+      },
+      "threshold_issues": [],
+      "is_appropriate": true
+    },
+    {
+      "test_type": "error_analysis",
+      "current_thresholds": {
+        "structure_score": 0.75,
+        "completeness_score": 0.8,
+        "accuracy_score": 0.85,
+        "coherence_score": 0.75
+      },
+      "recommended_thresholds": {
+        "structure_score": 0.75,
+        "completeness_score": 0.8,
+        "accuracy_score": 0.85,
+        "coherence_score": 0.75
+      },
+      "threshold_issues": [],
+      "is_appropriate": true
+    }
+  ],
+  "rate_limit_report": {
+    "rate_limit_simulation_successful": false,
+    "sequential_execution_verified": true,
+    "recovery_time_appropriate": false,
+    "error_handling_correct": true,
+    "issues_found": [
+      "Rate limiting validation failed with error: module 'asyncio' has no attribute 'coroutine'"
+    ]
+  },
+  "end_to_end_validation": {
+    "test_discovery": true,
+    "test_structure": false,
+    "fixture_integration": false,
+    "quality_framework_integration": true,
+    "documentation_completeness": true,
+    "issues": [
+      "test_llm_base.py missing real_llm_config",
+      "Base test class missing required fixture integration"
+    ]
+  },
+  "overall_validation_passed": false,
+  "recommendations": [
+    "Improve test coverage from 33.3% to at least 80%",
+    "Address 6 missing integration points",
+    "Fix rate limiting handling issues",
+    "Address end-to-end validation issues",
+    "Complete all validation requirements before considering test suite ready"
+  ]
+}
