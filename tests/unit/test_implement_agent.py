@@ -56,17 +56,13 @@ class TestImplementAgent:
         return recovery
     
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_error_recovery, mock_token_manager, mock_context_manager):
-        """Create an ImplementAgent instance for testing with required manager dependencies."""
+    def implement_agent(self, mock_dependency_container, test_llm_config):
+        """Create an ImplementAgent instance for testing with container-based setup."""
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestImplementAgent",
             llm_config=test_llm_config,
-            system_message="Test implementation agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test implementation agent"
         )
     
     @pytest.fixture
@@ -90,10 +86,12 @@ class TestImplementAgent:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
     
-    def test_agent_initialization(self, implement_agent, mock_shell_executor):
+    def test_agent_initialization(self, implement_agent):
         """Test ImplementAgent initialization."""
         assert implement_agent.name == "TestImplementAgent"
-        assert implement_agent.shell_executor == mock_shell_executor
+        assert implement_agent.shell_executor is not None  # Should be accessible through container
+        assert implement_agent.task_decomposer is not None  # Should be accessible through container
+        assert implement_agent.error_recovery is not None  # Should be accessible through container
         assert implement_agent.current_work_directory is None
         assert implement_agent.current_tasks == []
         assert implement_agent.execution_context == {}
@@ -153,38 +151,15 @@ class TestImplementAgent:
 
 class TestImplementAgentTaskExecution:
     """Test suite for task execution functionality."""
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def mock_shell_executor(self):
-        executor = Mock(spec=ShellExecutor)
-        executor.execute_command = AsyncMock()
-        return executor
     
     @pytest.fixture
-    def mock_task_decomposer(self):
-        """Create a mock task decomposer."""
-        decomposer = Mock()
-        decomposer.decompose_task = AsyncMock()
-        return decomposer
-
-    @pytest.fixture
-    def mock_error_recovery(self):
-        """Create a mock error recovery."""
-        recovery = Mock()
-        recovery.recover = AsyncMock()
-        return recovery
-    
-    @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_error_recovery, mock_token_manager, mock_context_manager):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
+        """Create an ImplementAgent instance for testing with container-based setup."""
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestAgent",
             llm_config=test_llm_config,
-            system_message="Test agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test agent"
         )
     
     @pytest.fixture
@@ -349,136 +324,90 @@ class TestImplementAgentTaskExecution:
 
 class TestImplementAgentFileOperations:
     """Test suite for file operation functionality."""
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def mock_shell_executor(self):
-        executor = Mock(spec=ShellExecutor)
-        executor.execute_command = AsyncMock()
-        return executor
     
     @pytest.fixture
-    def mock_task_decomposer(self):
-        """Create a mock task decomposer."""
-        decomposer = Mock()
-        decomposer.decompose_task = AsyncMock()
-        return decomposer
-
-    @pytest.fixture
-    def mock_error_recovery(self):
-        """Create a mock error recovery."""
-        recovery = Mock()
-        recovery.recover = AsyncMock()
-        return recovery
-    
-    @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_error_recovery, mock_token_manager, mock_context_manager):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
+        """Create an ImplementAgent instance for testing with container-based setup."""
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestAgent",
             llm_config=test_llm_config,
-            system_message="Test agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test agent"
         )
     
     @pytest.mark.asyncio
-    async def test_read_file_content_success(self, implement_agent, mock_shell_executor):
+    async def test_read_file_content_success(self, implement_agent):
         """Test successful file content reading."""
         mock_result = Mock()
         mock_result.success = True
         mock_result.stdout = "File content here"
-        mock_shell_executor.execute_command.return_value = mock_result
+        implement_agent.shell_executor.execute_command.return_value = mock_result
         
         content = await implement_agent._read_file_content("test.txt")
         
         assert content == "File content here"
-        mock_shell_executor.execute_command.assert_called_once_with("cat test.txt")
+        implement_agent.shell_executor.execute_command.assert_called_once_with("cat test.txt")
     
     @pytest.mark.asyncio
-    async def test_read_file_content_failure(self, implement_agent, mock_shell_executor):
+    async def test_read_file_content_failure(self, implement_agent):
         """Test file content reading failure."""
         mock_result = Mock()
         mock_result.success = False
-        mock_shell_executor.execute_command.return_value = mock_result
+        implement_agent.shell_executor.execute_command.return_value = mock_result
         
         with pytest.raises(FileNotFoundError):
             await implement_agent._read_file_content("nonexistent.txt")
     
     @pytest.mark.asyncio
-    async def test_write_file_content_success(self, implement_agent, mock_shell_executor):
+    async def test_write_file_content_success(self, implement_agent):
         """Test successful file content writing."""
         mock_result = Mock()
         mock_result.success = True
-        mock_shell_executor.execute_command.return_value = mock_result
+        implement_agent.shell_executor.execute_command.return_value = mock_result
         
         await implement_agent._write_file_content("test.txt", "Hello World")
         
-        mock_shell_executor.execute_command.assert_called_once()
-        call_args = mock_shell_executor.execute_command.call_args[0][0]
+        implement_agent.shell_executor.execute_command.assert_called_once()
+        call_args = implement_agent.shell_executor.execute_command.call_args[0][0]
         assert "cat >" in call_args
         assert "test.txt" in call_args
         assert "Hello World" in call_args
     
     @pytest.mark.asyncio
-    async def test_write_file_content_failure(self, implement_agent, mock_shell_executor):
+    async def test_write_file_content_failure(self, implement_agent):
         """Test file content writing failure."""
         mock_result = Mock()
         mock_result.success = False
-        mock_shell_executor.execute_command.return_value = mock_result
+        implement_agent.shell_executor.execute_command.return_value = mock_result
         
         with pytest.raises(IOError):
             await implement_agent._write_file_content("test.txt", "content")
     
     @pytest.mark.asyncio
-    async def test_append_file_content(self, implement_agent, mock_shell_executor):
+    async def test_append_file_content(self, implement_agent):
         """Test file content appending."""
         mock_result = Mock()
         mock_result.success = True
-        mock_shell_executor.execute_command.return_value = mock_result
+        implement_agent.shell_executor.execute_command.return_value = mock_result
         
         await implement_agent._append_file_content("test.txt", "Additional content")
         
-        mock_shell_executor.execute_command.assert_called_once()
-        call_args = mock_shell_executor.execute_command.call_args[0][0]
+        implement_agent.shell_executor.execute_command.assert_called_once()
+        call_args = implement_agent.shell_executor.execute_command.call_args[0][0]
         assert "cat >>" in call_args
         assert "test.txt" in call_args
 
 class TestImplementAgentRecording:
     """Test suite for task completion recording functionality."""
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def mock_shell_executor(self):
-        executor = Mock(spec=ShellExecutor)
-        executor.execute_command = AsyncMock()
-        return executor
     
     @pytest.fixture
-    def mock_task_decomposer(self):
-        """Create a mock task decomposer."""
-        decomposer = Mock()
-        decomposer.decompose_task = AsyncMock()
-        return decomposer
-
-    @pytest.fixture
-    def mock_error_recovery(self):
-        """Create a mock error recovery."""
-        recovery = Mock()
-        recovery.recover = AsyncMock()
-        return recovery
-    
-    @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_task_decomposer, mock_error_recovery, mock_token_manager, mock_context_manager):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
+        """Create an ImplementAgent instance for testing with container-based setup."""
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestAgent",
             llm_config=test_llm_config,
-            system_message="Test agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test agent"
         )
     
     @pytest.fixture
@@ -668,38 +597,15 @@ class TestImplementAgentRecording:
 
 class TestImplementAgentEnhancedRecording:
     """Test suite for enhanced recording functionality (Task 10)."""
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def mock_shell_executor(self):
-        executor = Mock(spec=ShellExecutor)
-        executor.execute_command = AsyncMock()
-        return executor
     
     @pytest.fixture
-    def mock_error_recovery(self):
-        """Create a mock error recovery."""
-        recovery = Mock()
-        recovery.recover = AsyncMock()
-        return recovery
-
-    @pytest.fixture
-    def mock_task_decomposer(self):
-        """Create a mock task decomposer."""
-        decomposer = Mock()
-        decomposer.decompose_task = AsyncMock()
-        return decomposer
-
-    @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_token_manager, mock_context_manager, mock_task_decomposer, mock_error_recovery):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
+        """Create an ImplementAgent instance for testing with container-based setup."""
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestAgent",
             llm_config=test_llm_config,
-            system_message="Test agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test agent"
         )
     
     @pytest.fixture
@@ -1176,17 +1082,13 @@ class TestImplementAgentMocking:
         return recovery
 
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_shell_executor, mock_token_manager, mock_context_manager, mock_task_decomposer, mock_error_recovery):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
         """Create an ImplementAgent instance with comprehensive mocking."""
         agent = ImplementAgent(
+            container=mock_dependency_container,
             name="TestImplementAgent",
             llm_config=test_llm_config,
-            system_message="Test implementation agent",
-            shell_executor=mock_shell_executor,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test implementation agent"
         )
         
         # Mock all potentially slow methods
@@ -1273,19 +1175,13 @@ class TestImplementAgentMinorFunctions:
         return recovery
 
     @pytest.fixture
-    def implement_agent(self, test_llm_config, mock_token_manager, mock_context_manager, mock_task_decomposer, mock_error_recovery):
+    def implement_agent(self, mock_dependency_container, test_llm_config):
         """Create ImplementAgent instance for testing."""
-        mock_shell = Mock(spec=ShellExecutor)
-        mock_shell.execute_command = AsyncMock()
         return ImplementAgent(
+            container=mock_dependency_container,
             name="TestImplementAgent",
             llm_config=test_llm_config,
-            system_message="Test system message",
-            shell_executor=mock_shell,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager,
-            task_decomposer=mock_task_decomposer,
-            error_recovery=mock_error_recovery
+            system_message="Test system message"
         )
     
     @pytest.fixture

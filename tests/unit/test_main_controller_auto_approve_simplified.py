@@ -35,24 +35,15 @@ class TestMainControllerAutoApproveSimplified:
     @pytest.fixture
     def initialized_controller(self, main_controller, llm_config):
         """Create an initialized MainController for testing."""
-        with patch('autogen_framework.main_controller.MemoryManager') as mock_memory, \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
-            # Mock component instances
-            mock_memory_instance = Mock()
-            mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
-            mock_memory.return_value = mock_memory_instance
-            
+            # Mock agent manager instance
             mock_agent_instance = Mock()
             mock_agent_instance.setup_agents.return_value = True
             mock_agent_instance.update_agent_memory = Mock()
             mock_agent.return_value = mock_agent_instance
             
-            mock_shell_instance = Mock()
-            mock_shell.return_value = mock_shell_instance
-            
-            # Initialize the controller
+            # Initialize the controller - this will create the container with managers
             main_controller.initialize_framework(llm_config)
             
             return main_controller

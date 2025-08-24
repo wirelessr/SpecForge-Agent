@@ -165,6 +165,113 @@ def enable_real_services():
         os.environ['UNIT_TESTING'] = original_unit
 
 
+# Dependency Container Fixtures for Integration Tests
+
+@pytest.fixture
+def real_dependency_container(temp_workspace, real_llm_config):
+    """
+    Provide dependency container with real managers for integration tests.
+    
+    This fixture creates a DependencyContainer configured for production use
+    with real managers. It uses the real_llm_config fixture from integration
+    testing configuration.
+    
+    Note: This fixture only creates the container - managers are created lazily
+    when accessed to avoid hanging during fixture setup.
+    
+    Returns:
+        DependencyContainer configured with real managers
+    """
+    from autogen_framework.dependency_container import DependencyContainer
+    
+    container = DependencyContainer.create_production(temp_workspace, real_llm_config)
+    return container
+
+
+# Agent Fixtures for Integration Tests
+
+@pytest.fixture
+def real_plan_agent(real_dependency_container):
+    """
+    Provide PlanAgent with real dependencies for integration tests.
+    
+    This fixture creates a PlanAgent using the real dependency container,
+    making it suitable for integration tests that require real LLM calls
+    and actual manager functionality.
+    
+    Returns:
+        PlanAgent configured with real dependencies
+    """
+    from autogen_framework.agents.plan_agent import PlanAgent
+    
+    return PlanAgent(
+        llm_config=real_dependency_container.llm_config,
+        memory_manager=real_dependency_container.get_memory_manager(),
+        token_manager=real_dependency_container.get_token_manager(),
+        context_manager=real_dependency_container.get_context_manager(),
+        config_manager=real_dependency_container.get_config_manager()
+    )
+
+
+@pytest.fixture
+def real_design_agent(real_dependency_container):
+    """
+    Provide DesignAgent with real dependencies for integration tests.
+    
+    Returns:
+        DesignAgent configured with real dependencies
+    """
+    from autogen_framework.agents.design_agent import DesignAgent
+    
+    return DesignAgent(
+        llm_config=real_dependency_container.llm_config,
+        token_manager=real_dependency_container.get_token_manager(),
+        context_manager=real_dependency_container.get_context_manager(),
+        config_manager=real_dependency_container.get_config_manager()
+    )
+
+
+@pytest.fixture
+def real_tasks_agent(real_dependency_container):
+    """
+    Provide TasksAgent with real dependencies for integration tests.
+    
+    Returns:
+        TasksAgent configured with real dependencies
+    """
+    from autogen_framework.agents.tasks_agent import TasksAgent
+    
+    return TasksAgent(
+        llm_config=real_dependency_container.llm_config,
+        token_manager=real_dependency_container.get_token_manager(),
+        context_manager=real_dependency_container.get_context_manager(),
+        config_manager=real_dependency_container.get_config_manager()
+    )
+
+
+@pytest.fixture
+def real_implement_agent(real_dependency_container):
+    """
+    Provide ImplementAgent with real dependencies for integration tests.
+    
+    Returns:
+        ImplementAgent configured with real dependencies
+    """
+    from autogen_framework.agents.implement_agent import ImplementAgent
+    
+    return ImplementAgent(
+        name="ImplementAgent",
+        llm_config=real_dependency_container.llm_config,
+        system_message="Real implementation agent for integration testing",
+        shell_executor=real_dependency_container.get_shell_executor(),
+        token_manager=real_dependency_container.get_token_manager(),
+        context_manager=real_dependency_container.get_context_manager(),
+        task_decomposer=real_dependency_container.get_task_decomposer(),
+        error_recovery=real_dependency_container.get_error_recovery(),
+        config_manager=real_dependency_container.get_config_manager()
+    )
+
+
 # Ensure integration tests don't accidentally use unit test fixtures
 @pytest.fixture
 def mock_llm_config():

@@ -48,9 +48,13 @@ class TestDesignAgent:
         }
     
     @pytest.fixture
-    def design_agent(self, llm_config, memory_context, mock_token_manager, mock_context_manager):
-        """Create a DesignAgent instance for testing with required manager dependencies."""
-        return DesignAgent(llm_config, memory_context, mock_token_manager, mock_context_manager)
+    def design_agent(self, mock_dependency_container, test_llm_config, memory_context):
+        """Create a DesignAgent instance for testing with container-based dependencies."""
+        return DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config,
+            memory_context=memory_context
+        )
     
     @pytest.fixture
     def sample_requirements(self):
@@ -77,31 +81,39 @@ Test project requirements for a simple web application.
 2. WHEN user updates data THEN system SHALL modify existing data
 """
     
-    def test_design_agent_initialization(self, llm_config, memory_context, mock_token_manager, mock_context_manager):
-        """Test DesignAgent initialization with required manager dependencies."""
-        agent = DesignAgent(llm_config, memory_context, mock_token_manager, mock_context_manager)
+    def test_design_agent_initialization(self, mock_dependency_container, test_llm_config, memory_context):
+        """Test DesignAgent initialization with container-based dependencies."""
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config,
+            memory_context=memory_context
+        )
         
         assert agent.name == "DesignAgent"
-        assert agent.llm_config == llm_config
+        assert agent.llm_config == test_llm_config
         assert agent.memory_context == memory_context
-        assert agent.token_manager == mock_token_manager
-        assert agent.context_manager == mock_context_manager
+        assert agent.container == mock_dependency_container
         assert "AI agent specialized" in agent.description
         assert "technical design documents" in agent.system_message
     
-    def test_design_agent_initialization_without_memory(self, llm_config, mock_token_manager, mock_context_manager):
-        """Test DesignAgent initialization without memory context but with required managers."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+    def test_design_agent_initialization_without_memory(self, mock_dependency_container, test_llm_config):
+        """Test DesignAgent initialization without memory context but with container."""
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         assert agent.name == "DesignAgent"
-        assert agent.llm_config == llm_config
+        assert agent.llm_config == test_llm_config
         assert agent.memory_context == {}
-        assert agent.token_manager == mock_token_manager
-        assert agent.context_manager == mock_context_manager
+        assert agent.container == mock_dependency_container
     
-    def test_system_message_content(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_system_message_content(self, mock_dependency_container, test_llm_config):
         """Test that system message contains required elements."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         system_message = agent.system_message
         
         # Check for key components
@@ -173,9 +185,12 @@ Test strategy.
                     assert "mermaid" in content
     
     @pytest.mark.asyncio
-    async def test_process_task_missing_parameters(self, llm_config, mock_token_manager, mock_context_manager):
+    async def test_process_task_missing_parameters(self, mock_dependency_container, test_llm_config):
         """Test task processing with missing parameters."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         # Test missing requirements_path
         task_input = {"work_directory": "/tmp"}
@@ -250,9 +265,12 @@ graph TD
         assert "projects" in prompt
         assert "Output Format" in prompt
     
-    def test_build_design_prompt_no_memory(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_build_design_prompt_no_memory(self, mock_dependency_container, test_llm_config):
         """Test design prompt building without memory context."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         requirements = "Test requirements content"
         prompt = agent._build_design_prompt(requirements, {})
@@ -261,9 +279,12 @@ graph TD
         assert requirements in prompt
         assert "Available Memory Context" not in prompt
     
-    def test_validate_mermaid_diagrams(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_validate_mermaid_diagrams(self, mock_dependency_container, test_llm_config):
         """Test Mermaid diagram validation and fixing."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         # Test content with invalid Mermaid diagram
         content_with_invalid = """# Design
@@ -280,9 +301,12 @@ B --> C
         assert "graph TD" in fixed_content
         assert "A --> B" in fixed_content
     
-    def test_validate_mermaid_diagrams_valid(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_validate_mermaid_diagrams_valid(self, mock_dependency_container, test_llm_config):
         """Test Mermaid diagram validation with valid diagrams."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         content_with_valid = """# Design
 
@@ -298,9 +322,12 @@ graph TD
         # Should remain unchanged
         assert result == content_with_valid
     
-    def test_fix_markdown_formatting(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_fix_markdown_formatting(self, mock_dependency_container, test_llm_config):
         """Test markdown formatting fixes."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         content_with_issues = """#Header1
 ##Header2
@@ -324,9 +351,12 @@ More content"""
         # Check excessive newlines are reduced
         assert "\n\n\n" not in fixed_content
     
-    def test_post_process_design(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_post_process_design(self, mock_dependency_container, test_llm_config):
         """Test design post-processing."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         raw_design = """Some content without header
 
@@ -348,9 +378,12 @@ Content"""
         # Should fix markdown formatting
         assert "\n\n# Header\n\n" in processed
     
-    def test_extract_from_markdown_block(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_extract_from_markdown_block(self, mock_dependency_container, test_llm_config):
         """Test extraction of content from markdown code blocks."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         # Test markdown block extraction
         wrapped_content = """```markdown
@@ -397,9 +430,12 @@ Content here"""
         extracted_unwrapped = agent._extract_from_markdown_block(unwrapped_content)
         assert extracted_unwrapped == unwrapped_content
     
-    def test_process_revision_task(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_process_revision_task(self, mock_dependency_container, test_llm_config):
         """Test design revision task processing."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         # Create a temporary design file
         import tempfile
@@ -459,9 +495,12 @@ Updated architecture using FastAPI with SSR
             assert "FastAPI" in updated_content
             assert "SSR" in updated_content
     
-    def test_create_architecture_diagram_existing(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_create_architecture_diagram_existing(self, mock_dependency_container, test_llm_config):
         """Test architecture diagram creation from existing content."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         design_content = """# Design
 
@@ -482,9 +521,12 @@ sequenceDiagram
         assert "graph TD" in diagram
         assert "A[System] --> B[Component]" in diagram
     
-    def test_create_architecture_diagram_none_existing(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_create_architecture_diagram_none_existing(self, mock_dependency_container, test_llm_config):
         """Test architecture diagram creation when none exists."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         design_content = """# Design
 
@@ -499,9 +541,12 @@ sequenceDiagram
         assert "graph TD" in diagram
         assert "A[" in diagram
     
-    def test_generate_basic_architecture_diagram(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_generate_basic_architecture_diagram(self, mock_dependency_container, test_llm_config):
         """Test basic architecture diagram generation."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         design_content = """
         class UserManager:
@@ -520,9 +565,12 @@ sequenceDiagram
         assert "A[" in diagram
         assert "-->" in diagram
     
-    def test_get_agent_capabilities(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_get_agent_capabilities(self, mock_dependency_container, test_llm_config):
         """Test agent capabilities listing."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         capabilities = agent.get_agent_capabilities()
         
@@ -555,9 +603,12 @@ sequenceDiagram
         assert callable(getattr(agent, 'truncate_context'))
     
     @pytest.mark.asyncio
-    async def test_deprecated_compression_methods(self, llm_config, mock_token_manager, mock_context_manager):
+    async def test_deprecated_compression_methods(self, mock_dependency_container, test_llm_config):
         """Test that deprecated compression methods raise appropriate errors."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         # Test that deprecated compression methods raise RuntimeError
         with pytest.raises(RuntimeError, match="_perform_context_compression is removed.*ContextManager"):
@@ -577,9 +628,12 @@ sequenceDiagram
         assert hasattr(agent.token_manager, 'estimate_tokens_from_text')
         assert hasattr(agent.context_manager, 'prepare_system_prompt')
     
-    def test_get_design_templates(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_get_design_templates(self, mock_dependency_container, test_llm_config):
         """Test design template retrieval."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         templates = agent.get_design_templates()
         
@@ -595,9 +649,12 @@ sequenceDiagram
         assert "Architectural Overview" in web_template
         assert "mermaid" in web_template
     
-    def test_web_app_template_content(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_web_app_template_content(self, mock_dependency_container, test_llm_config):
         """Test web application template content."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         template = agent._get_web_app_template()
         
@@ -608,9 +665,12 @@ sequenceDiagram
         assert "Authentication" in template
         assert "End-to-End Testing" in template
     
-    def test_api_service_template_content(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_api_service_template_content(self, mock_dependency_container, test_llm_config):
         """Test API service template content."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         template = agent._get_api_service_template()
         
@@ -621,9 +681,12 @@ sequenceDiagram
         assert "API Authentication" in template
         assert "Rate Limiting" in template
     
-    def test_data_processing_template_content(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_data_processing_template_content(self, mock_dependency_container, test_llm_config):
         """Test data processing template content."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         template = agent._get_data_processing_template()
         
@@ -634,9 +697,12 @@ sequenceDiagram
         assert "Data Privacy" in template
         assert "Performance Testing" in template
     
-    def test_multi_agent_template_content(self, llm_config, mock_token_manager, mock_context_manager):
+    def test_multi_agent_template_content(self, mock_dependency_container, test_llm_config):
         """Test multi-agent system template content."""
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
         
         template = agent._get_multi_agent_template()
         
@@ -651,9 +717,13 @@ class TestDesignAgentAutoGenMocking:
     """Test suite for DesignAgent AutoGen integration with proper mocking."""
     
     @pytest.fixture
-    def design_agent(self, llm_config, mock_memory_context, mock_token_manager, mock_context_manager):
-        """Create a DesignAgent instance for testing with required manager dependencies."""
-        return DesignAgent(llm_config, mock_memory_context, mock_token_manager, mock_context_manager)
+    def design_agent(self, mock_dependency_container, test_llm_config, mock_memory_context):
+        """Create a DesignAgent instance for testing with container-based dependencies."""
+        return DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config,
+            memory_context=mock_memory_context
+        )
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
@@ -840,46 +910,59 @@ def temp_work_directory():
 @pytest.mark.parametrize("memory_available", [True, False])
 def test_design_agent_with_memory_variations(memory_available):
     """Test DesignAgent with and without memory context."""
+    import tempfile
+    from autogen_framework.dependency_container import DependencyContainer
+    
     llm_config = LLMConfig(
         base_url="http://test.local:8888/openai/v1",
         model="test-model",
         api_key="test-key"
     )
     
-    # Create mock managers for this test
-    from unittest.mock import Mock
-    mock_token_manager = Mock()
-    mock_context_manager = Mock()
-    
-    if memory_available:
-        memory_context = {"global": {"test.md": "Test content"}}
-        agent = DesignAgent(llm_config, memory_context, mock_token_manager, mock_context_manager)
-        assert agent.memory_context == memory_context
-    else:
-        agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
-        assert agent.memory_context == {}
-    
-    assert agent.name == "DesignAgent"
-    assert isinstance(agent.get_agent_capabilities(), list)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        container = DependencyContainer.create_test(temp_dir, llm_config)
+        
+        if memory_available:
+            memory_context = {"global": {"test.md": "Test content"}}
+            agent = DesignAgent(
+                container=container,
+                llm_config=llm_config,
+                memory_context=memory_context
+            )
+            assert agent.memory_context == memory_context
+        else:
+            agent = DesignAgent(
+                container=container,
+                llm_config=llm_config
+            )
+            assert agent.memory_context == {}
+        
+        assert agent.name == "DesignAgent"
+        assert isinstance(agent.get_agent_capabilities(), list)
 
 @pytest.mark.parametrize("template_type", ["web_application", "api_service", "data_processing", "multi_agent_system"])
 def test_all_design_templates(template_type):
     """Test all available design templates."""
-    from unittest.mock import Mock
+    import tempfile
+    from autogen_framework.dependency_container import DependencyContainer
     
     llm_config = LLMConfig(
         base_url="http://test.local:8888/openai/v1",
         model="test-model",
         api_key="test-key"
     )
-    mock_token_manager = Mock()
-    mock_context_manager = Mock()
-    agent = DesignAgent(llm_config, None, mock_token_manager, mock_context_manager)
     
-    templates = agent.get_design_templates()
-    assert template_type in templates
-    
-    template_content = templates[template_type]
+    with tempfile.TemporaryDirectory() as temp_dir:
+        container = DependencyContainer.create_test(temp_dir, llm_config)
+        agent = DesignAgent(
+            container=container,
+            llm_config=llm_config
+        )
+        
+        templates = agent.get_design_templates()
+        assert template_type in templates
+        
+        template_content = templates[template_type]
     assert "# Design Document" in template_content
     assert "Architectural Overview" in template_content
     assert "Components and Interfaces" in template_content

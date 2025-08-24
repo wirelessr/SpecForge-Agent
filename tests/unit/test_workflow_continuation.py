@@ -9,7 +9,7 @@ import pytest
 import tempfile
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from autogen_framework.main_controller import MainController
 from autogen_framework.models import LLMConfig, WorkflowPhase
@@ -22,7 +22,8 @@ class TestWorkflowContinuation:
     def temp_workspace(self):
         """Create a temporary workspace for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            yield Path(temp_dir)    # Using shared test_llm_config fixture from conftest.py
+            yield Path(temp_dir)
+    
     @pytest.fixture
     def main_controller(self, temp_workspace):
         """Create a MainController instance for testing."""
@@ -37,23 +38,26 @@ class TestWorkflowContinuation:
         not being executed after approval.
         """
         # Initialize the controller
-        with patch.object(main_controller, 'agent_manager') as mock_agent_manager:
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             # Mock the agent manager setup
-            mock_agent_manager.setup_agents.return_value = True
+            mock_agent_instance = Mock()
+            mock_agent_instance.setup_agents.return_value = True
+            mock_agent_instance.update_agent_memory = Mock()
+            mock_agent.return_value = mock_agent_instance
             
-            # Mock the memory manager
-            with patch.object(main_controller, 'memory_manager') as mock_memory_manager:
-                mock_memory_manager.load_memory.return_value = {}
+            # Mock the container's memory manager
+            with patch('autogen_framework.dependency_container.DependencyContainer.get_memory_manager') as mock_memory_manager:
+                mock_memory_manager.return_value.load_memory.return_value = {}
                 
-                # Initialize framework
+                # Initialize framework - this will create the container with managers
                 success = main_controller.initialize_framework(test_llm_config)
                 assert success, "Framework initialization should succeed"
                 
                 # Mock the agent coordination for each phase
-                mock_agent_manager.coordinate_agents = AsyncMock()
-                
+                mock_agent_instance.coordinate_agents = AsyncMock()
+                    
                 # Mock requirements phase
-                mock_agent_manager.coordinate_agents.side_effect = [
+                mock_agent_instance.coordinate_agents.side_effect = [
                     # Requirements generation
                     {
                         "success": True,
@@ -178,10 +182,10 @@ class TestWorkflowContinuation:
                             # 2. design_generation  
                             # 3. task_generation (via tasks_generation)
                             # Note: implementation phase no longer calls agent coordination
-                            assert mock_agent_manager.coordinate_agents.call_count == 3
+                            assert mock_agent_instance.coordinate_agents.call_count == 3
                             
                             # Check the last call was for task generation
-                            last_call = mock_agent_manager.coordinate_agents.call_args_list[-1]
+                            last_call = mock_agent_instance.coordinate_agents.call_args_list[-1]
                             assert last_call[0][0] == "task_generation"
                             
                             # Verify workflow is completed and cleared
@@ -199,8 +203,9 @@ class TestWorkflowContinuation:
         with patch.object(main_controller, 'agent_manager') as mock_agent_manager:
             mock_agent_manager.setup_agents.return_value = True
             
-            with patch.object(main_controller, 'memory_manager') as mock_memory_manager:
-                mock_memory_manager.load_memory.return_value = {}
+            # Mock the container's memory manager instead of direct memory_manager
+            with patch('autogen_framework.dependency_container.DependencyContainer.get_memory_manager') as mock_memory_manager:
+                mock_memory_manager.return_value.load_memory.return_value = {}
                 
                 success = main_controller.initialize_framework(test_llm_config)
                 assert success
@@ -249,8 +254,9 @@ class TestWorkflowContinuation:
         with patch.object(main_controller, 'agent_manager') as mock_agent_manager:
             mock_agent_manager.setup_agents.return_value = True
             
-            with patch.object(main_controller, 'memory_manager') as mock_memory_manager:
-                mock_memory_manager.load_memory.return_value = {}
+            # Mock the container's memory manager instead of direct memory_manager
+            with patch('autogen_framework.dependency_container.DependencyContainer.get_memory_manager') as mock_memory_manager:
+                mock_memory_manager.return_value.load_memory.return_value = {}
                 
                 success = main_controller.initialize_framework(test_llm_config)
                 assert success

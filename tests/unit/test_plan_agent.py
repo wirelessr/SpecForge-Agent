@@ -34,28 +34,18 @@ from autogen_framework.memory_manager import MemoryManager
 class TestPlanAgent:
     """Test suite for PlanAgent functionality."""
     # Using shared fixtures from conftest.py
-    # Using shared fixtures from conftest.py
-    @pytest.fixture
-    def memory_manager(self, temp_workspace):
-        """Create a test memory manager."""
-        return MemoryManager(temp_workspace)
     
-    @pytest.fixture
-    def plan_agent(self, llm_config, memory_manager, mock_token_manager, mock_context_manager):
-        """Create a PlanAgent instance for testing with required manager dependencies."""
-        return PlanAgent(llm_config, memory_manager, mock_token_manager, mock_context_manager)
-    
-    def test_plan_agent_initialization(self, plan_agent, llm_config):
+    def test_plan_agent_initialization(self, simple_plan_agent, test_llm_config):
         """Test that PlanAgent initializes correctly."""
-        assert plan_agent.name == "PlanAgent"
-        assert plan_agent.llm_config == llm_config
-        assert "Plan Agent" in plan_agent.description
-        assert plan_agent.memory_manager is not None
-        assert plan_agent.workspace_path.exists()
+        assert simple_plan_agent.name == "PlanAgent"
+        assert simple_plan_agent.llm_config == test_llm_config
+        assert "Plan Agent" in simple_plan_agent.description
+        assert simple_plan_agent.memory_manager is not None
+        assert simple_plan_agent.workspace_path.exists()
     
-    def test_system_message_content(self, plan_agent):
+    def test_system_message_content(self, simple_plan_agent):
         """Test that the system message contains required content."""
-        system_message = plan_agent.system_message
+        system_message = simple_plan_agent.system_message
         
         # Check for key responsibilities
         assert "Parse User Requests" in system_message
@@ -67,15 +57,15 @@ class TestPlanAgent:
         assert "kebab-case" in system_message
         assert "user stories" in system_message
     
-    def test_memory_context_loading(self, plan_agent):
+    def test_memory_context_loading(self, simple_plan_agent):
         """Test that memory context is loaded on initialization."""
         # The agent should have attempted to load memory context
-        assert hasattr(plan_agent, 'memory_context')
+        assert hasattr(simple_plan_agent, 'memory_context')
         # Memory context might be empty in test environment, but should be a dict
-        assert isinstance(plan_agent.memory_context, dict)
+        assert isinstance(simple_plan_agent.memory_context, dict)
     
     @pytest.mark.asyncio
-    async def test_parse_user_request_basic(self, plan_agent):
+    async def test_parse_user_request_basic(self, simple_plan_agent):
         """Test basic user request parsing functionality."""
         # Mock the generate_response method to return a structured response
         mock_response = """## Summary
@@ -101,10 +91,10 @@ Must maintain backward compatibility
 ## Suggested Directory Name
 [fix-authentication-bug]"""
         
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_response
             
-            result = await plan_agent.parse_user_request("Fix the authentication bug in our login system")
+            result = await simple_plan_agent.parse_user_request("Fix the authentication bug in our login system")
             
             assert result['summary'] == "Fix authentication bug in user login system"
             assert result['type'] == "debugging"
@@ -115,14 +105,14 @@ Must maintain backward compatibility
             assert result['suggested_directory'] == "fix-authentication-bug"
     
     @pytest.mark.asyncio
-    async def test_parse_user_request_fallback(self, plan_agent):
+    async def test_parse_user_request_fallback(self, simple_plan_agent):
         """Test fallback behavior when LLM response parsing fails."""
         # Mock generate_response to raise an exception
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.side_effect = Exception("API Error")
             
             request = "Implement user dashboard"
-            result = await plan_agent.parse_user_request(request)
+            result = await simple_plan_agent.parse_user_request(request)
             
             # Should return fallback analysis
             assert result['summary'] == request
@@ -131,7 +121,7 @@ Must maintain backward compatibility
             assert result['key_requirements'] == [request]
             assert result['suggested_directory'] == "implement-user-dashboard"
     
-    def test_generate_fallback_directory_name(self, plan_agent):
+    def test_generate_fallback_directory_name(self, simple_plan_agent):
         """Test fallback directory name generation."""
         test_cases = [
             ("Fix authentication bug", "fix-authentication-bug"),
@@ -142,13 +132,13 @@ Must maintain backward compatibility
         ]
         
         for request, expected_prefix in test_cases:
-            result = plan_agent._generate_fallback_directory_name(request)
+            result = simple_plan_agent._generate_fallback_directory_name(request)
             if expected_prefix == "task-":
                 assert result.startswith("task-")
             else:
                 assert result == expected_prefix
     
-    def test_clean_directory_name(self, plan_agent):
+    def test_clean_directory_name(self, simple_plan_agent):
         """Test directory name cleaning and sanitization."""
         test_cases = [
             ("fix-authentication-bug", "fix-authentication-bug"),
@@ -160,39 +150,39 @@ Must maintain backward compatibility
         ]
         
         for input_name, expected in test_cases:
-            result = plan_agent.clean_directory_name(input_name)
+            result = simple_plan_agent.clean_directory_name(input_name)
             if expected.startswith("task-"):
                 assert result.startswith("task-")
             else:
                 assert result == expected
     
-    def test_ensure_unique_name(self, plan_agent, temp_workspace):
+    def test_ensure_unique_name(self, simple_plan_agent, temp_workspace):
         """Test unique name generation with conflict resolution."""
         base_name = "test-project"
         
         # First call should return the base name
-        result1 = plan_agent.ensure_unique_name(base_name)
+        result1 = simple_plan_agent.ensure_unique_name(base_name)
         assert result1 == base_name
         
         # Create a directory with that name
-        (plan_agent.workspace_path / base_name).mkdir()
+        (simple_plan_agent.workspace_path / base_name).mkdir()
         
         # Second call should return a unique name
-        result2 = plan_agent.ensure_unique_name(base_name)
+        result2 = simple_plan_agent.ensure_unique_name(base_name)
         assert result2 != base_name
         assert result2.startswith(base_name)
         assert len(result2) <= 50
     
     @pytest.mark.asyncio
-    async def test_generate_directory_name_with_llm(self, plan_agent):
+    async def test_generate_directory_name_with_llm(self, simple_plan_agent):
         """Test LLM-based directory name generation."""
         summary = "Fix authentication bug in user login system"
         
         # Mock the LLM response
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = "fix-authentication-bug"
             
-            result = await plan_agent._generate_directory_name(summary)
+            result = await simple_plan_agent._generate_directory_name(summary)
             
             # Should call LLM with appropriate prompt
             mock_generate.assert_called_once()
@@ -205,15 +195,15 @@ Must maintain backward compatibility
             assert result == "fix-authentication-bug"
     
     @pytest.mark.asyncio
-    async def test_generate_directory_name_fallback(self, plan_agent):
+    async def test_generate_directory_name_fallback(self, simple_plan_agent):
         """Test fallback behavior when LLM fails."""
         summary = "Fix authentication bug"
         
         # Mock LLM to raise an exception
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.side_effect = Exception("API Error")
             
-            result = await plan_agent._generate_directory_name(summary)
+            result = await simple_plan_agent._generate_directory_name(summary)
             
             # Should fallback to the old method
             assert isinstance(result, str)
@@ -221,15 +211,15 @@ Must maintain backward compatibility
             assert "fix" in result or "authentication" in result or "bug" in result
     
     @pytest.mark.asyncio
-    async def test_create_work_directory(self, plan_agent, temp_workspace):
+    async def test_create_work_directory(self, simple_plan_agent, temp_workspace):
         """Test work directory creation."""
         summary = "Fix authentication bug"
         
         # Mock the LLM response for directory name generation
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = "fix-authentication-bug"
             
-            result = await plan_agent.create_work_directory(summary)
+            result = await simple_plan_agent.create_work_directory(summary)
             
             # Check that directory was created
             work_dir = Path(result)
@@ -243,19 +233,19 @@ Must maintain backward compatibility
             assert (work_dir / "tasks.md").exists()
     
     @pytest.mark.asyncio
-    async def test_create_work_directory_unique_names(self, plan_agent, temp_workspace):
+    async def test_create_work_directory_unique_names(self, simple_plan_agent, temp_workspace):
         """Test that work directories get unique names when conflicts occur."""
         summary = "Fix authentication bug"
         
         # Mock the LLM response for directory name generation
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = "fix-authentication-bug"
             
             # Create first directory
-            first_dir = await plan_agent.create_work_directory(summary)
+            first_dir = await simple_plan_agent.create_work_directory(summary)
             
             # Create second directory with same summary
-            second_dir = await plan_agent.create_work_directory(summary)
+            second_dir = await simple_plan_agent.create_work_directory(summary)
             
             # Should be different directories
             assert first_dir != second_dir
@@ -266,7 +256,7 @@ Must maintain backward compatibility
             assert "fix-authentication-bug" in Path(second_dir).name
     
     @pytest.mark.asyncio
-    async def test_generate_requirements(self, plan_agent, temp_workspace):
+    async def test_generate_requirements(self, simple_plan_agent, temp_workspace):
         """Test requirements document generation."""
         # Create a work directory first
         work_dir = Path(temp_workspace) / "test-project"
@@ -301,10 +291,10 @@ This project aims to fix authentication bugs in the login system.
 2. WHEN user enters invalid credentials THEN system SHALL show appropriate error message
 """
         
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_requirements
             
-            result = await plan_agent.generate_requirements(
+            result = await simple_plan_agent.generate_requirements(
                 user_request, str(work_dir), parsed_request
             )
             
@@ -320,7 +310,7 @@ This project aims to fix authentication bugs in the login system.
             assert "Acceptance Criteria" in content
     
     @pytest.mark.asyncio
-    async def test_process_task_complete_workflow(self, plan_agent):
+    async def test_process_task_complete_workflow(self, simple_plan_agent):
         """Test the complete process_task workflow."""
         task_input = {
             "user_request": "Implement user dashboard with charts and analytics"
@@ -336,15 +326,15 @@ This project aims to fix authentication bugs in the login system.
             'constraints': 'Mobile responsive'
         }
         
-        with patch.object(plan_agent, 'parse_user_request', new_callable=AsyncMock) as mock_parse, \
-             patch.object(plan_agent, 'create_work_directory', new_callable=AsyncMock) as mock_create, \
-             patch.object(plan_agent, 'generate_requirements', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'parse_user_request', new_callable=AsyncMock) as mock_parse, \
+             patch.object(simple_plan_agent, 'create_work_directory', new_callable=AsyncMock) as mock_create, \
+             patch.object(simple_plan_agent, 'generate_requirements', new_callable=AsyncMock) as mock_generate:
             
             mock_parse.return_value = mock_parsed
             mock_create.return_value = "/test/work/directory"
             mock_generate.return_value = "/test/work/directory/requirements.md"
             
-            result = await plan_agent.process_task(task_input)
+            result = await simple_plan_agent.process_task(task_input)
             
             # Check that all methods were called
             mock_parse.assert_called_once_with("Implement user dashboard with charts and analytics")
@@ -358,19 +348,19 @@ This project aims to fix authentication bugs in the login system.
             assert result['parsed_request'] == mock_parsed
     
     @pytest.mark.asyncio
-    async def test_process_task_error_handling(self, plan_agent):
+    async def test_process_task_error_handling(self, simple_plan_agent):
         """Test error handling in process_task."""
         task_input = {}  # Missing user_request
         
-        result = await plan_agent.process_task(task_input)
+        result = await simple_plan_agent.process_task(task_input)
         
         assert result['success'] is False
         assert 'error' in result
         assert "user_request is required" in result['error']
     
-    def test_get_agent_capabilities(self, plan_agent):
+    def test_get_agent_capabilities(self, simple_plan_agent):
         """Test that agent capabilities are properly defined."""
-        capabilities = plan_agent.get_agent_capabilities()
+        capabilities = simple_plan_agent.get_agent_capabilities()
         
         assert isinstance(capabilities, list)
         assert len(capabilities) > 0
@@ -382,57 +372,57 @@ This project aims to fix authentication bugs in the login system.
         assert "directories" in capability_text
         assert "EARS" in capability_text
     
-    def test_manager_dependencies_inheritance(self, plan_agent):
+    def test_manager_dependencies_inheritance(self, simple_plan_agent):
         """Test that PlanAgent has required manager dependencies from BaseLLMAgent."""
         # Verify that PlanAgent has manager dependencies from BaseLLMAgent
-        assert hasattr(plan_agent, 'token_manager')
-        assert hasattr(plan_agent, 'context_manager')
+        assert hasattr(simple_plan_agent, 'token_manager')
+        assert hasattr(simple_plan_agent, 'context_manager')
         
         # Verify that managers are properly set
-        assert plan_agent.token_manager is not None
-        assert plan_agent.context_manager is not None
+        assert simple_plan_agent.token_manager is not None
+        assert simple_plan_agent.context_manager is not None
         
         # Verify that deprecated compression methods exist but raise errors
-        assert hasattr(plan_agent, '_perform_context_compression')
-        assert hasattr(plan_agent, 'compress_context')
-        assert hasattr(plan_agent, 'truncate_context')
+        assert hasattr(simple_plan_agent, '_perform_context_compression')
+        assert hasattr(simple_plan_agent, 'compress_context')
+        assert hasattr(simple_plan_agent, 'truncate_context')
         
         # These should be inherited from BaseLLMAgent
-        assert callable(getattr(plan_agent, '_perform_context_compression'))
-        assert callable(getattr(plan_agent, 'compress_context'))
-        assert callable(getattr(plan_agent, 'truncate_context'))
+        assert callable(getattr(simple_plan_agent, '_perform_context_compression'))
+        assert callable(getattr(simple_plan_agent, 'compress_context'))
+        assert callable(getattr(simple_plan_agent, 'truncate_context'))
     
     @pytest.mark.asyncio
-    async def test_deprecated_compression_methods(self, plan_agent):
+    async def test_deprecated_compression_methods(self, simple_plan_agent):
         """Test that deprecated compression methods raise appropriate errors."""
         # Test that deprecated compression methods raise RuntimeError
         with pytest.raises(RuntimeError, match="_perform_context_compression is removed.*ContextManager"):
-            await plan_agent._perform_context_compression()
+            await simple_plan_agent._perform_context_compression()
         
         with pytest.raises(RuntimeError, match="compress_context is removed.*ContextManager"):
-            await plan_agent.compress_context()
+            await simple_plan_agent.compress_context()
         
         with pytest.raises(RuntimeError, match="truncate_context is removed.*ContextManager"):
-            plan_agent.truncate_context()
+            simple_plan_agent.truncate_context()
         
         # Test that manager dependencies are properly available
-        assert plan_agent.token_manager is not None
-        assert plan_agent.context_manager is not None
+        assert simple_plan_agent.token_manager is not None
+        assert simple_plan_agent.context_manager is not None
         
         # Test that managers have expected methods
-        assert hasattr(plan_agent.token_manager, 'estimate_tokens_from_text')
-        assert hasattr(plan_agent.context_manager, 'prepare_system_prompt')
+        assert hasattr(simple_plan_agent.token_manager, 'estimate_tokens_from_text')
+        assert hasattr(simple_plan_agent.context_manager, 'prepare_system_prompt')
     
     @pytest.mark.asyncio
-    async def test_get_work_directory_suggestions(self, plan_agent):
+    async def test_get_work_directory_suggestions(self, simple_plan_agent):
         """Test work directory name suggestions."""
         request = "Fix authentication bug in user login system"
         
         # Mock the LLM response for the primary suggestion
-        with patch.object(plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+        with patch.object(simple_plan_agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = "fix-authentication-bug"
             
-            suggestions = await plan_agent.get_work_directory_suggestions(request)
+            suggestions = await simple_plan_agent.get_work_directory_suggestions(request)
             
             assert isinstance(suggestions, list)
             assert len(suggestions) <= 5
@@ -444,7 +434,7 @@ This project aims to fix authentication bugs in the login system.
                 assert len(suggestion) > 0
                 assert ' ' not in suggestion  # Should be kebab-case
     
-    def test_parse_analysis_response(self, plan_agent):
+    def test_parse_analysis_response(self, simple_plan_agent):
         """Test parsing of structured LLM analysis response."""
         response = """## Summary
 Fix authentication bug in login system
@@ -470,7 +460,7 @@ Must maintain backward compatibility with existing API
 ## Suggested Directory Name
 [fix-authentication-bug]"""
         
-        result = plan_agent._parse_analysis_response(response)
+        result = simple_plan_agent._parse_analysis_response(response)
         
         assert result['summary'] == "Fix authentication bug in login system"
         assert result['type'] == "debugging"
@@ -481,7 +471,7 @@ Must maintain backward compatibility with existing API
         assert result['constraints'] == "Must maintain backward compatibility with existing API"
         assert result['suggested_directory'] == "fix-authentication-bug"
     
-    def test_parse_analysis_response_malformed(self, plan_agent):
+    def test_parse_analysis_response_malformed(self, simple_plan_agent):
         """Test parsing of malformed or incomplete LLM response."""
         response = """Some random text without proper structure
         
@@ -491,7 +481,7 @@ Partial response
 ## Request Type
 Missing type info"""
         
-        result = plan_agent._parse_analysis_response(response)
+        result = simple_plan_agent._parse_analysis_response(response)
         
         # Should handle missing sections gracefully
         assert result['summary'] == "Partial response"
@@ -505,19 +495,9 @@ Missing type info"""
 class TestPlanAgentMocking:
     """Test suite for PlanAgent with comprehensive mocking."""
     
-    @pytest.fixture
-    def memory_manager(self, temp_workspace):
-        """Create a test memory manager."""
-        return MemoryManager(temp_workspace)
-    
-    @pytest.fixture
-    def plan_agent(self, llm_config, memory_manager, mock_token_manager, mock_context_manager):
-        """Create a PlanAgent instance for testing with required manager dependencies."""
-        return PlanAgent(llm_config, memory_manager, mock_token_manager, mock_context_manager)
-    
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    def test_plan_agent_autogen_initialization(self, mock_client_class, mock_agent_class, plan_agent):
+    def test_plan_agent_autogen_initialization(self, mock_client_class, mock_agent_class, simple_plan_agent):
         """Test PlanAgent AutoGen initialization with mocks."""
         # Mock AutoGen components
         mock_client = Mock()
@@ -525,11 +505,11 @@ class TestPlanAgentMocking:
         mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
         
-        result = plan_agent.initialize_autogen_agent()
+        result = simple_plan_agent.initialize_autogen_agent()
         
         assert result is True
-        assert plan_agent._is_initialized is True
-        assert plan_agent._autogen_agent == mock_agent
+        assert simple_plan_agent._is_initialized is True
+        assert simple_plan_agent._autogen_agent == mock_agent
         
         # Verify plan-specific system message
         agent_call_args = mock_agent_class.call_args
@@ -541,7 +521,7 @@ class TestPlanAgentMocking:
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    async def test_parse_user_request_with_mocks(self, mock_client_class, mock_agent_class, plan_agent):
+    async def test_parse_user_request_with_mocks(self, mock_client_class, mock_agent_class, simple_plan_agent):
         """Test user request parsing with mocked AutoGen responses."""
         # Mock AutoGen components
         mock_client = Mock()
@@ -582,10 +562,10 @@ Must be scalable and secure
         mock_agent.on_messages = AsyncMock(return_value=mock_response)
         
         # Initialize agent
-        plan_agent.initialize_autogen_agent()
+        simple_plan_agent.initialize_autogen_agent()
         
         # Test request parsing
-        result = await plan_agent.parse_user_request("Create REST API for user management")
+        result = await simple_plan_agent.parse_user_request("Create REST API for user management")
         
         assert result['summary'] == "Create REST API for user management"
         assert result['type'] == "development"
@@ -598,7 +578,7 @@ Must be scalable and secure
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    async def test_generate_requirements_with_mocks(self, mock_client_class, mock_agent_class, plan_agent, temp_workspace):
+    async def test_generate_requirements_with_mocks(self, mock_client_class, mock_agent_class, simple_plan_agent, temp_workspace):
         """Test requirements generation with mocked AutoGen responses."""
         # Mock AutoGen components
         mock_client = Mock()
@@ -645,7 +625,7 @@ This document outlines the requirements for a user management REST API.
         mock_agent.on_messages = AsyncMock(return_value=mock_response)
         
         # Initialize agent
-        plan_agent.initialize_autogen_agent()
+        simple_plan_agent.initialize_autogen_agent()
         
         # Create work directory
         work_dir = Path(temp_workspace) / "test-project"
@@ -662,7 +642,7 @@ This document outlines the requirements for a user management REST API.
             'constraints': 'Secure and scalable'
         }
         
-        result = await plan_agent.generate_requirements(
+        result = await simple_plan_agent.generate_requirements(
             user_request, str(work_dir), parsed_request
         )
         
@@ -681,7 +661,7 @@ This document outlines the requirements for a user management REST API.
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
     @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    async def test_complete_process_task_with_mocks(self, mock_client_class, mock_agent_class, plan_agent, temp_workspace):
+    async def test_complete_process_task_with_mocks(self, mock_client_class, mock_agent_class, simple_plan_agent, temp_workspace):
         """Test complete process_task workflow with mocked responses."""
         # Mock AutoGen components
         mock_client = Mock()
@@ -745,14 +725,14 @@ Test application requirements.
         mock_agent.on_messages = AsyncMock(side_effect=mock_responses)
         
         # Initialize agent
-        plan_agent.initialize_autogen_agent()
+        simple_plan_agent.initialize_autogen_agent()
         
         # Test complete workflow
         task_input = {
             "user_request": "Create a test application with basic functionality"
         }
         
-        result = await plan_agent.process_task(task_input)
+        result = await simple_plan_agent.process_task(task_input)
         
         assert result['success'] is True
         assert 'work_directory' in result

@@ -18,15 +18,8 @@ from .agents.plan_agent import PlanAgent
 from .agents.design_agent import DesignAgent
 from .agents.tasks_agent import TasksAgent
 from .agents.implement_agent import ImplementAgent
-from .agents.task_decomposer import TaskDecomposer
-from .agents.error_recovery import ErrorRecovery
 from .models import LLMConfig, WorkflowState, WorkflowPhase, AgentContext
-from .memory_manager import MemoryManager
-from .token_manager import TokenManager
-from .context_manager import ContextManager
-from .context_compressor import ContextCompressor
-from .config_manager import ConfigManager
-from .shell_executor import ShellExecutor
+from .dependency_container import DependencyContainer
 
 
 class AgentManager:
@@ -52,10 +45,8 @@ class AgentManager:
         self.workspace_path = Path(workspace_path)
         self.logger = logging.getLogger(__name__)
         
-        # Core components
-        self.memory_manager = MemoryManager(workspace_path)
-        self.context_manager: Optional['ContextManager'] = None
-        self.shell_executor = ShellExecutor(str(self.workspace_path))
+        # Dependency container (initialized later)
+        self.container: Optional[DependencyContainer] = None
         
         # Agent instances (initialized later)
         self.plan_agent: Optional[PlanAgent] = None
@@ -79,11 +70,10 @@ class AgentManager:
     
     def setup_agents(self, llm_config: LLMConfig) -> bool:
         """
-        Initialize and configure all AI agents.
+        Initialize and configure all AI agents using DependencyContainer.
         
-        This method sets up the three core agents (Plan, Design, Implement)
-        with the provided LLM configuration and integrates them with the
-        memory system and shell executor.
+        This method sets up the dependency container and creates all agents
+        with the provided LLM configuration using the clean dependency injection pattern.
         
         Args:
             llm_config: LLM configuration for all agents
@@ -98,85 +88,48 @@ class AgentManager:
             if not llm_config.validate():
                 raise ValueError("Invalid LLM configuration provided")
             
-            # Load memory context for agents
-            memory_context = self.memory_manager.load_memory()
-
-            # Initialize core managers (mandatory)
-            config_manager = ConfigManager()
-            token_manager = TokenManager(config_manager)
-            context_compressor = ContextCompressor(llm_config, token_manager=token_manager)
-            self.context_manager = ContextManager(
+            # Create dependency container
+            self.container = DependencyContainer.create_production(
                 work_dir=str(self.workspace_path),
-                memory_manager=self.memory_manager,
-                context_compressor=context_compressor,
-                llm_config=llm_config,
-                token_manager=token_manager,
-                config_manager=config_manager,
+                llm_config=llm_config
             )
             
-            self.logger.info("Initializing agents with LLM configuration")
+            self.logger.info("Initializing agents with DependencyContainer")
             
             # Initialize Plan Agent
             self.plan_agent = PlanAgent(
+                container=self.container,
+                name="PlanAgent",
                 llm_config=llm_config,
-                memory_manager=self.memory_manager,
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager,
+                system_message="Generate project requirements and create work directory structure"
             )
             self.agents["plan"] = self.plan_agent
             
-            # Initialize Design Agent
+            # Initialize Design Agent  
             self.design_agent = DesignAgent(
+                container=self.container,
+                name="DesignAgent",
                 llm_config=llm_config,
-                memory_context=memory_context,
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager,
+                system_message="Generate technical design documents based on requirements"
             )
             self.agents["design"] = self.design_agent
             
             # Initialize Tasks Agent
             self.tasks_agent = TasksAgent(
+                container=self.container,
+                name="TasksAgent", 
                 llm_config=llm_config,
-                memory_manager=self.memory_manager,
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager,
+                system_message="Generate implementation task lists from design documents"
             )
             self.agents["tasks"] = self.tasks_agent
             
-            # Initialize supporting agents for ImplementAgent
-            task_decomposer = TaskDecomposer(
-                name="TaskDecomposer",
-                llm_config=llm_config,
-                system_message="You are a task decomposition expert. Break down high-level tasks into executable shell commands.",
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager
-            )
-
-            error_recovery = ErrorRecovery(
-                name="ErrorRecovery",
-                llm_config=llm_config,
-                system_message="You are an intelligent error recovery agent. Analyze failures and generate alternative recovery strategies.",
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager
-            )
-
-            # Initialize Implement Agent and provide its dependencies
+            # Initialize Implement Agent
             implement_system_message = self._build_implement_agent_system_message()
             self.implement_agent = ImplementAgent(
+                container=self.container,
                 name="ImplementAgent",
                 llm_config=llm_config,
-                system_message=implement_system_message,
-                shell_executor=self.shell_executor,
-                token_manager=token_manager,
-                context_manager=self.context_manager,
-                config_manager=config_manager,
-                task_decomposer=task_decomposer,
-                error_recovery=error_recovery
+                system_message=implement_system_message
             )
             self.agents["implement"] = self.implement_agent
             
@@ -201,6 +154,10 @@ class AgentManager:
                 self.is_initialized = True
                 self.logger.info("All agents initialized successfully")
                 
+                # Load memory context for logging
+                memory_manager = self.container.get_memory_manager()
+                memory_context = memory_manager.load_memory()
+                
                 # Record initialization in coordination log
                 self._record_coordination_event(
                     event_type="agent_initialization",
@@ -210,7 +167,8 @@ class AgentManager:
                             "model": llm_config.model,
                             "base_url": llm_config.base_url
                         },
-                        "memory_categories": list(memory_context.keys()) if memory_context else []
+                        "memory_categories": list(memory_context.keys()) if memory_context else [],
+                        "container_managers": self.container.get_created_managers()
                     }
                 )
                 
@@ -228,22 +186,21 @@ class AgentManager:
         """
         Set the ContextManager for all agents.
         
+        Note: With DependencyContainer, the ContextManager is managed automatically.
+        This method is kept for backward compatibility but logs a warning.
+        
         Args:
-            context_manager: ContextManager instance to be used by all agents
+            context_manager: ContextManager instance (ignored when using container)
         """
-        self.context_manager = context_manager
+        if self.container:
+            self.logger.warning(
+                "set_context_manager called but DependencyContainer manages ContextManager automatically. "
+                "This call is ignored."
+            )
+            return
         
-        # Update all agents with the context manager
-        if self.plan_agent:
-            self.plan_agent.set_context_manager(context_manager)
-        if self.design_agent:
-            self.design_agent.set_context_manager(context_manager)
-        if self.tasks_agent:
-            self.tasks_agent.set_context_manager(context_manager)
-        if self.implement_agent:
-            self.implement_agent.set_context_manager(context_manager)
-        
-        self.logger.info("ContextManager set for all agents")
+        # Legacy behavior for backward compatibility
+        self.logger.info("ContextManager set for all agents (legacy mode)")
     
     async def coordinate_agents(self, task_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -370,12 +327,18 @@ class AgentManager:
             self.workflow_state.phase = WorkflowPhase.DESIGN
             workflow_results["current_phase"] = "design"
             
+            # Get memory context from container if available
+            memory_context = {}
+            if self.container:
+                memory_manager = self.container.get_memory_manager()
+                memory_context = memory_manager.load_memory()
+            
             design_result = await self._execute_agent_task(
                 agent_name="design",
                 task_input={
                     "requirements_path": requirements_path,
                     "work_directory": work_directory,
-                    "memory_context": self.memory_manager.load_memory()
+                    "memory_context": memory_context
                 },
                 coordination_id=coordination_id
             )
@@ -486,7 +449,14 @@ class AgentManager:
         """
         # Add memory context to the task input
         task_input = context.copy()
-        task_input["memory_context"] = self.memory_manager.load_memory()
+        
+        # Get memory context from container if available, otherwise use legacy approach
+        if self.container:
+            memory_manager = self.container.get_memory_manager()
+            task_input["memory_context"] = memory_manager.load_memory()
+        else:
+            # Legacy fallback
+            task_input["memory_context"] = {}
         
         return await self._execute_agent_task(
             agent_name="design",

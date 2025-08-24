@@ -14,19 +14,10 @@ from pathlib import Path
 from datetime import datetime
 from enum import Enum
 
-from .models import WorkflowState, WorkflowPhase
+from .models import WorkflowState, WorkflowPhase, UserApprovalStatus
 from .session_manager import SessionManager
 from .context_manager import ContextManager
-from .memory_manager import MemoryManager
-from .context_compressor import ContextCompressor
-
-# Forward declaration for type hints
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .token_manager import TokenManager
-
-
-from .models import UserApprovalStatus
+from .dependency_container import DependencyContainer
 
 
 class WorkflowManager:
@@ -43,23 +34,18 @@ class WorkflowManager:
     """
     
     def __init__(self, agent_manager, session_manager: SessionManager, 
-                 memory_manager: MemoryManager, context_compressor: ContextCompressor,
-                 token_manager: 'TokenManager'):
+                 container: DependencyContainer):
         """
         Initialize the Workflow Manager.
         
         Args:
             agent_manager: AgentManager instance for coordinating agents
             session_manager: SessionManager instance for session persistence
-            memory_manager: MemoryManager instance for historical patterns
-            context_compressor: ContextCompressor instance for token management
-            token_manager: TokenManager instance for actual token tracking
+            container: DependencyContainer for accessing framework managers
         """
         self.agent_manager = agent_manager
         self.session_manager = session_manager
-        self.memory_manager = memory_manager
-        self.context_compressor = context_compressor
-        self.token_manager = token_manager
+        self.container = container
         self.context_manager: Optional[ContextManager] = None
         self.logger = logging.getLogger(__name__)
         
@@ -93,7 +79,7 @@ class WorkflowManager:
         # Load existing session state from SessionManager
         self._load_session_state_from_manager()
         
-        self.logger.info("WorkflowManager initialized")
+        self.logger.info("WorkflowManager initialized with DependencyContainer")
     
     async def process_request(self, user_request: str, auto_approve: bool = False) -> Dict[str, Any]:
         """
@@ -1543,17 +1529,8 @@ class WorkflowManager:
             return
         
         try:
-            # Get config manager from agent manager if available
-            config_manager = getattr(self.agent_manager, 'config_manager', None)
-            
-            self.context_manager = ContextManager(
-                work_dir=self.current_workflow.work_directory,
-                memory_manager=self.memory_manager,
-                context_compressor=self.context_compressor,
-                llm_config=self.agent_manager.llm_config,
-                token_manager=self.token_manager,
-                config_manager=config_manager
-            )
+            # Get ContextManager from container - it will be created with proper dependencies
+            self.context_manager = self.container.get_context_manager()
             
             # Initialize the context manager
             await self.context_manager.initialize()
