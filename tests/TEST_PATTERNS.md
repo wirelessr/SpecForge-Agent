@@ -4,13 +4,97 @@ This document defines the standardized patterns and conventions for writing test
 
 ## Table of Contents
 
-1. [Mock Patterns](#mock-patterns)
-2. [Fixture Usage](#fixture-usage)
-3. [Test Structure](#test-structure)
-4. [Assertion Patterns](#assertion-patterns)
-5. [Error Testing](#error-testing)
-6. [Async Testing](#async-testing)
-7. [Common Anti-Patterns](#common-anti-patterns)
+1. [Dependency Injection Patterns](#dependency-injection-patterns)
+2. [Mock Patterns](#mock-patterns)
+3. [Fixture Usage](#fixture-usage)
+4. [Test Structure](#test-structure)
+5. [Assertion Patterns](#assertion-patterns)
+6. [Error Testing](#error-testing)
+7. [Async Testing](#async-testing)
+8. [Common Anti-Patterns](#common-anti-patterns)
+
+## Dependency Injection Patterns
+
+### Container-Based Testing (Recommended)
+
+The framework uses dependency injection containers for clean, maintainable testing:
+
+```python
+class TestPlanAgent:
+    """Test PlanAgent using dependency injection containers."""
+    
+    def test_requirements_generation(self, mock_dependency_container, test_llm_config):
+        """Test requirements generation with mocked dependencies."""
+        # Simple agent creation using container
+        agent = PlanAgent(
+            name="TestAgent",
+            llm_config=test_llm_config,
+            system_message="Generate requirements",
+            container=mock_dependency_container
+        )
+        
+        # All dependencies are automatically mocked through container
+        result = agent.generate_requirements("Create a web API", "/tmp/test")
+        
+        # Verify interactions with mocked managers
+        agent.context_manager.get_plan_context.assert_called_once()
+        agent.memory_manager.save_requirements.assert_called_once()
+    
+    @pytest.mark.integration
+    async def test_real_requirements_generation(self, real_dependency_container, real_llm_config):
+        """Test requirements generation with real LLM interaction."""
+        agent = PlanAgent(
+            name="IntegrationAgent",
+            llm_config=real_llm_config,
+            system_message="Generate requirements",
+            container=real_dependency_container
+        )
+        
+        # Test with real LLM - validates actual functionality
+        result = await agent.generate_requirements(
+            "Create a simple web API with user authentication",
+            "/tmp/integration_test"
+        )
+        
+        # Validate real output quality
+        assert "# Requirements Document" in result
+        assert "User Story:" in result
+        assert "Acceptance Criteria" in result
+```
+
+### Available Container Fixtures
+
+#### Mock Container Fixtures (Unit Tests)
+- `mock_dependency_container`: Container with all managers mocked
+- `simple_plan_agent`: PlanAgent with mocked dependencies
+- `simple_design_agent`: DesignAgent with mocked dependencies
+- `simple_tasks_agent`: TasksAgent with mocked dependencies
+- `simple_implement_agent`: ImplementAgent with mocked dependencies
+
+#### Real Container Fixtures (Integration Tests)
+- `real_dependency_container`: Container with real managers
+- `real_plan_agent`: PlanAgent with real dependencies
+- `real_design_agent`: DesignAgent with real dependencies
+- `real_tasks_agent`: TasksAgent with real dependencies
+- `real_implement_agent`: ImplementAgent with real dependencies
+
+### Legacy Manual Injection (Deprecated)
+
+```python
+# ❌ Deprecated: Manual dependency injection
+def test_legacy_pattern(self, test_llm_config, mock_token_manager, mock_context_manager):
+    """Legacy pattern - avoid in new tests."""
+    agent = PlanAgent(
+        name="TestAgent",
+        llm_config=test_llm_config,
+        system_message="Test",
+        token_manager=mock_token_manager,
+        context_manager=mock_context_manager,
+        memory_manager=mock_memory_manager,
+        shell_executor=mock_shell_executor
+    )
+    # Complex setup with many parameters
+```
 
 ## Mock Patterns
 
@@ -105,46 +189,83 @@ def test_with_env_vars(self):
 
 ## Fixture Usage
 
-### Unit Test Fixtures
+### Container-Based Fixtures (Recommended)
 
-Use these standard fixtures in unit tests:
+Use dependency injection container fixtures for clean, maintainable tests:
 
 ```python
-def test_unit_functionality(self, test_llm_config, mock_shell_executor, mock_memory_manager):
-    """Unit test using standard mocked fixtures."""
+# Unit tests with mock container
+def test_unit_functionality(self, mock_dependency_container, test_llm_config):
+    """Unit test using mock dependency container."""
+    agent = PlanAgent(
+        name="TestAgent",
+        llm_config=test_llm_config,
+        system_message="Test message",
+        container=mock_dependency_container
+    )
+    # All dependencies automatically mocked
+
+# Integration tests with real container
+@pytest.mark.integration
+async def test_integration_functionality(self, real_dependency_container, real_llm_config):
+    """Integration test using real dependency container."""
+    agent = PlanAgent(
+        name="IntegrationAgent",
+        llm_config=real_llm_config,
+        system_message="Generate requirements",
+        container=real_dependency_container
+    )
+    # Test with real LLM and managers
+```
+
+### Agent-Specific Fixtures
+
+Use pre-configured agent fixtures for common scenarios:
+
+```python
+def test_with_simple_agent(self, simple_plan_agent):
+    """Test using pre-configured agent fixture."""
+    result = simple_plan_agent.generate_requirements("Create API", "/tmp/test")
+    # Agent already configured with mocked dependencies
+
+@pytest.mark.integration
+async def test_with_real_agent(self, real_plan_agent):
+    """Integration test using real agent fixture."""
+    result = await real_plan_agent.generate_requirements(
+        "Create a web API with authentication", 
+        "/tmp/integration"
+    )
+    # Agent configured with real LLM and managers
+```
+
+### Legacy Fixtures (Deprecated)
+
+```python
+# ❌ Deprecated: Manual fixture usage
+def test_legacy_functionality(self, test_llm_config, mock_shell_executor, mock_memory_manager):
+    """Legacy pattern - avoid in new tests."""
     component = MyComponent(
         llm_config=test_llm_config,
         shell_executor=mock_shell_executor,
         memory_manager=mock_memory_manager
     )
-    # Test implementation
+    # Complex manual setup
 ```
 
-### Integration Test Fixtures
+### Custom Container Fixture Pattern
 
-Use these fixtures for integration tests:
-
-```python
-@pytest.mark.integration
-def test_integration_functionality(self, real_llm_config, temp_workspace):
-    """Integration test using real configuration."""
-    component = MyComponent(llm_config=real_llm_config)
-    # Test with real services
-```
-
-### Custom Fixture Pattern
-
-Create component-specific fixtures following this pattern:
+Create custom container fixtures for specialized testing:
 
 ```python
 @pytest.fixture
-def my_component(self, test_llm_config, mock_shell_executor):
-    """Create MyComponent instance for testing."""
-    return MyComponent(
-        name="TestComponent",
-        llm_config=test_llm_config,
-        shell_executor=mock_shell_executor
-    )
+def custom_test_container(self, test_llm_config, temp_workspace):
+    """Create custom container for specialized testing."""
+    container = DependencyContainer.create_test(temp_workspace, test_llm_config)
+    
+    # Customize specific managers if needed
+    container.get_context_manager().custom_setting = "test_value"
+    
+    return container
 ```
 
 ## Test Structure
@@ -328,7 +449,66 @@ def mock_async_component(self):
 
 ## Common Anti-Patterns
 
-### Anti-Pattern 1: Over-Mocking
+### Anti-Pattern 1: Mixing Dependency Injection Patterns
+
+```python
+# ❌ Bad: Mixing container and manual injection
+def test_mixed_patterns(self, mock_dependency_container, mock_token_manager):
+    agent = PlanAgent(
+        name="TestAgent",
+        llm_config=test_llm_config,
+        container=mock_dependency_container,
+        token_manager=mock_token_manager  # Don't mix patterns!
+    )
+
+# ✅ Good: Use container-based pattern consistently
+def test_container_pattern(self, mock_dependency_container, test_llm_config):
+    agent = PlanAgent(
+        name="TestAgent",
+        llm_config=test_llm_config,
+        container=mock_dependency_container
+    )
+```
+
+### Anti-Pattern 2: Creating Multiple Containers
+
+```python
+# ❌ Bad: Creating multiple containers in one test
+def test_multiple_containers(self, test_llm_config, temp_workspace):
+    container1 = DependencyContainer.create_test(temp_workspace, test_llm_config)
+    container2 = DependencyContainer.create_test(temp_workspace, test_llm_config)
+    
+    agent1 = PlanAgent(container=container1, llm_config=test_llm_config)
+    agent2 = DesignAgent(container=container2, llm_config=test_llm_config)
+    # Agents can't share state!
+
+# ✅ Good: Use single container for related agents
+def test_shared_container(self, mock_dependency_container, test_llm_config):
+    agent1 = PlanAgent(container=mock_dependency_container, llm_config=test_llm_config)
+    agent2 = DesignAgent(container=mock_dependency_container, llm_config=test_llm_config)
+    # Agents share state through container
+```
+
+### Anti-Pattern 3: Accessing Container Internals
+
+```python
+# ❌ Bad: Accessing container internals directly
+def test_container_internals(self, mock_dependency_container):
+    agent = PlanAgent(container=mock_dependency_container, llm_config=test_llm_config)
+    
+    # Don't access container internals!
+    token_manager = agent.container._managers['token_manager']
+    token_manager.some_method()
+
+# ✅ Good: Use agent properties
+def test_agent_properties(self, mock_dependency_container):
+    agent = PlanAgent(container=mock_dependency_container, llm_config=test_llm_config)
+    
+    # Use clean agent properties
+    agent.token_manager.some_method()
+```
+
+### Anti-Pattern 4: Over-Mocking
 
 ```python
 # ❌ Bad: Mocking everything, including simple objects

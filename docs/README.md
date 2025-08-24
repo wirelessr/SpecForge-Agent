@@ -16,6 +16,9 @@ This directory contains detailed documentation for the AutoGen Multi-Agent Frame
 - **[Migration Guide](migration-guide.md)**: Guide for migrating from older configuration versions.
 - **[Config Files README](../config/README.md)**: Information about the physical config files.
 
+## 🏗️ Architecture
+- **[Dependency Injection Guide](dependency-injection-guide.md)**: Complete guide to the dependency injection system for simplified agent initialization.
+
 ## 🧪 Testing
 - **[Testing README](../tests/README.md)**: Overview of the testing strategy.
 - **[Test Patterns](../tests/TEST_PATTERNS.md)**: Detailed patterns and conventions.
