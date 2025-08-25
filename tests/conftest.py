@@ -87,6 +87,106 @@ def mock_env_vars():
     return _mock_env
 
 
+# Dependency Container Fixtures
+
+@pytest.fixture
+def mock_dependency_container(test_llm_config, temp_workspace):
+    """
+    Provide dependency container with mock managers for unit tests.
+    
+    This fixture creates a DependencyContainer configured for testing with
+    all managers mocked. Each test gets a fresh container instance to ensure
+    test isolation.
+    
+    Returns:
+        DependencyContainer configured with mock managers
+    """
+    from autogen_framework.dependency_container import DependencyContainer
+    
+    container = DependencyContainer.create_test(temp_workspace, test_llm_config)
+    return container
+
+
+
+
+
+# Agent Fixtures using Dependency Containers
+
+@pytest.fixture
+def simple_plan_agent(mock_dependency_container, test_llm_config):
+    """
+    Provide PlanAgent with mocked dependencies for unit tests.
+    
+    This fixture creates a PlanAgent using the mock dependency container,
+    making it suitable for fast unit tests that don't require real LLM calls.
+    
+    Returns:
+        PlanAgent configured with mock dependencies
+    """
+    from autogen_framework.agents.plan_agent import PlanAgent
+    
+    return PlanAgent(
+        container=mock_dependency_container,
+        llm_config=test_llm_config
+    )
+
+
+# TODO: Update these fixtures when their respective agents are updated to use container-only initialization
+
+@pytest.fixture
+def simple_design_agent(mock_dependency_container, test_llm_config):
+    """
+    Provide DesignAgent with mocked dependencies for unit tests.
+    
+    This fixture creates a DesignAgent using the mock dependency container,
+    making it suitable for fast unit tests that don't require real LLM calls.
+    
+    Returns:
+        DesignAgent configured with mock dependencies
+    """
+    from autogen_framework.agents.design_agent import DesignAgent
+    
+    return DesignAgent(
+        container=mock_dependency_container,
+        llm_config=test_llm_config
+    )
+
+
+@pytest.fixture
+def simple_tasks_agent(mock_dependency_container, test_llm_config):
+    """
+    Provide TasksAgent with mocked dependencies for unit tests.
+    
+    Returns:
+        TasksAgent configured with mock dependencies
+    """
+    from autogen_framework.agents.tasks_agent import TasksAgent
+    
+    return TasksAgent(
+        container=mock_dependency_container,
+        name="TasksAgent",
+        llm_config=test_llm_config
+    )
+
+
+@pytest.fixture
+def simple_implement_agent(mock_dependency_container, test_llm_config):
+    """
+    Provide ImplementAgent with mocked dependencies for unit tests.
+    
+    Returns:
+        ImplementAgent configured with mock dependencies
+    """
+    from autogen_framework.agents.implement_agent import ImplementAgent
+    
+    return ImplementAgent(
+        container=mock_dependency_container,
+        name="ImplementAgent",
+        llm_config=test_llm_config,
+        system_message="Test implementation agent"
+    )
+
+
 # Legacy fixture for backward compatibility
 @pytest.fixture
 def llm_config(test_llm_config):

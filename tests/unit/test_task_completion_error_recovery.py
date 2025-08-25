@@ -28,22 +28,17 @@ class TestTaskCompletionErrorRecoveryUnit:
             yield Path(temp_dir)
     
     @pytest.fixture
-    def workflow_manager(self, temp_workspace, test_llm_config):
+    def workflow_manager(self, temp_workspace, test_llm_config, mock_dependency_container):
         """Create WorkflowManager instance for testing."""
         mock_agent_manager = MagicMock()
         mock_agent_manager.llm_config = test_llm_config
         
         session_manager = SessionManager(workspace_path=temp_workspace)
-        memory_manager = MemoryManager(workspace_path=str(temp_workspace))
-        context_compressor = ContextCompressor(llm_config=test_llm_config)
-        token_manager = MagicMock()
         
         workflow_manager = WorkflowManager(
             agent_manager=mock_agent_manager,
             session_manager=session_manager,
-            memory_manager=memory_manager,
-            context_compressor=context_compressor,
-            token_manager=token_manager
+            container=mock_dependency_container
         )
         
         # Set up workflow state

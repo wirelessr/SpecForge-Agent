@@ -209,6 +209,12 @@ LOG_LEVEL=INFO                         # Logging level
                        │  (Agent Factory) │
                        └──────────────────┘
                                 │
+                                ▼
+                    ┌─────────────────────────┐
+                    │  DependencyContainer    │
+                    │  (Dependency Injection) │
+                    └─────────────────────────┘
+                                │
                 ┌───────────────┼───────────────┐
                 ▼               ▼               ▼
         ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
@@ -222,6 +228,26 @@ LOG_LEVEL=INFO                         # Logging level
                                           │ (Execution)  │
                                           └──────────────┘
 ```
+
+### Dependency Injection System
+
+The framework uses a clean dependency injection system that simplifies agent initialization:
+
+```python
+from autogen_framework.dependency_container import DependencyContainer
+from autogen_framework.agents.plan_agent import PlanAgent
+
+# Simple container-based initialization
+container = DependencyContainer.create_production(work_dir, llm_config)
+agent = PlanAgent(
+    name="PlanAgent",
+    llm_config=llm_config,
+    system_message="Generate requirements",
+    container=container
+)
+```
+
+For detailed information, see the **[Dependency Injection Guide](../docs/dependency-injection-guide.md)**.
 
 ### Support Systems
 

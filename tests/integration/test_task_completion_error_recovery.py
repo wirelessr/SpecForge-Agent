@@ -80,9 +80,8 @@ class TestTaskCompletionErrorRecovery:
     def workflow_manager_with_config(self, temp_workspace, mock_agent_manager):
         """Create WorkflowManager instance with custom configuration for testing."""
         session_manager = SessionManager(workspace_path=temp_workspace)
-        memory_manager = MemoryManager(workspace_path=str(temp_workspace))
         
-        # Create mock LLM config for ContextCompressor
+        # Create mock LLM config for DependencyContainer
         from autogen_framework.models import LLMConfig
         mock_llm_config = LLMConfig(
             base_url="http://test.local:8888/openai/v1",
@@ -90,15 +89,14 @@ class TestTaskCompletionErrorRecovery:
             api_key="test-key"
         )
         
-        context_compressor = ContextCompressor(llm_config=mock_llm_config)
-        token_manager = MagicMock()
+        # Create dependency container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(str(temp_workspace), mock_llm_config)
         
         workflow_manager = WorkflowManager(
             agent_manager=mock_agent_manager,
             session_manager=session_manager,
-            memory_manager=memory_manager,
-            context_compressor=context_compressor,
-            token_manager=token_manager
+            container=container
         )
         
         # Set up workflow state

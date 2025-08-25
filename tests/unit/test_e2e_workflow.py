@@ -68,31 +68,20 @@ class TestE2EWorkflow:
             mock_agent_manager.get_agent_status.return_value = {"status": "ready"}  # Agents ready
             mock_agent_manager.update_agent_memory = Mock()  # Memory update operations
             
-            # Mock memory manager for context and state persistence
-            # The memory manager handles loading/saving workflow context and history
-            with patch.object(controller, 'memory_manager') as mock_memory_manager:
-                mock_memory_manager.load_memory.return_value = {"context": "test"}  # Basic context
-                mock_memory_manager.get_memory_stats.return_value = {"loaded": True}  # Memory ready
-                
-                # Mock shell executor for command execution during implementation
-                # The shell executor handles actual code execution and file operations
-                with patch.object(controller, 'shell_executor') as mock_shell_executor:
-                    mock_shell_executor.get_execution_stats.return_value = {"ready": True}  # Shell ready
-                    
-                    # Initialize framework
-                    assert controller.initialize_framework(mock_test_llm_config) == True
-                    
-                    # Test Phase 1: Initial Request and Requirements Review
-                    await self._test_requirements_phase_with_revision(controller, temp_workspace)
-                    
-                    # Test Phase 2: Design Review with Revision
-                    await self._test_design_phase_with_revision(controller, temp_workspace)
-                    
-                    # Test Phase 3: Tasks Review with Revision
-                    await self._test_tasks_phase_with_revision(controller, temp_workspace)
-                    
-                    # Test Phase 4: Final Verification
-                    await self._test_final_verification(controller, temp_workspace)
+            # Initialize framework - this will create the container with managers
+            assert controller.initialize_framework(mock_test_llm_config) == True
+            
+            # Test Phase 1: Initial Request and Requirements Review
+            await self._test_requirements_phase_with_revision(controller, temp_workspace)
+            
+            # Test Phase 2: Design Review with Revision
+            await self._test_design_phase_with_revision(controller, temp_workspace)
+            
+            # Test Phase 3: Tasks Review with Revision
+            await self._test_tasks_phase_with_revision(controller, temp_workspace)
+            
+            # Test Phase 4: Final Verification
+            await self._test_final_verification(controller, temp_workspace)
     
     async def _test_requirements_phase_with_revision(self, controller: MainController, workspace: str):
         """Test requirements phase with revision cycle."""
@@ -593,49 +582,42 @@ graph TD
                 mock_agent_manager.get_agent_status.return_value = {"status": "ready"}
                 mock_agent_manager.update_agent_memory = Mock()
                 
-                with patch.object(real_controller, 'memory_manager') as mock_memory_manager:
-                    mock_memory_manager.load_memory.return_value = {"context": "test"}
-                    mock_memory_manager.get_memory_stats.return_value = {"loaded": True}
-                    
-                    with patch.object(real_controller, 'shell_executor') as mock_shell_executor:
-                        mock_shell_executor.get_execution_stats.return_value = {"ready": True}
-                        
-                        # Initialize the controller
-                        assert real_controller.initialize_framework(mock_test_llm_config) == True
-                        
-                        # Return the real controller when MainController is instantiated
-                        mock_controller_class.return_value = real_controller
-                        
-                        # Test 1: Submit a request via CLI
-                        result = runner.invoke(main, [
-                            '--workspace', temp_workspace,
-                            '--request', 'Create a simple web API',
-                            '--llm-base-url', 'http://test.local:8888/openai/v1',
-                            '--llm-model', 'test-model',
-                            '--llm-api-key', 'test-key'
-                        ])
-                        
-                        # Verify the CLI executed successfully
-                        assert result.exit_code == 0
-                        assert "Framework initialized successfully!" in result.output
-                        assert "Processing request: Create a simple web API" in result.output
-                        assert "User approval required for: requirements" in result.output
-                        
-                        print("✅ CLI request mode test completed successfully!")
-                        
-                        # Test 2: Check status via CLI
-                        result2 = runner.invoke(main, [
-                            '--workspace', temp_workspace,
-                            '--status',
-                            '--llm-base-url', 'http://test.local:8888/openai/v1',
-                            '--llm-model', 'test-model',
-                            '--llm-api-key', 'test-key'
-                        ])
-                        
-                        assert result2.exit_code == 0
-                        assert "📊 Framework Status" in result2.output
-                        
-                        print("✅ CLI status mode test completed successfully!")
+                # Initialize the controller - this will create the container with managers
+                assert real_controller.initialize_framework(mock_test_llm_config) == True
+                
+                # Return the real controller when MainController is instantiated
+                mock_controller_class.return_value = real_controller
+                
+                # Test 1: Submit a request via CLI
+                result = runner.invoke(main, [
+                    '--workspace', temp_workspace,
+                    '--request', 'Create a simple web API',
+                    '--llm-base-url', 'http://test.local:8888/openai/v1',
+                    '--llm-model', 'test-model',
+                    '--llm-api-key', 'test-key'
+                ])
+                
+                # Verify the CLI executed successfully
+                assert result.exit_code == 0
+                assert "Framework initialized successfully!" in result.output
+                assert "Processing request: Create a simple web API" in result.output
+                assert "User approval required for: requirements" in result.output
+                
+                print("✅ CLI request mode test completed successfully!")
+                
+                # Test 2: Check status via CLI
+                result2 = runner.invoke(main, [
+                    '--workspace', temp_workspace,
+                    '--status',
+                    '--llm-base-url', 'http://test.local:8888/openai/v1',
+                    '--llm-model', 'test-model',
+                    '--llm-api-key', 'test-key'
+                ])
+                
+                assert result2.exit_code == 0
+                assert "📊 Framework Status" in result2.output
+                
+                print("✅ CLI status mode test completed successfully!")
 
 if __name__ == "__main__":
     # Run the test with verbose output

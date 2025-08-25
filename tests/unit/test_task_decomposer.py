@@ -73,16 +73,14 @@ def mock_dependencies():
     return mock_llm_config, mock_token_manager, mock_context_manager, mock_config_manager
 
 @pytest.fixture
-def task_decomposer(mock_dependencies):
+def task_decomposer(mock_dependency_container):
     """Provides a TaskDecomposer instance with mocked dependencies."""
-    llm_config, token_manager, context_manager, config_manager = mock_dependencies
+    llm_config = LLMConfig(model="mock-model", api_key="mock-key", base_url="http://localhost:1234")
     return TaskDecomposer(
         name="TestTaskDecomposer",
         llm_config=llm_config,
         system_message="You are a test agent.",
-        token_manager=token_manager,
-        context_manager=context_manager,
-        config_manager=config_manager
+        container=mock_dependency_container
     )
 
 @pytest.mark.asyncio
@@ -202,9 +200,7 @@ class TestTaskDecomposerHelpers:
         """
         Tests the context summary generation.
         """
-        # Mock the context manager
-        task_decomposer.context_manager = MagicMock()
-        
+        # The context manager is already mocked through the container
         summary = task_decomposer._get_context_summary()
         
         assert "Project context" in summary
@@ -214,9 +210,10 @@ class TestTaskDecomposerHelpers:
         """
         Tests context summary generation when no context manager is present.
         """
-        task_decomposer.context_manager = None
-        summary = task_decomposer._get_context_summary()
-        assert summary == "No additional context is available."
+        # Mock the container to return None for context manager
+        with patch.object(task_decomposer.container, 'get_context_manager', return_value=None):
+            summary = task_decomposer._get_context_summary()
+            assert summary == "No additional context is available."
 
     @pytest.mark.parametrize("response, expected", [
         ("```json\n{\"key\": \"value\"}\n```", "{\"key\": \"value\"}"),

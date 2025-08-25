@@ -18,7 +18,7 @@ class TestWorkflowManagerTaskParsing:
     """Test cases for enhanced task parsing functionality."""
     
     @pytest.fixture
-    def workflow_manager(self):
+    def workflow_manager(self, mock_dependency_container):
         """Create a WorkflowManager instance with mocked dependencies."""
         mock_agent_manager = Mock()
         mock_session_manager = Mock()
@@ -40,13 +40,8 @@ class TestWorkflowManagerTaskParsing:
         }
         mock_session_manager.save_session_state = Mock(return_value=True)
         
-        mock_memory_manager = Mock()
-        mock_context_compressor = Mock()
-        mock_token_manager = Mock()
-        
         return WorkflowManager(
-            mock_agent_manager, mock_session_manager, mock_memory_manager, 
-            mock_context_compressor, mock_token_manager
+            mock_agent_manager, mock_session_manager, mock_dependency_container
         )
     
     def test_parse_numbered_tasks_success(self, workflow_manager):
@@ -386,7 +381,7 @@ class TestWorkflowManagerSingleTaskUpdate:
     """Test cases for single task completion update functionality."""
     
     @pytest.fixture
-    def workflow_manager(self):
+    def workflow_manager(self, mock_dependency_container):
         """Create a WorkflowManager instance with mocked dependencies."""
         mock_agent_manager = Mock()
         mock_session_manager = Mock()
@@ -408,13 +403,8 @@ class TestWorkflowManagerSingleTaskUpdate:
         }
         mock_session_manager.save_session_state = Mock(return_value=True)
         
-        mock_memory_manager = Mock()
-        mock_context_compressor = Mock()
-        mock_token_manager = Mock()
-        
         return WorkflowManager(
-            mock_agent_manager, mock_session_manager, mock_memory_manager, 
-            mock_context_compressor, mock_token_manager
+            mock_agent_manager, mock_session_manager, mock_dependency_container
         )
     
     def test_update_single_task_completion_success(self, workflow_manager):

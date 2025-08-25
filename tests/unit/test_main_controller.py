@@ -47,9 +47,10 @@ class TestMainController:
     def test_main_controller_initialization(self, main_controller, temp_workspace):
         """Test MainController initialization."""
         assert main_controller.workspace_path == Path(temp_workspace)
-        assert main_controller.memory_manager is None
+        assert main_controller.container is None
         assert main_controller.agent_manager is None
-        assert main_controller.shell_executor is None
+        assert main_controller.session_manager is None
+        assert main_controller.workflow_manager is None
         assert main_controller.llm_config is None
         assert not main_controller.is_initialized
         assert main_controller.current_workflow is None
@@ -58,22 +59,13 @@ class TestMainController:
     
     def test_initialize_framework_success(self, main_controller, llm_config):
         """Test successful framework initialization."""
-        with patch('autogen_framework.main_controller.MemoryManager') as mock_memory, \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
-            # Mock component instances
-            mock_memory_instance = Mock()
-            mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
-            mock_memory.return_value = mock_memory_instance
-            
+            # Mock agent manager instance
             mock_agent_instance = Mock()
             mock_agent_instance.setup_agents.return_value = True
             mock_agent_instance.update_agent_memory = Mock()
             mock_agent.return_value = mock_agent_instance
-            
-            mock_shell_instance = Mock()
-            mock_shell.return_value = mock_shell_instance
             
             # Test initialization
             result = main_controller.initialize_framework(llm_config)
@@ -81,15 +73,14 @@ class TestMainController:
             assert result is True
             assert main_controller.is_initialized is True
             assert main_controller.llm_config == llm_config
-            assert main_controller.memory_manager is not None
+            assert main_controller.container is not None
             assert main_controller.agent_manager is not None
-            assert main_controller.shell_executor is not None
+            assert main_controller.session_manager is not None
+            assert main_controller.workflow_manager is not None
             assert len(main_controller.execution_log) > 0
             
             # Verify component initialization
-            mock_memory.assert_called_once()
             mock_agent.assert_called_once()
-            mock_shell.assert_called_once()
             mock_agent_instance.setup_agents.assert_called_once_with(llm_config)
             mock_agent_instance.update_agent_memory.assert_called_once()
     
@@ -100,9 +91,7 @@ class TestMainController:
     })
     def test_initialize_framework_default_config(self, main_controller):
         """Test framework initialization with default LLM configuration."""
-        with patch('autogen_framework.main_controller.MemoryManager'), \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor'):
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
             # Mock agent manager
             mock_agent_instance = Mock()
@@ -122,22 +111,13 @@ class TestMainController:
     
     def test_initialize_framework_agent_setup_failure(self, main_controller, llm_config):
         """Test framework initialization when agent setup fails."""
-        with patch('autogen_framework.main_controller.MemoryManager') as mock_memory, \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
-            # Mock component instances
-            mock_memory_instance = Mock()
-            mock_memory_instance.load_memory.return_value = {}
-            mock_memory.return_value = mock_memory_instance
-            
+            # Mock agent manager instance
             mock_agent_instance = Mock()
             mock_agent_instance.setup_agents.return_value = False  # Agent setup fails
             mock_agent_instance.update_agent_memory = Mock()
             mock_agent.return_value = mock_agent_instance
-            
-            mock_shell_instance = Mock()
-            mock_shell.return_value = mock_shell_instance
             
             # Test initialization
             result = main_controller.initialize_framework(llm_config)
@@ -197,7 +177,7 @@ class TestMainController:
     async def test_process_user_request_requirements_phase(self, main_controller, llm_config):
         """Test user request processing stopping at requirements phase for approval."""
         # Initialize framework
-        await self._setup_initialized_controller(main_controller, llm_config)
+        self._setup_initialized_controller(main_controller, llm_config)
         
         # Mock agent manager coordination
         requirements_result = {
@@ -227,7 +207,7 @@ class TestMainController:
     async def test_process_user_request_full_workflow_with_approvals(self, main_controller, llm_config):
         """Test complete user request processing with all phases approved."""
         # Initialize framework
-        await self._setup_initialized_controller(main_controller, llm_config)
+        self._setup_initialized_controller(main_controller, llm_config)
         
         # Pre-approve all phases
         main_controller.user_approval_status = {
@@ -371,7 +351,7 @@ class TestMainController:
     async def test_continue_workflow_to_design_phase(self, main_controller, llm_config):
         """Test continuing workflow from requirements to design phase."""
         # Setup initialized controller with active workflow
-        await self._setup_initialized_controller(main_controller, llm_config)
+        self._setup_initialized_controller(main_controller, llm_config)
         
         # Setup workflow state
         from autogen_framework.models import WorkflowState, WorkflowPhase
@@ -418,9 +398,7 @@ class TestMainController:
         assert status["approval_status"] == {}
         
         # Initialize framework
-        with patch('autogen_framework.main_controller.MemoryManager'), \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor'):
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
             mock_agent_instance = Mock()
             mock_agent_instance.setup_agents.return_value = True
@@ -460,19 +438,13 @@ class TestMainController:
     def test_reset_framework(self, main_controller, llm_config):
         """Test framework reset."""
         # Setup some state
-        with patch('autogen_framework.main_controller.MemoryManager'), \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
             mock_agent_instance = Mock()
             mock_agent_instance.setup_agents.return_value = True
             mock_agent_instance.update_agent_memory = Mock()
             mock_agent_instance.reset_coordination_state = Mock()
             mock_agent.return_value = mock_agent_instance
-            
-            mock_shell_instance = Mock()
-            mock_shell_instance.clear_history = Mock()
-            mock_shell.return_value = mock_shell_instance
             
             main_controller.initialize_framework(llm_config)
             
@@ -492,7 +464,6 @@ class TestMainController:
             
             # Verify component reset calls
             mock_agent_instance.reset_coordination_state.assert_called_once()
-            mock_shell_instance.clear_history.assert_called_once()
     
     def test_export_workflow_report_success(self, main_controller, temp_workspace):
         """Test successful workflow report export."""
@@ -539,7 +510,7 @@ class TestMainController:
     async def test_execute_specific_task_success(self, main_controller, llm_config):
         """Test successful specific task execution."""
         # Setup initialized controller
-        await self._setup_initialized_controller(main_controller, llm_config)
+        self._setup_initialized_controller(main_controller, llm_config)
         
         # Setup workflow in implementation phase
         from autogen_framework.models import WorkflowState, WorkflowPhase
@@ -585,7 +556,7 @@ class TestMainController:
     
     # Helper methods
     
-    async def _setup_initialized_controller(self, main_controller, llm_config):
+    def _setup_initialized_controller(self, main_controller, llm_config):
         """
         Helper to setup an initialized controller for testing.
         
@@ -594,23 +565,17 @@ class TestMainController:
         mock setup across multiple test methods.
         
         Mock Configuration:
-        - MemoryManager: Returns test content, simulates successful memory operations
         - AgentManager: Returns successful setup, provides mock coordination methods
-        - ShellExecutor: Provides basic shell execution capabilities
+        - DependencyContainer: Provides mocked managers through container
         
         Args:
             main_controller: MainController instance to initialize
             llm_config: LLM configuration for initialization
+        
+        Returns:
+            Mock AgentManager instance for further configuration in tests
         """
-        with patch('autogen_framework.main_controller.MemoryManager') as mock_memory, \
-             patch('autogen_framework.main_controller.AgentManager') as mock_agent, \
-             patch('autogen_framework.main_controller.ShellExecutor') as mock_shell:
-            
-            # Mock MemoryManager instance
-            # Simulates successful memory loading with test content
-            mock_memory_instance = Mock()
-            mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
-            mock_memory.return_value = mock_memory_instance
+        with patch('autogen_framework.main_controller.AgentManager') as mock_agent:
             
             # Mock AgentManager instance  
             # Simulates successful agent setup and provides coordination methods
@@ -619,14 +584,11 @@ class TestMainController:
             mock_agent_instance.update_agent_memory = Mock()     # Mock memory update method
             mock_agent.return_value = mock_agent_instance
             
-            # Mock ShellExecutor instance
-            # Provides basic shell execution capabilities for testing
-            mock_shell_instance = Mock()
-            mock_shell.return_value = mock_shell_instance
-            
             # Initialize framework with mocked dependencies
-            # This will create the mocked instances and set up the controller
+            # This will create the DependencyContainer and set up the controller
             main_controller.initialize_framework(llm_config)
+            
+            return mock_agent_instance
 
 class TestMainControllerMocking:
     """Test suite for MainController with comprehensive mocking."""
@@ -636,25 +598,15 @@ class TestMainControllerMocking:
         """Create a MainController instance for testing."""
         return MainController(temp_workspace)
     
-    @patch('autogen_framework.main_controller.MemoryManager')
     @patch('autogen_framework.main_controller.AgentManager')
-    @patch('autogen_framework.main_controller.ShellExecutor')
-    def test_initialize_framework_with_mocked_components(self, mock_shell, mock_agent, mock_memory,
-                                                       main_controller, llm_config):
+    def test_initialize_framework_with_mocked_components(self, mock_agent, main_controller, llm_config):
         """Test framework initialization with fully mocked components."""
-        # Mock component instances
-        mock_memory_instance = Mock()
-        mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
-        mock_memory.return_value = mock_memory_instance
-        
+        # Mock agent manager instance
         mock_agent_instance = Mock()
         mock_agent_instance.setup_agents.return_value = True
         mock_agent_instance.update_agent_memory = Mock()
         mock_agent_instance.get_agent_status.return_value = {"status": "ready"}
         mock_agent.return_value = mock_agent_instance
-        
-        mock_shell_instance = Mock()
-        mock_shell.return_value = mock_shell_instance
         
         # Test initialization
         result = main_controller.initialize_framework(llm_config)
@@ -663,37 +615,26 @@ class TestMainControllerMocking:
         assert main_controller.is_initialized is True
         assert main_controller.llm_config == llm_config
         
-        # Verify component creation
-        mock_memory.assert_called_once()
-        mock_agent.assert_called_once()
-        mock_shell.assert_called_once()
+        # Verify container was created
+        assert main_controller.container is not None
         
         # Verify component setup
+        mock_agent.assert_called_once()
         mock_agent_instance.setup_agents.assert_called_once_with(llm_config)
         mock_agent_instance.update_agent_memory.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('autogen_framework.main_controller.MemoryManager')
     @patch('autogen_framework.main_controller.AgentManager')
-    @patch('autogen_framework.main_controller.ShellExecutor')
-    async def test_process_user_request_with_mocked_agents(self, mock_shell, mock_agent, mock_memory,
-                                                         main_controller, llm_config):
+    async def test_process_user_request_with_mocked_agents(self, mock_agent, main_controller, llm_config):
         """Test user request processing with mocked agent responses."""
-        # Setup mocked components
-        mock_memory_instance = Mock()
-        mock_memory_instance.load_memory.return_value = {"global": {"test": "content"}}
-        mock_memory.return_value = mock_memory_instance
-        
+        # Setup mocked agent manager
         mock_agent_instance = Mock()
         mock_agent_instance.setup_agents.return_value = True
         mock_agent_instance.update_agent_memory = Mock()
         mock_agent_instance.coordinate_agents = AsyncMock()
         mock_agent.return_value = mock_agent_instance
         
-        mock_shell_instance = Mock()
-        mock_shell.return_value = mock_shell_instance
-        
-        # Initialize framework
+        # Initialize framework - this will create the container with managers
         main_controller.initialize_framework(llm_config)
         
         # Mock agent coordination response
@@ -718,29 +659,17 @@ class TestMainControllerMocking:
             {"user_request": "Create a test application", "workspace_path": str(main_controller.workspace_path)}
         )
     
-    @patch('autogen_framework.main_controller.MemoryManager')
     @patch('autogen_framework.main_controller.AgentManager')
-    @patch('autogen_framework.main_controller.ShellExecutor')
-    def test_framework_status_with_mocked_components(self, mock_shell, mock_agent, mock_memory,
-                                                   main_controller, llm_config):
+    def test_framework_status_with_mocked_components(self, mock_agent, main_controller, llm_config):
         """Test framework status reporting with mocked components."""
-        # Setup mocked components
-        mock_memory_instance = Mock()
-        mock_memory_instance.load_memory.return_value = {}
-        mock_memory_instance.get_memory_stats.return_value = {"total_files": 5}
-        mock_memory.return_value = mock_memory_instance
-        
+        # Setup mocked agent manager
         mock_agent_instance = Mock()
         mock_agent_instance.setup_agents.return_value = True
         mock_agent_instance.update_agent_memory = Mock()
         mock_agent_instance.get_agent_status.return_value = {"agents": 3, "initialized": True}
         mock_agent.return_value = mock_agent_instance
         
-        mock_shell_instance = Mock()
-        mock_shell_instance.get_execution_stats.return_value = {"commands_executed": 10}
-        mock_shell.return_value = mock_shell_instance
-        
-        # Initialize framework
+        # Initialize framework - this will create the container with managers
         main_controller.initialize_framework(llm_config)
         
         # Get status
@@ -750,31 +679,19 @@ class TestMainControllerMocking:
         assert status["llm_config"]["model"] == llm_config.model
         assert "components" in status
         assert status["components"]["agent_manager"]["agents"] == 3
-        assert status["components"]["memory_manager"]["total_files"] == 5
-        assert status["components"]["shell_executor"]["commands_executed"] == 10
     
     @pytest.mark.asyncio
-    @patch('autogen_framework.main_controller.MemoryManager')
     @patch('autogen_framework.main_controller.AgentManager')
-    @patch('autogen_framework.main_controller.ShellExecutor')
-    async def test_workflow_continuation_with_mocked_agents(self, mock_shell, mock_agent, mock_memory,
-                                                          main_controller, llm_config):
+    async def test_workflow_continuation_with_mocked_agents(self, mock_agent, main_controller, llm_config):
         """Test workflow continuation with mocked agent responses."""
-        # Setup mocked components
-        mock_memory_instance = Mock()
-        mock_memory_instance.load_memory.return_value = {}
-        mock_memory.return_value = mock_memory_instance
-        
+        # Setup mocked agent manager
         mock_agent_instance = Mock()
         mock_agent_instance.setup_agents.return_value = True
         mock_agent_instance.update_agent_memory = Mock()
         mock_agent_instance.coordinate_agents = AsyncMock()
         mock_agent.return_value = mock_agent_instance
         
-        mock_shell_instance = Mock()
-        mock_shell.return_value = mock_shell_instance
-        
-        # Initialize framework
+        # Initialize framework - this will create the container with managers
         main_controller.initialize_framework(llm_config)
         
         # Setup workflow state

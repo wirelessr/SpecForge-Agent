@@ -18,14 +18,9 @@ class TestTasksAgent:
     """Test suite for TasksAgent basic functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            memory_manager=Mock(),
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -33,18 +28,14 @@ class TestTasksAgent:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
     
-    def test_initialization(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Test TasksAgent initialization with required manager dependencies."""
-        agent = TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def test_initialization(self, simple_tasks_agent, test_llm_config):
+        """Test TasksAgent initialization with container-based dependencies."""
+        agent = simple_tasks_agent
         
         assert agent.name == "TasksAgent"
         assert agent.llm_config == test_llm_config
-        assert agent.token_manager == mock_token_manager
-        assert agent.context_manager == mock_context_manager
+        assert agent.token_manager is not None  # Accessed through container
+        assert agent.context_manager is not None  # Accessed through container
         assert agent.current_work_directory is None
         assert agent.current_tasks == []
         assert "Task generation agent" in agent.description
@@ -127,13 +118,9 @@ class TestTasksAgentTaskGeneration:
     """Test suite for task list generation functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -429,13 +416,9 @@ class TestTasksAgentFileOperations:
     """Test suite for file operations in TasksAgent."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -488,13 +471,9 @@ class TestTasksAgentIntegration:
     """Integration tests for TasksAgent with real functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     @pytest.fixture
     def temp_work_dir(self):
@@ -672,13 +651,9 @@ class TestTasksAgentTokenCompression:
     """Test suite for TasksAgent token compression functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     def test_manager_dependencies_inheritance(self, tasks_agent):
         """Test that TasksAgent has required manager dependencies from BaseLLMAgent."""
@@ -726,13 +701,9 @@ class TestTasksAgentRevision:
     """Test suite for task revision functionality."""
     
     @pytest.fixture
-    def tasks_agent(self, test_llm_config, mock_token_manager, mock_context_manager):
-        """Create a TasksAgent instance for testing with required manager dependencies."""
-        return TasksAgent(
-            llm_config=test_llm_config,
-            token_manager=mock_token_manager,
-            context_manager=mock_context_manager
-        )
+    def tasks_agent(self, simple_tasks_agent):
+        """Create a TasksAgent instance for testing with container-based dependencies."""
+        return simple_tasks_agent
     
     @pytest.fixture
     def temp_work_dir(self):

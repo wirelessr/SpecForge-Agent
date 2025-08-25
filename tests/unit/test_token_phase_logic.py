@@ -43,12 +43,17 @@ class TestTokenPhaseLogic:
             def get_agent_capabilities(self):
                 return ["test_capability"]
         
+        # Create a mock container
+        mock_container = Mock()
+        mock_container.get_token_manager.return_value = token_manager
+        mock_container.get_context_manager.return_value = mock_context_manager
+        mock_container.get_config_manager.return_value = Mock()
+        
         agent = TestAgent(
             name="test_agent",
             llm_config=test_llm_config,
             system_message="Test agent",
-            token_manager=token_manager,
-            context_manager=mock_context_manager,
+            container=mock_container,
             description="Test agent for phase logic"
         )
         return agent
@@ -168,19 +173,11 @@ class TestTokenPhaseLogic:
         assert token_manager.current_context_size == 1000
     
     def test_context_manager_integration(self, test_agent, token_manager):
-        """Test that agent can be configured with ContextManager."""
-        from unittest.mock import Mock
-        
-        # Create mock ContextManager
-        mock_context_manager = Mock()
-        mock_context_manager.token_manager = token_manager
-        
-        # Set ContextManager on agent
-        test_agent.set_context_manager(mock_context_manager)
-        
-        # Verify ContextManager integration
+        """Test that agent can access ContextManager through container."""
+        # Verify ContextManager integration through container
         assert test_agent.context_manager is not None
-        assert test_agent.context_manager == mock_context_manager
+        # The context manager should be accessible through the container
+        assert test_agent.container.get_context_manager() is not None
     
     def test_unified_token_management_architecture(self, test_agent, token_manager):
         """Test that the unified token management architecture works correctly."""
@@ -271,12 +268,17 @@ class TestTokenPhaseIntegration:
         from unittest.mock import Mock
         mock_context_manager = Mock()
         
+        # Create a mock container
+        mock_container = Mock()
+        mock_container.get_token_manager.return_value = token_manager
+        mock_container.get_context_manager.return_value = mock_context_manager
+        mock_container.get_config_manager.return_value = Mock()
+        
         agent = TestAgent(
             name="integration_agent",
             llm_config=test_llm_config,
             system_message="Integration test agent",
-            token_manager=token_manager,
-            context_manager=mock_context_manager,
+            container=mock_container,
             description="Agent for integration testing"
         )
         

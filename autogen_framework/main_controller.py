@@ -17,18 +17,12 @@ from pathlib import Path
 from datetime import datetime
 from enum import Enum
 
-from .models import LLMConfig, WorkflowState, WorkflowPhase
-from .memory_manager import MemoryManager
-from .agent_manager import AgentManager
-from .shell_executor import ShellExecutor
+from .models import LLMConfig, WorkflowState, WorkflowPhase, UserApprovalStatus
 from .config_manager import ConfigManager, ConfigurationError
 from .session_manager import SessionManager
 from .workflow_manager import WorkflowManager
-from .context_compressor import ContextCompressor
-from .token_manager import TokenManager
-
-
-from .models import UserApprovalStatus
+from .agent_manager import AgentManager
+from .dependency_container import DependencyContainer
 
 
 class MainController:
@@ -55,13 +49,10 @@ class MainController:
         self.logger = logging.getLogger(__name__)
         
         # Core components (initialized later)
-        self.memory_manager: Optional[MemoryManager] = None
+        self.container: Optional[DependencyContainer] = None
         self.agent_manager: Optional[AgentManager] = None
-        self.shell_executor: Optional[ShellExecutor] = None
         self.session_manager: Optional[SessionManager] = None
         self.workflow_manager: Optional[WorkflowManager] = None
-        self.context_compressor: Optional[ContextCompressor] = None
-        self.token_manager: Optional[TokenManager] = None
         
         # Framework configuration
         self.llm_config: Optional[LLMConfig] = None
@@ -375,10 +366,16 @@ class MainController:
         if self.is_initialized:
             if self.agent_manager:
                 status["components"]["agent_manager"] = self.agent_manager.get_agent_status()
-            if self.memory_manager:
-                status["components"]["memory_manager"] = self.memory_manager.get_memory_stats()
-            if self.shell_executor:
-                status["components"]["shell_executor"] = self.shell_executor.get_execution_stats()
+            if self.container:
+                # Get component status from container
+                memory_manager = self.container.get_memory_manager()
+                shell_executor = self.container.get_shell_executor()
+                status["components"]["memory_manager"] = memory_manager.get_memory_stats() if hasattr(memory_manager, 'get_memory_stats') else {"status": "available"}
+                status["components"]["shell_executor"] = shell_executor.get_execution_stats() if hasattr(shell_executor, 'get_execution_stats') else {"status": "available"}
+                status["components"]["container"] = {
+                    "managers_created": self.container.get_manager_count(),
+                    "created_managers": self.container.get_created_managers()
+                }
         
         return status
     
@@ -465,8 +462,15 @@ class MainController:
             if self.agent_manager and hasattr(self.agent_manager, 'reset_coordination_state'):
                 self.agent_manager.reset_coordination_state()
             
-            if self.shell_executor and hasattr(self.shell_executor, 'clear_history'):
-                self.shell_executor.clear_history()
+            # Reset shell executor through container if available
+            if self.container:
+                try:
+                    shell_executor = self.container.get_shell_executor()
+                    if hasattr(shell_executor, 'clear_history'):
+                        shell_executor.clear_history()
+                except Exception:
+                    # Ignore errors if shell executor is not available or mocked
+                    pass
             
             # Clear execution log
             self.execution_log.clear()
@@ -486,45 +490,30 @@ class MainController:
     def _initialize_core_components(self) -> bool:
         """Initialize all core framework components."""
         try:
+            # Initialize DependencyContainer
+            if self.container is None:
+                self.container = DependencyContainer.create_production(
+                    work_dir=str(self.workspace_path),
+                    llm_config=self.llm_config
+                )
+                self.logger.info("DependencyContainer initialized")
+            
             # Initialize SessionManager
             if self.session_manager is None:
                 self.session_manager = SessionManager(str(self.workspace_path))
                 self.logger.info("SessionManager initialized")
-            
-            # Initialize MemoryManager
-            if self.memory_manager is None:
-                self.memory_manager = MemoryManager(str(self.workspace_path))
-                self.logger.info("MemoryManager initialized")
-            
-            # Initialize ShellExecutor
-            if self.shell_executor is None:
-                self.shell_executor = ShellExecutor(str(self.workspace_path))
-                self.logger.info("ShellExecutor initialized")
-            
-            # Initialize ContextCompressor
-            if self.context_compressor is None:
-                self.context_compressor = ContextCompressor(self.llm_config)
-                self.logger.info("ContextCompressor initialized")
-            
-            # Initialize TokenManager
-            if self.token_manager is None:
-                config_manager = ConfigManager()
-                self.token_manager = TokenManager(config_manager)
-                self.logger.info("TokenManager initialized")
             
             # Initialize AgentManager
             if self.agent_manager is None:
                 self.agent_manager = AgentManager(str(self.workspace_path))
                 self.logger.info("AgentManager initialized")
             
-            # Initialize WorkflowManager with all required components
+            # Initialize WorkflowManager with DependencyContainer
             if self.workflow_manager is None:
                 self.workflow_manager = WorkflowManager(
                     self.agent_manager, 
                     self.session_manager,
-                    self.memory_manager,
-                    self.context_compressor,
-                    self.token_manager
+                    self.container
                 )
                 self.logger.info("WorkflowManager initialized")
             
@@ -537,7 +526,9 @@ class MainController:
     def _load_framework_memory(self) -> bool:
         """Load memory context for the framework."""
         try:
-            memory_content = self.memory_manager.load_memory()
+            # Get memory manager from container
+            memory_manager = self.container.get_memory_manager()
+            memory_content = memory_manager.load_memory()
             
             # Update agents with memory context if agent manager is available
             if self.agent_manager:

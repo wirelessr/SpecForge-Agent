@@ -12,7 +12,7 @@ This module contains the ImplementAgent class which is responsible for:
 import os
 import json
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from pathlib import Path
 
 from .base_agent import BaseLLMAgent, ContextSpec
@@ -20,6 +20,9 @@ from .task_decomposer import TaskDecomposer, ExecutionPlan
 from .error_recovery import ErrorRecovery, CommandResult, RecoveryResult
 from ..models import LLMConfig, TaskDefinition, ExecutionResult, WorkflowState
 from ..shell_executor import ShellExecutor
+
+if TYPE_CHECKING:
+    from ..dependency_container import DependencyContainer
 
 
 class ImplementAgent(BaseLLMAgent):
@@ -40,50 +43,39 @@ class ImplementAgent(BaseLLMAgent):
     
     def __init__(
         self,
-        name: str,
-        llm_config: LLMConfig,
-        system_message: str,
-        shell_executor: ShellExecutor,
-        token_manager,
-        context_manager,
-        task_decomposer: TaskDecomposer,
-        error_recovery: ErrorRecovery,
-        config_manager=None,
+        container: 'DependencyContainer',
+        name: str = "ImplementAgent",
+        llm_config: Optional[LLMConfig] = None,
+        system_message: str = "Enhanced implementation agent with intelligent task decomposition and error recovery",
         description: Optional[str] = None
     ):
         """
-        Initialize the ImplementAgent.
+        Initialize the ImplementAgent with dependency injection.
 
         Args:
+            container: DependencyContainer instance for accessing managers
             name: Name of the agent
-            llm_config: LLM configuration for API connection
+            llm_config: LLM configuration for API connection (optional, uses container's config if not provided)
             system_message: System instructions for the agent
-            shell_executor: ShellExecutor instance for command execution
-            token_manager: TokenManager instance for token operations (mandatory)
-            context_manager: ContextManager instance for context operations (mandatory)
-            task_decomposer: TaskDecomposer instance for intelligent task breakdown (mandatory)
-            error_recovery: ErrorRecovery instance for intelligent error handling (mandatory)
-            config_manager: ConfigManager instance for model configuration (optional)
             description: Optional description of the agent's role
         """
+        # Use container's LLM config if not provided
+        if llm_config is None:
+            llm_config = container.llm_config
+            
         super().__init__(
             name=name,
             llm_config=llm_config,
             system_message=system_message,
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager,
+            container=container,
             description=description or "Enhanced implementation agent with intelligent task decomposition",
         )
         
-        self.shell_executor = shell_executor
-        self.task_decomposer = task_decomposer
-        self.error_recovery = error_recovery
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
         self.execution_context: Dict[str, Any] = {}
         
-        self.logger.info(f"ImplementAgent initialized with shell executor, TaskDecomposer, and ErrorRecovery")
+        self.logger.info(f"ImplementAgent initialized with dependency container")
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for ImplementAgent."""
@@ -2202,10 +2194,7 @@ Generate the complete file contents now:"""
         start_time = time.time()
         
         try:
-            # Set context manager for TaskDecomposer if available
-            if self.context_manager:
-                self.task_decomposer.set_context_manager(self.context_manager)
-            
+            # TaskDecomposer gets context through dependency container
             # Decompose the task
             execution_plan = await self.task_decomposer.decompose_task(task)
             
@@ -2251,10 +2240,7 @@ Generate the complete file contents now:"""
             "files_modified": []
         }
         
-        # Set context manager for ErrorRecovery if available
-        if self.context_manager:
-            self.error_recovery.set_context_manager(self.context_manager)
-        
+        # ErrorRecovery gets context through dependency container
         # Execute commands in sequence
         for i, shell_command in enumerate(execution_plan.commands):
             command_log = {
@@ -2560,15 +2546,7 @@ Generate the complete file contents now:"""
         except Exception as e:
             self.logger.error(f"Failed to record learning outcomes: {e}")
     
-    def set_error_recovery(self, error_recovery: ErrorRecovery) -> None:
-        """
-        Set the ErrorRecovery agent for this ImplementAgent.
-        
-        Args:
-            error_recovery: ErrorRecovery agent instance
-        """
-        self.error_recovery = error_recovery
-        self.logger.info("ErrorRecovery agent set for ImplementAgent")
+
     
     def get_enhanced_capabilities(self) -> List[str]:
         """

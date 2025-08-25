@@ -7,6 +7,7 @@ This directory contains various usage examples and case studies for the AutoGen 
 ```
 examples/
 ├── README.md                    # This file
+├── initialization-patterns.py   # Before/after initialization examples
 ├── basic-usage/                 # Basic usage examples
 │   ├── simple-api.md           # Simple API creation
 │   ├── data-analysis.md        # Data analysis tool
@@ -24,6 +25,26 @@ examples/
     ├── debugging-guide.md      # Debugging guide
     └── performance-tips.md     # Performance optimization
 ```
+
+## 🏗️ Architecture Examples
+
+### Dependency Injection Patterns
+
+The `initialization-patterns.py` file demonstrates the migration from complex manual dependency injection to the simplified container-based approach:
+
+```bash
+# Run the example to see before/after patterns
+python autogen_framework/examples/initialization-patterns.py
+```
+
+This example shows:
+- **Legacy Pattern**: Complex manual initialization with many parameters
+- **Modern Pattern**: Clean container-based initialization
+- **Testing Patterns**: Before/after test setup approaches
+- **Migration Guide**: Step-by-step migration instructions
+- **Benefits Analysis**: Performance and maintainability improvements
+
+For detailed information, see the **[Dependency Injection Guide](../../docs/dependency-injection-guide.md)**.
 
 ## 🚀 Quick Start Examples
 

@@ -64,8 +64,12 @@ class TestTasksAgentIntegration:
         mock_implement_instance.initialize_autogen_agent.return_value = True
         mock_implement.return_value = mock_implement_instance
         
-        # Mock memory manager
-        agent_manager.memory_manager.load_memory = Mock(return_value={})
+        # Mock container and memory manager
+        mock_container = Mock()
+        mock_memory_manager = Mock()
+        mock_memory_manager.load_memory = Mock(return_value={})
+        mock_container.get_memory_manager = Mock(return_value=mock_memory_manager)
+        agent_manager.container = mock_container
         
         # Setup agents
         result = agent_manager.setup_agents(real_llm_config)

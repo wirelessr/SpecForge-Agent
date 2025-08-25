@@ -25,6 +25,7 @@ from dataclasses import dataclass
 if TYPE_CHECKING:
     from ..token_manager import TokenManager
     from ..context_manager import ContextManager
+    from ..dependency_container import DependencyContainer
 
 
 @dataclass
@@ -54,27 +55,24 @@ class BaseLLMAgent(ABC):
         name: str,
         llm_config: LLMConfig,
         system_message: str,
-        token_manager: 'TokenManager',
-        context_manager: 'ContextManager',
-        config_manager: Optional['ConfigManager'] = None,
+        container: 'DependencyContainer',
         description: Optional[str] = None,
     ):
         """
-        Initialize the base agent.
+        Initialize the base agent with dependency injection.
         
         Args:
             name: Unique name for this agent
             llm_config: LLM configuration for API connection
             system_message: System message/instructions for the agent
-            token_manager: TokenManager instance for token operations (mandatory)
-            context_manager: ContextManager instance for context operations (mandatory)
-            config_manager: ConfigManager instance for model configuration (optional, will create if not provided)
+            container: DependencyContainer instance for accessing managers
             description: Optional description of the agent's role
         """
         self.name = name
         self.llm_config = llm_config
         self.system_message = system_message
         self.description = description or f"{name} agent for the AutoGen framework"
+        self.container = container
         
         # Initialize logging
         self.logger = logging.getLogger(f"{__name__}.{name}")
@@ -83,18 +81,6 @@ class BaseLLMAgent(ABC):
         self.context: AgentContext = {}
         self.memory_context: Dict[str, Any] = {}
         self.conversation_history: List[Dict[str, Any]] = []
-        self.context_manager: 'ContextManager' = context_manager
-        
-        # Token management (mandatory)
-        self.token_manager = token_manager
-        
-        # Configuration management (create if not provided)
-        if config_manager is not None:
-            self.config_manager = config_manager
-        else:
-            # Import here to avoid circular imports
-            from ..config_manager import ConfigManager
-            self.config_manager = ConfigManager()
         
         # AutoGen agent instance (will be initialized when needed)
         self._autogen_agent: Optional[AssistantAgent] = None
@@ -105,6 +91,46 @@ class BaseLLMAgent(ABC):
             raise ValueError(f"Invalid LLM configuration for agent {name}")
         
         self.logger.info(f"Initialized {name} agent with model {llm_config.model}")
+    
+    @property
+    def token_manager(self):
+        """Get TokenManager from container."""
+        return self.container.get_token_manager()
+    
+    @property
+    def context_manager(self):
+        """Get ContextManager from container."""
+        return self.container.get_context_manager()
+    
+    @property
+    def memory_manager(self):
+        """Get MemoryManager from container."""
+        return self.container.get_memory_manager()
+    
+    @property
+    def shell_executor(self):
+        """Get ShellExecutor from container."""
+        return self.container.get_shell_executor()
+    
+    @property
+    def error_recovery(self):
+        """Get ErrorRecovery from container."""
+        return self.container.get_error_recovery()
+    
+    @property
+    def task_decomposer(self):
+        """Get TaskDecomposer from container."""
+        return self.container.get_task_decomposer()
+    
+    @property
+    def config_manager(self):
+        """Get ConfigManager from container."""
+        return self.container.get_config_manager()
+    
+    @property
+    def context_compressor(self):
+        """Get ContextCompressor from container."""
+        return self.container.get_context_compressor()
     
     def initialize_autogen_agent(self) -> bool:
         """
@@ -332,15 +358,7 @@ class BaseLLMAgent(ABC):
             except Exception as e:
                 self.logger.warning(f"Failed to reinitialize AutoGen agent with memory context: {e}")
     
-    def set_context_manager(self, context_manager: 'ContextManager') -> None:
-        """
-        Set the ContextManager for this agent.
-        
-        Args:
-            context_manager: ContextManager instance to be used by this agent
-        """
-        self.context_manager = context_manager
-        self.logger.info(f"ContextManager set for {self.name} agent")
+
     
     def add_to_conversation_history(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -1043,3 +1061,13 @@ Provide only the compressed content without additional commentary."""
         raise RuntimeError(
             "compress_and_replace_context is removed. Use ContextManager to manage compressed prompts/contexts."
         )
+    
+    def __str__(self) -> str:
+        """String representation of the agent."""
+        return f"{self.name} (model={self.llm_config.model}, initialized={self._is_initialized})"
+    
+    def __repr__(self) -> str:
+        """Detailed string representation of the agent."""
+        return (f"{self.__class__.__name__}(name='{self.name}', "
+                f"model='{self.llm_config.model}', initialized={self._is_initialized}, "
+                f"context_items={len(self.context)})")

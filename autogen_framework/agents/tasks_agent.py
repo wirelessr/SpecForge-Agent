@@ -14,6 +14,11 @@ from typing import Dict, Any, List, Optional
 from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, TaskDefinition
 
+# Forward declarations for type hints
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..dependency_container import DependencyContainer
+
 
 class TasksAgent(BaseLLMAgent):
     """
@@ -33,35 +38,38 @@ class TasksAgent(BaseLLMAgent):
 
     def __init__(
         self,
-        llm_config: LLMConfig,
-        memory_manager=None,
-        token_manager=None,
-        context_manager=None,
-        config_manager=None,
+        container: 'DependencyContainer',
+        name: str = "TasksAgent",
+        llm_config: Optional[LLMConfig] = None,
+        system_message: Optional[str] = None,
         description: Optional[str] = None
     ):
         """
-        Initialize the TasksAgent.
+        Initialize the TasksAgent with dependency injection.
 
         Args:
-            llm_config: LLM configuration for API connection
-            memory_manager: Optional memory manager for context
-            token_manager: TokenManager instance for token operations (mandatory)
-            context_manager: ContextManager instance for context operations (mandatory)
-            config_manager: ConfigManager instance for model configuration (optional)
+            container: DependencyContainer instance for accessing managers
+            name: Agent name (defaults to "TasksAgent")
+            llm_config: LLM configuration for API connection (optional, uses container's config if not provided)
+            system_message: Custom system message (optional, uses default if not provided)
             description: Optional description of the agent's role
         """
+        # Use container's LLM config if not provided
+        if llm_config is None:
+            llm_config = container.llm_config
+        
+        # Build system message if not provided
+        if system_message is None:
+            system_message = self._build_system_message()
+        
         super().__init__(
-            name="TasksAgent",
+            name=name,
             llm_config=llm_config,
-            system_message=self._build_system_message(),
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager,
+            system_message=system_message,
+            container=container,
             description=description or "Task generation agent for creating implementation plans",
         )
 
-        self.memory_manager = memory_manager
         self.current_work_directory: Optional[str] = None
         self.current_tasks: List[TaskDefinition] = []
 

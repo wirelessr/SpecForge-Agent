@@ -31,31 +31,40 @@ class PlanAgent(BaseLLMAgent):
     4. Integrating memory context for better understanding
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_manager: MemoryManager, token_manager, context_manager, config_manager=None):
+    def __init__(
+        self,
+        container,
+        name: str = "PlanAgent",
+        llm_config: Optional[LLMConfig] = None,
+        system_message: Optional[str] = None
+    ):
         """
-        Initialize the Plan Agent.
+        Initialize the Plan Agent with dependency injection.
 
         Args:
-            llm_config: LLM configuration for API connection
-            memory_manager: Memory manager instance for context loading
-            token_manager: TokenManager instance for token operations (mandatory)
-            context_manager: ContextManager instance for context operations (mandatory)
-            config_manager: ConfigManager instance for model configuration (optional)
+            container: DependencyContainer instance for accessing managers
+            name: Agent name (defaults to "PlanAgent")
+            llm_config: LLM configuration (uses container's config if not provided)
+            system_message: System message (uses default if not provided)
         """
-        system_message = self._build_system_message()
+        # Use container's LLM config if not provided
+        if llm_config is None:
+            llm_config = container.llm_config
+        
+        # Use default system message if not provided
+        if system_message is None:
+            system_message = self._build_system_message()
         
         super().__init__(
-            name="PlanAgent",
+            name=name,
             llm_config=llm_config,
             system_message=system_message,
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager,
+            container=container,
             description="Plan Agent responsible for parsing user requests and generating requirements",
         )
         
-        self.memory_manager = memory_manager
-        self.workspace_path = Path(memory_manager.workspace_path)
+        # Set up workspace path from memory manager
+        self.workspace_path = Path(self.memory_manager.workspace_path)
         
         # Load memory context on initialization
         self._load_memory_context()

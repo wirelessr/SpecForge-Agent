@@ -15,6 +15,11 @@ from pathlib import Path
 from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, AgentContext
 
+# Forward declarations for type hints
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..dependency_container import DependencyContainer
+
 
 class DesignAgent(BaseLLMAgent):
     """
@@ -32,26 +37,37 @@ class DesignAgent(BaseLLMAgent):
     and patterns from previous projects.
     """
     
-    def __init__(self, llm_config: LLMConfig, memory_context: Optional[Dict[str, Any]] = None, token_manager=None, context_manager=None, config_manager=None):
+    def __init__(
+        self,
+        container: 'DependencyContainer',
+        name: str = "DesignAgent",
+        llm_config: Optional[LLMConfig] = None,
+        system_message: Optional[str] = None,
+        memory_context: Optional[Dict[str, Any]] = None
+    ):
         """
-        Initialize the Design Agent.
+        Initialize the Design Agent with dependency injection.
 
         Args:
-            llm_config: LLM configuration for API connection
+            container: DependencyContainer instance for accessing managers
+            name: Agent name (defaults to "DesignAgent")
+            llm_config: LLM configuration for API connection (optional, uses container's config if not provided)
+            system_message: Custom system message (optional, uses default if not provided)
             memory_context: Optional memory context from MemoryManager
-            token_manager: TokenManager instance for token operations (mandatory)
-            context_manager: ContextManager instance for context operations (mandatory)
-            config_manager: ConfigManager instance for model configuration (optional)
         """
-        system_message = self._build_system_message()
+        # Use container's LLM config if not provided
+        if llm_config is None:
+            llm_config = container.llm_config
+        
+        # Build system message if not provided
+        if system_message is None:
+            system_message = self._build_system_message()
         
         super().__init__(
-            name="DesignAgent",
+            name=name,
             llm_config=llm_config,
             system_message=system_message,
-            token_manager=token_manager,
-            context_manager=context_manager,
-            config_manager=config_manager,
+            container=container,
             description="AI agent specialized in generating technical design documents from requirements",
         )
         
