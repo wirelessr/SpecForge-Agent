@@ -309,46 +309,6 @@ class TestDependencyContainer:
         assert result.complexity_analysis.complexity_level == "simple"
         assert result.estimated_duration == 5
     
-    @pytest.mark.skip(reason="Framework is CLI-based single-threaded, concurrent access not needed")
-    def test_concurrent_manager_access(self, temp_workspace, test_llm_config):
-        """
-        Test concurrent access to different managers.
-        
-        NOTE: This test is skipped because the AutoGen framework is CLI-based
-        and runs in a single-threaded async event loop. Concurrent access to
-        the dependency container is not a real-world scenario for this framework.
-        """
-        container = DependencyContainer.create_test(temp_workspace, test_llm_config)
-        results = {}
-        
-        def access_managers(thread_id):
-            """Access multiple managers concurrently."""
-            results[thread_id] = {
-                'token_manager': container.get_token_manager(),
-                'memory_manager': container.get_memory_manager(),
-                'context_manager': container.get_context_manager()
-            }
-        
-        # Create multiple threads
-        threads = []
-        for i in range(3):
-            thread = threading.Thread(target=access_managers, args=(i,))
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for completion
-        for thread in threads:
-            thread.join()
-        
-        # All threads should get the same manager instances
-        token_managers = [results[i]['token_manager'] for i in range(3)]
-        memory_managers = [results[i]['memory_manager'] for i in range(3)]
-        context_managers = [results[i]['context_manager'] for i in range(3)]
-        
-        assert len(set(id(m) for m in token_managers)) == 1
-        assert len(set(id(m) for m in memory_managers)) == 1
-        assert len(set(id(m) for m in context_managers)) == 1
-    
     def test_work_dir_creation(self, test_llm_config, tmp_path):
         """Test that work directory is created if it doesn't exist."""
         non_existent_dir = tmp_path / "non_existent" / "nested" / "dir"
