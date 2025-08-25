@@ -51,6 +51,7 @@ class TestDesignAgentLLMIntegration:
         """Setup DesignAgent with real LLM configuration and managers."""
         # Initialize test base functionality
         self.test_base = LLMIntegrationTestBase()
+        self.test_base.setup_method(self.setup_design_agent)  # Initialize the test base
         
         self.llm_config = real_llm_config
         self.managers = initialized_real_managers
@@ -59,13 +60,14 @@ class TestDesignAgentLLMIntegration:
         # Create memory manager for the workspace
         self.memory_manager = MemoryManager(workspace_path=temp_workspace)
         
-        # Initialize DesignAgent with real dependencies
+        # Initialize DesignAgent with dependency container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(temp_workspace, self.llm_config)
         self.design_agent = DesignAgent(
+            name="TestDesignAgent",
             llm_config=self.llm_config,
-            memory_context={},
-            token_manager=self.managers.token_manager,
-            context_manager=self.managers.context_manager,
-            config_manager=self.managers.config_manager
+            system_message="Generate technical design documents",
+            container=container
         )
         
         # Use more lenient quality thresholds for DesignAgent tests
@@ -330,7 +332,7 @@ chat rooms and user presence indicators.
         assert len(mermaid_matches) >= 1, "Design should contain at least one Mermaid diagram"
         
         # Validate diagram syntax and content
-        valid_diagram_types = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram']
+        valid_diagram_types = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram']
         
         for i, diagram in enumerate(mermaid_matches):
             diagram_content = diagram.strip()
@@ -922,13 +924,16 @@ formats and provides audit trails for all document operations.
             ]
         }
         
-        # Create DesignAgent with memory context
+        # Create DesignAgent with memory context using container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(str(self.workspace_path), self.llm_config)
+        
         design_agent_with_memory = DesignAgent(
+            container=container,
+            name="DesignAgent",
             llm_config=self.llm_config,
-            memory_context=memory_content,
-            token_manager=self.managers.token_manager,
-            context_manager=self.managers.context_manager,
-            config_manager=self.managers.config_manager
+            system_message="Generate technical design documents",
+            memory_context=memory_content
         )
         
         # Create work directory and requirements that should benefit from memory

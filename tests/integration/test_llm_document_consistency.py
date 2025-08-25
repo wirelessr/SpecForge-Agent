@@ -648,12 +648,15 @@ class TestLLMDocumentConsistency(LLMIntegrationTestBase):
         # Test with first scenario
         scenario = self.test_scenarios[0]
         
-        # Generate requirements document
+        # Generate requirements document using container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(temp_workspace, real_llm_config)
+        
         plan_agent = PlanAgent(
+            container=container,
+            name="PlanAgent",
             llm_config=real_llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_manager=real_memory_manager
+            system_message="Generate project requirements"
         )
         
         # Parse the user request first
@@ -678,12 +681,12 @@ class TestLLMDocumentConsistency(LLMIntegrationTestBase):
         # Log quality but don't fail on it - focus is on consistency, not absolute quality
         self.log_quality_assessment(req_validation)
         
-        # Generate design document
+        # Generate design document using container
         design_agent = DesignAgent(
+            container=container,
+            name="DesignAgent",
             llm_config=real_llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_context=real_memory_manager.load_memory()
+            system_message="Generate technical design documents"
         )
         
         design_content = await self.execute_with_rate_limit_handling(
@@ -981,12 +984,15 @@ class TestLLMDocumentConsistency(LLMIntegrationTestBase):
         Returns:
             DocumentSet containing all generated documents
         """
-        # Generate requirements
+        # Generate requirements using container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(workspace, llm_config)
+        
         plan_agent = PlanAgent(
+            container=container,
+            name="PlanAgent",
             llm_config=llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_manager=memory_manager
+            system_message="Generate project requirements"
         )
         
         # Parse the user request first
@@ -1003,24 +1009,24 @@ class TestLLMDocumentConsistency(LLMIntegrationTestBase):
         assert req_path.exists(), f"Requirements file not created at {requirements_path}"
         requirements_content = req_path.read_text()
         
-        # Generate design
+        # Generate design using container
         design_agent = DesignAgent(
+            container=container,
+            name="DesignAgent",
             llm_config=llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_context=memory_manager.load_memory()
+            system_message="Generate technical design documents"
         )
         
         design_content = await self.execute_with_rate_limit_handling(
             lambda: design_agent.generate_design(requirements_path, memory_manager.load_memory())
         )
         
-        # Generate tasks
+        # Generate tasks using container
         tasks_agent = TasksAgent(
+            container=container,
+            name="TasksAgent",
             llm_config=llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_manager=memory_manager
+            system_message="Generate implementation task lists"
         )
         
         # Create design file for tasks generation
@@ -1061,12 +1067,15 @@ class TestLLMDocumentConsistency(LLMIntegrationTestBase):
             DocumentSet containing revised documents
         """
         # For simplicity, we'll use the _process_task_impl method with revision task type
-        # Create design agent for revision
+        # Create design agent for revision using container
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(workspace, llm_config)
+        
         design_agent = DesignAgent(
+            container=container,
+            name="DesignAgent",
             llm_config=llm_config,
-            token_manager=managers.token_manager,
-            context_manager=managers.context_manager,
-            memory_context=memory_manager.load_memory()
+            system_message="Generate technical design documents"
         )
         
         # Write original design to file for revision

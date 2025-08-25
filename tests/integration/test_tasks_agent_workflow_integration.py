@@ -31,13 +31,16 @@ class TestTasksAgentWorkflowIntegration:
     # It loads configuration from .env.integration file for secure testing
     
     @pytest.fixture
-    def tasks_agent(self, real_llm_config, real_managers):
+    def tasks_agent(self, real_llm_config, temp_workspace):
         """Create a TasksAgent instance for testing."""
+        from autogen_framework.dependency_container import DependencyContainer
+        container = DependencyContainer.create_production(temp_workspace, real_llm_config)
+        
         return TasksAgent(
+            container=container,
+            name="TasksAgent",
             llm_config=real_llm_config,
-            memory_manager=real_managers.context_manager.memory_manager,
-            token_manager=real_managers.token_manager,
-            context_manager=real_managers.context_manager
+            system_message="Generate implementation task lists"
         )
     
     @pytest.fixture
@@ -154,7 +157,7 @@ Simple calculator application with basic arithmetic operations.
             
             # Verify tasks were parsed correctly
             assert len(tasks_agent.current_tasks) == 5
-            assert tasks_agent.current_tasks[0].title == "1. Create Calculator class structure"
+            assert tasks_agent.current_tasks[0].title == "Create Calculator class structure"
             assert "1.1" in tasks_agent.current_tasks[0].requirements_ref
             assert "1.2" in tasks_agent.current_tasks[0].requirements_ref
     
@@ -321,8 +324,12 @@ Simple calculator application with basic arithmetic operations.
             mock_implement_instance.initialize_autogen_agent.return_value = True
             mock_implement.return_value = mock_implement_instance
             
-            # Mock memory manager
-            agent_manager.memory_manager.load_memory = Mock(return_value={})
+            # Mock container and memory manager
+            mock_container = Mock()
+            mock_memory_manager = Mock()
+            mock_memory_manager.load_memory = Mock(return_value={})
+            mock_container.get_memory_manager = Mock(return_value=mock_memory_manager)
+            agent_manager.container = mock_container
             
             # Setup agents
             setup_result = agent_manager.setup_agents(real_llm_config)

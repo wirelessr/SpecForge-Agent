@@ -50,7 +50,7 @@ class TestRealTokenManagement:
         return ContextCompressor(real_llm_config)
     
     @pytest.fixture
-    def real_agent(self, real_llm_config, real_token_manager, real_context_compressor, real_managers):
+    def real_agent(self, real_llm_config, real_dependency_container):
         """創建真實agent - 遵循steering模式"""
         return RealTestAgent(
             name="real_test_agent",
@@ -61,27 +61,27 @@ class TestRealTokenManagement:
             You should respond naturally and help test the token tracking and compression capabilities.
             This system message is intentionally detailed to provide sufficient context for testing compression.
             """,
-            token_manager=real_token_manager,
-            context_manager=real_managers.context_manager)
+            container=real_dependency_container)
     
     @pytest.mark.integration
-    def test_real_initialization(self, real_agent, real_token_manager, real_context_compressor, real_llm_config, real_managers):
+    def test_real_initialization(self, real_agent, real_llm_config):
         """測試真實組件初始化 - 遵循steering指導"""
         # 驗證agent正確初始化
         assert real_agent.name == "real_test_agent"
-        assert real_agent.token_manager is real_token_manager
-        assert real_agent.context_manager is real_managers.context_manager
+        assert real_agent.token_manager is not None
+        assert real_agent.context_manager is not None
         
         # 驗證LLM配置使用環境變量
         assert real_agent.llm_config.model == real_llm_config.model
         assert real_agent.llm_config.base_url == real_llm_config.base_url
         
         # 驗證TokenManager配置
-        assert real_token_manager.token_config['compression_threshold'] == 0.9
-        assert real_token_manager.token_config['compression_enabled'] is True
+        assert real_agent.token_manager.token_config['compression_threshold'] == 0.9
+        assert real_agent.token_manager.token_config['compression_enabled'] is True
         
-        # 驗證ContextCompressor配置 (through ContextManager)
-        assert real_context_compressor.llm_config.model == real_agent.llm_config.model
+        # 驗證ContextManager has context_compressor
+        assert real_agent.context_manager.context_compressor is not None
+        assert real_agent.context_manager.context_compressor.llm_config.model == real_agent.llm_config.model
     
     @pytest.mark.integration
     def test_real_token_tracking(self, real_token_manager):
@@ -180,10 +180,12 @@ class TestRealTokenManagement:
         assert real_agent.conversation_history[-1]['content'] == response
     
     @pytest.mark.integration
-    async def test_real_token_usage_tracking(self, real_agent, real_token_manager):
+    async def test_real_token_usage_tracking(self, real_agent):
         """測試真實token usage tracking - 遵循steering指導"""
-        initial_tokens = real_token_manager.current_context_size
-        initial_requests = real_token_manager.usage_stats['requests_made']
+        # Use the agent's own token manager from the container
+        agent_token_manager = real_agent.token_manager
+        initial_tokens = agent_token_manager.current_context_size
+        initial_requests = agent_token_manager.usage_stats['requests_made']
         
         # 生成response並追蹤token使用
         response = await real_agent.generate_response(
@@ -191,11 +193,11 @@ class TestRealTokenManagement:
         )
         
         # 驗證token使用被正確追蹤
-        assert real_token_manager.current_context_size > initial_tokens
-        assert real_token_manager.usage_stats['requests_made'] > initial_requests
+        assert agent_token_manager.current_context_size > initial_tokens
+        assert agent_token_manager.usage_stats['requests_made'] > initial_requests
         
         # 檢查統計數據
-        stats = real_token_manager.get_usage_statistics()
+        stats = agent_token_manager.get_usage_statistics()
         assert stats.total_tokens_used > 0
         assert stats.requests_made > 0
         assert stats.average_tokens_per_request > 0

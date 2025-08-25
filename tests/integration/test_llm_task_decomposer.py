@@ -57,6 +57,7 @@ class TestTaskDecomposerLLMIntegration:
         """Setup TaskDecomposer with real LLM configuration and managers."""
         # Initialize test base functionality
         self.test_base = LLMIntegrationTestBase()
+        self.test_base.setup_method(self.setup_task_decomposer)
         
         self.llm_config = real_llm_config
         self.managers = initialized_real_managers
@@ -65,14 +66,15 @@ class TestTaskDecomposerLLMIntegration:
         # Create memory manager for the workspace
         self.memory_manager = MemoryManager(workspace_path=temp_workspace)
         
-        # Initialize TaskDecomposer with real dependencies
+        # Initialize TaskDecomposer with real dependencies using container
+        from autogen_framework.dependency_container import DependencyContainer
+        self.container = DependencyContainer.create_production(temp_workspace, self.llm_config)
+        
         self.task_decomposer = TaskDecomposer(
             name="TaskDecomposer",
             llm_config=self.llm_config,
             system_message="You are an expert task decomposer that breaks down high-level tasks into executable shell commands.",
-            token_manager=self.managers.token_manager,
-            context_manager=self.managers.context_manager,
-            config_manager=self.managers.config_manager
+            container=self.container
         )
         
         # Use lenient quality thresholds for TaskDecomposer tests

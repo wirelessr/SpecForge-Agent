@@ -191,7 +191,7 @@ def real_dependency_container(temp_workspace, real_llm_config):
 # Agent Fixtures for Integration Tests
 
 @pytest.fixture
-def real_plan_agent(real_dependency_container):
+def real_plan_agent(real_dependency_container, real_llm_config):
     """
     Provide PlanAgent with real dependencies for integration tests.
     
@@ -205,16 +205,15 @@ def real_plan_agent(real_dependency_container):
     from autogen_framework.agents.plan_agent import PlanAgent
     
     return PlanAgent(
-        llm_config=real_dependency_container.llm_config,
-        memory_manager=real_dependency_container.get_memory_manager(),
-        token_manager=real_dependency_container.get_token_manager(),
-        context_manager=real_dependency_container.get_context_manager(),
-        config_manager=real_dependency_container.get_config_manager()
+        container=real_dependency_container,
+        name="PlanAgent",
+        llm_config=real_llm_config,
+        system_message="Generate project requirements"
     )
 
 
 @pytest.fixture
-def real_design_agent(real_dependency_container):
+def real_design_agent(real_dependency_container, real_llm_config):
     """
     Provide DesignAgent with real dependencies for integration tests.
     
@@ -224,15 +223,15 @@ def real_design_agent(real_dependency_container):
     from autogen_framework.agents.design_agent import DesignAgent
     
     return DesignAgent(
-        llm_config=real_dependency_container.llm_config,
-        token_manager=real_dependency_container.get_token_manager(),
-        context_manager=real_dependency_container.get_context_manager(),
-        config_manager=real_dependency_container.get_config_manager()
+        container=real_dependency_container,
+        name="DesignAgent",
+        llm_config=real_llm_config,
+        system_message="Generate technical design documents"
     )
 
 
 @pytest.fixture
-def real_tasks_agent(real_dependency_container):
+def real_tasks_agent(real_dependency_container, real_llm_config):
     """
     Provide TasksAgent with real dependencies for integration tests.
     
@@ -242,15 +241,15 @@ def real_tasks_agent(real_dependency_container):
     from autogen_framework.agents.tasks_agent import TasksAgent
     
     return TasksAgent(
-        llm_config=real_dependency_container.llm_config,
-        token_manager=real_dependency_container.get_token_manager(),
-        context_manager=real_dependency_container.get_context_manager(),
-        config_manager=real_dependency_container.get_config_manager()
+        container=real_dependency_container,
+        name="TasksAgent",
+        llm_config=real_llm_config,
+        system_message="Generate implementation task lists"
     )
 
 
 @pytest.fixture
-def real_implement_agent(real_dependency_container):
+def real_implement_agent(real_dependency_container, real_llm_config):
     """
     Provide ImplementAgent with real dependencies for integration tests.
     
@@ -260,15 +259,46 @@ def real_implement_agent(real_dependency_container):
     from autogen_framework.agents.implement_agent import ImplementAgent
     
     return ImplementAgent(
+        container=real_dependency_container,
         name="ImplementAgent",
-        llm_config=real_dependency_container.llm_config,
-        system_message="Real implementation agent for integration testing",
-        shell_executor=real_dependency_container.get_shell_executor(),
-        token_manager=real_dependency_container.get_token_manager(),
-        context_manager=real_dependency_container.get_context_manager(),
-        task_decomposer=real_dependency_container.get_task_decomposer(),
-        error_recovery=real_dependency_container.get_error_recovery(),
-        config_manager=real_dependency_container.get_config_manager()
+        llm_config=real_llm_config,
+        system_message="Real implementation agent for integration testing"
+    )
+
+
+@pytest.fixture
+def real_task_decomposer(real_dependency_container, real_llm_config):
+    """
+    Provide TaskDecomposer with real dependencies for integration tests.
+    
+    Returns:
+        TaskDecomposer configured with real dependencies
+    """
+    from autogen_framework.agents.task_decomposer import TaskDecomposer
+    
+    return TaskDecomposer(
+        name="TaskDecomposer",
+        llm_config=real_llm_config,
+        system_message="Decompose tasks into executable shell commands",
+        container=real_dependency_container
+    )
+
+
+@pytest.fixture
+def real_error_recovery(real_dependency_container, real_llm_config):
+    """
+    Provide ErrorRecovery with real dependencies for integration tests.
+    
+    Returns:
+        ErrorRecovery configured with real dependencies
+    """
+    from autogen_framework.agents.error_recovery import ErrorRecovery
+    
+    return ErrorRecovery(
+        name="ErrorRecovery",
+        llm_config=real_llm_config,
+        system_message="Analyze errors and generate recovery strategies",
+        container=real_dependency_container
     )
 
 

@@ -140,23 +140,14 @@ Generated from task: {datetime.now().isoformat()}
         return QualityMetricsFramework()
     
     @pytest.fixture
-    def implement_agent(self, llm_config, shell_executor, memory_manager, real_managers):
-        """Create an ImplementAgent instance."""
-        task_decomposer = Mock(spec=TaskDecomposer)
-        error_recovery = Mock(spec=ErrorRecovery)
+    def implement_agent(self, real_dependency_container, real_llm_config):
+        """Create an ImplementAgent instance using dependency container."""
         agent = ImplementAgent(
             name="TestImplementAgent",
-            llm_config=llm_config,
+            llm_config=real_llm_config,
             system_message="Test implementation agent for task execution testing with quality measurement.",
-            shell_executor=shell_executor,
-            task_decomposer=task_decomposer,
-            error_recovery=error_recovery,
-            description="Test agent for integration testing with quality metrics",
-            token_manager=real_managers.token_manager,
-            context_manager=real_managers.context_manager
+            container=real_dependency_container
         )
-        # Set memory manager after initialization
-        agent.memory_manager = memory_manager
         return agent
     
     @pytest.fixture

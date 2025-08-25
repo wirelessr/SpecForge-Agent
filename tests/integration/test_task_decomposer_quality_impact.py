@@ -67,7 +67,7 @@ def quality_test_tasks():
 
 
 @pytest.fixture
-def task_decomposer_with_quality_metrics(real_llm_config, real_managers):
+def task_decomposer_with_quality_metrics(real_llm_config, temp_workspace):
     """TaskDecomposer configured for quality measurement."""
     system_message = """
 You are an expert task decomposition agent focused on generating high-quality, executable shell command sequences.
@@ -82,12 +82,14 @@ Your primary goals:
 Always provide detailed, actionable command sequences that can be executed reliably.
 """
     
+    from autogen_framework.dependency_container import DependencyContainer
+    container = DependencyContainer.create_production(temp_workspace, real_llm_config)
+    
     return TaskDecomposer(
         name="QualityTaskDecomposer",
         llm_config=real_llm_config,
         system_message=system_message,
-        token_manager=real_managers.token_manager,
-        context_manager=real_managers.context_manager
+        container=container
     )
 
 
