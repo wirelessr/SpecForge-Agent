@@ -214,40 +214,6 @@ class TestTaskDecomposerIntegration:
         print(f"✓ Success criteria: {len(execution_plan.success_criteria)}")
     
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Complexity analysis as standalone feature has been removed - use decompose_task instead")
-    async def test_complexity_analysis_with_real_llm(self, real_task_decomposer, simple_python_task):
-        """Test complexity analysis with real LLM."""
-        # This test is obsolete - complexity analysis is now part of decompose_task
-        pass
-        assert isinstance(complexity.dependencies, list)
-        assert isinstance(complexity.risk_factors, list)
-        assert 0.0 <= complexity.confidence_score <= 1.0
-        assert complexity.analysis_reasoning != ""
-        
-        # For a simple Python task, should be reasonable
-        assert complexity.estimated_steps <= 10, "Simple task shouldn't have too many steps"
-        
-        print(f"✓ Complexity analysis: {complexity.complexity_level}")
-        print(f"✓ Estimated steps: {complexity.estimated_steps}")
-        print(f"✓ Required tools: {complexity.required_tools}")
-        print(f"✓ Confidence: {complexity.confidence_score:.2f}")
-    
-    @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Complexity analysis as standalone feature has been removed - use decompose_task instead")
-    async def test_command_sequence_generation_with_real_llm(self, real_task_decomposer, simple_python_task):
-        """Test command sequence generation with real LLM."""
-        # This test is obsolete - use decompose_task which includes complexity analysis and command generation
-        pass
-        command_text = " ".join(cmd.command for cmd in commands)
-        assert any(keyword in command_text.lower() for keyword in ["touch", "echo", "cat", "python", "mkdir"]), \
-            "Should contain executable shell commands"
-        
-        print(f"✓ Generated {len(commands)} shell commands")
-        for i, cmd in enumerate(commands[:3]):  # Show first 3 commands
-            print(f"  {i+1}. {cmd.command} - {cmd.description}")
-    
-    @pytest.mark.asyncio
-    @pytest.mark.asyncio
     async def test_success_criteria_definition_with_real_llm(self, real_task_decomposer, simple_python_task):
         """Test success criteria definition is included in decompose_task."""
         execution_plan = await real_task_decomposer.decompose_task(simple_python_task)
