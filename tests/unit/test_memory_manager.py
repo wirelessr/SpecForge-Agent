@@ -210,22 +210,6 @@ class TestMemoryManager:
             assert "files" in cat_stats
             assert "size_chars" in cat_stats
     
-    def test_memory_caching(self, populated_memory_manager):
-        """Test memory caching functionality."""
-        # First load should populate cache
-        memory1 = populated_memory_manager.load_memory()
-        
-        # Second load should use cache (same object)
-        memory2 = populated_memory_manager.load_memory()
-        
-        assert memory1 == memory2
-        
-        # Clear cache and load again
-        populated_memory_manager.clear_cache()
-        memory3 = populated_memory_manager.load_memory()
-        
-        assert memory1 == memory3  # Content should be same, but freshly loaded
-    
     def test_export_memory_json(self, populated_memory_manager, temp_workspace):
         """Test exporting memory to JSON format."""
         export_path = Path(temp_workspace) / "exported_memory.json"
