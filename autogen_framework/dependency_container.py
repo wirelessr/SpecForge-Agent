@@ -4,7 +4,7 @@ Dependency Container for the AutoGen Multi-Agent Framework.
 This module provides a centralized dependency injection system that eliminates
 the need to manually pass multiple managers to each agent. The DependencyContainer
 manages all framework managers and provides them to agents on demand with
-thread-safe lazy loading.
+lazy loading.
 """
 
 import logging
