@@ -125,7 +125,6 @@ def mock_memory_manager():
     })
     mock_manager.get_system_instructions = Mock(return_value="No memory content available.")
     mock_manager.export_memory = Mock(return_value=True)
-    mock_manager.clear_cache = Mock()
     
     return mock_manager
 

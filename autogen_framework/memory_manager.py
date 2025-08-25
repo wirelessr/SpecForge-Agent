@@ -45,10 +45,6 @@ class MemoryManager:
         
         # Set up logging
         self.logger = logging.getLogger(__name__)
-        
-        # Cache for loaded memory content
-        self._memory_cache: Optional[MemoryContent] = None
-        self._cache_timestamp: Optional[datetime] = None
     
     def _ensure_memory_directories(self) -> None:
         """Create memory directory structure if it doesn't exist."""
@@ -93,10 +89,6 @@ Memory files should be written in clear, structured markdown with:
         Returns:
             Dictionary containing all memory content organized by category and file
         """
-        # Check if we can use cached content
-        if self._is_cache_valid():
-            return self._memory_cache
-        
         memory_content = {}
         
         try:
@@ -117,10 +109,6 @@ Memory files should be written in clear, structured markdown with:
             )
             if root_memory:
                 memory_content["root"] = root_memory
-            
-            # Update cache
-            self._memory_cache = memory_content
-            self._cache_timestamp = datetime.now()
             
             self.logger.info(f"Loaded memory content from {len(memory_content)} categories")
             return memory_content
@@ -230,10 +218,6 @@ Memory files should be written in clear, structured markdown with:
             
             # Write the content
             file_path.write_text(formatted_content, encoding='utf-8')
-            
-            # Invalidate cache
-            self._memory_cache = None
-            self._cache_timestamp = None
             
             self.logger.info(f"Saved memory content: {key} in category {category}")
             return True
@@ -384,21 +368,6 @@ Memory files should be written in clear, structured markdown with:
                 stats["total_size_chars"] += cat_size
         
         return stats
-    
-    def _is_cache_valid(self) -> bool:
-        """Check if the memory cache is still valid."""
-        if not self._memory_cache or not self._cache_timestamp:
-            return False
-        
-        # Cache is valid for 5 minutes
-        cache_age = (datetime.now() - self._cache_timestamp).total_seconds()
-        return cache_age < 300
-    
-    def clear_cache(self) -> None:
-        """Clear the memory cache to force reload on next access."""
-        self._memory_cache = None
-        self._cache_timestamp = None
-        self.logger.info("Memory cache cleared")
     
     def export_memory(self, export_path: str, format: str = "json") -> bool:
         """
