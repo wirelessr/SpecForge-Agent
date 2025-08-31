@@ -78,4 +78,4 @@ source = ["autogen_framework"]
 allow-insecure-host = ["github.com", "release-assets.githubusercontent.com"]
 
 [tool.uv.sources]
-codebase-agent = { url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.2.0/codebase_agent-0.2.0-py3-none-any.whl" }
+codebase-agent = { url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.3.0/codebase_agent-0.3.0-py3-none-any.whl" }
