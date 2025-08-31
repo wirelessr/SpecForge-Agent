@@ -4,6 +4,8 @@ applyTo: '**'
 
 # Codebase Agent Quick Reference
 
+Detailed documentation can be found at ./.venv/lib/python3.11/site-packages/codebase_agent
+
 ## Initialization and Usage
 
 ```python
