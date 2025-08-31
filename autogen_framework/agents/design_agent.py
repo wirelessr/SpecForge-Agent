@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .base_agent import BaseLLMAgent, ContextSpec
 from ..models import LLMConfig, AgentContext
+from ..codebase_analysis_service import CodebaseAnalysisService
 
 # Forward declarations for type hints
 from typing import TYPE_CHECKING
@@ -75,6 +76,9 @@ class DesignAgent(BaseLLMAgent):
         if memory_context:
             self.update_memory_context(memory_context)
         
+        # Initialize codebase analysis service
+        self.codebase_analysis_service = CodebaseAnalysisService()
+        
         self.logger.info("DesignAgent initialized successfully")
     
     def _build_system_message(self) -> str:
@@ -87,15 +91,17 @@ class DesignAgent(BaseLLMAgent):
         return """You are a Design Agent specialized in creating comprehensive technical design documents.
 
 ## Your Role
-You are responsible for transforming approved requirements into detailed technical designs that serve as blueprints for implementation. Your designs should be thorough, practical, and implementable.
+You are responsible for transforming approved requirements into detailed technical designs that serve as blueprints for implementation. Your designs should be thorough, practical, and implementable. You can analyze existing codebases to ensure new designs integrate seamlessly with existing systems.
 
 ## Core Responsibilities
-1. **Architecture Design**: Create clear architectural overviews that define system structure
-2. **Component Definition**: Specify components, their interfaces, and interactions
-3. **Data Flow Modeling**: Generate Mermaid.js diagrams showing data flow and system interactions
-4. **Technical Specifications**: Define technical details, constraints, and implementation approaches
-5. **Security Considerations**: Identify and address security requirements and concerns
-6. **Testing Strategy**: Define comprehensive testing approaches for the system
+1. **Codebase Analysis**: Analyze existing codebases to understand current architecture and patterns
+2. **Architecture Design**: Create clear architectural overviews that define system structure
+3. **Component Definition**: Specify components, their interfaces, and interactions
+4. **Data Flow Modeling**: Generate Mermaid.js diagrams showing data flow and system interactions
+5. **Technical Specifications**: Define technical details, constraints, and implementation approaches
+6. **Security Considerations**: Identify and address security requirements and concerns
+7. **Testing Strategy**: Define comprehensive testing approaches for the system
+8. **Integration Planning**: Ensure new designs integrate well with existing codebases
 
 ## Design Document Structure
 Your design documents should follow this structure:
@@ -105,15 +111,26 @@ Your design documents should follow this structure:
 4. **Data Models**: Define data structures and their relationships
 5. **Security Considerations**: Security requirements and implementation approaches
 6. **Testing Strategy**: Unit, integration, and system testing approaches
+7. **Integration Considerations**: How new components integrate with existing systems (when applicable)
 
 ## Technical Guidelines
 - Base designs ONLY on approved requirements and available memory context
+- When an existing codebase is present, analyze it thoroughly and ensure design compatibility
 - Use clear, implementable technical specifications
 - Include practical code examples and interface definitions
 - Generate valid Mermaid.js syntax for diagrams
 - Consider scalability, maintainability, and performance
 - Address error handling and edge cases
 - Ensure designs are testable and verifiable
+- Maintain consistency with existing code patterns and conventions
+
+## Codebase Integration Guidelines
+When working with existing codebases:
+- **Preserve existing patterns**: Follow established architectural patterns and conventions
+- **Maintain consistency**: Use existing naming conventions, code styles, and design patterns
+- **Extend gracefully**: Design new components to extend rather than replace existing functionality
+- **Respect interfaces**: Honor existing API contracts and data models
+- **Consider dependencies**: Account for existing technology stack and dependencies
 
 ## Mermaid.js Diagram Standards
 - Use appropriate diagram types (graph, flowchart, sequence, class)
@@ -126,6 +143,7 @@ Your design documents should follow this structure:
 - Ensure compatibility with existing system components
 - Consider deployment and operational requirements
 - Address integration points and dependencies
+- When existing codebase is present, prioritize seamless integration over greenfield design
 
 ## Quality Standards
 - Designs must be complete and implementable
@@ -133,8 +151,9 @@ Your design documents should follow this structure:
 - Technical decisions should be justified and documented
 - Interfaces should be clearly defined with types and contracts
 - Error handling and edge cases must be considered
+- For existing codebases, ensure backward compatibility and minimal disruption
 
-Remember: Your designs serve as the foundation for implementation. They must be detailed enough for developers to implement without ambiguity while being flexible enough to accommodate reasonable implementation variations."""
+Remember: Your designs serve as the foundation for implementation. They must be detailed enough for developers to implement without ambiguity while being flexible enough to accommodate reasonable implementation variations. When working with existing codebases, prioritize integration and consistency over revolutionary changes."""
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for DesignAgent."""
@@ -312,16 +331,34 @@ Revised Design Document:"""
             with open(requirements_path, 'r', encoding='utf-8') as f:
                 requirements_content = f.read()
             
+            # Analyze existing codebase if present
+            codebase_analysis = None
+            work_directory = os.path.dirname(requirements_path)
+            
+            self.logger.info(f"Checking for existing codebase in {work_directory}")
+            if self.codebase_analysis_service.is_codebase_present(work_directory):
+                self.logger.info("Existing codebase detected, performing analysis...")
+                success, analysis_result = await self.codebase_analysis_service.analyze_codebase(work_directory)
+                if success and analysis_result:
+                    codebase_analysis = analysis_result
+                    self.logger.info("Codebase analysis completed successfully")
+                else:
+                    self.logger.warning("Codebase analysis failed, proceeding without codebase context")
+            else:
+                self.logger.info("No existing codebase found, proceeding with new project design")
+            
             # Prepare context for design generation
             design_context = {
                 "requirements_content": requirements_content,
                 "requirements_path": requirements_path,
                 "memory_available": bool(memory_context),
-                "memory_categories": list(memory_context.keys()) if memory_context else []
+                "memory_categories": list(memory_context.keys()) if memory_context else [],
+                "codebase_analysis": codebase_analysis,
+                "has_existing_codebase": codebase_analysis is not None
             }
             
             # Generate design using the LLM
-            design_prompt = self._build_design_prompt(requirements_content, memory_context)
+            design_prompt = self._build_design_prompt(requirements_content, memory_context, codebase_analysis)
             design_content = await self.generate_response(design_prompt, design_context)
             
             # Post-process the design content
@@ -334,13 +371,14 @@ Revised Design Document:"""
             self.logger.error(f"Error generating design: {e}")
             raise
     
-    def _build_design_prompt(self, requirements_content: str, memory_context: Dict[str, Any]) -> str:
+    def _build_design_prompt(self, requirements_content: str, memory_context: Dict[str, Any], codebase_analysis: Optional[Dict[str, Any]] = None) -> str:
         """
         Build the prompt for design generation.
         
         Args:
             requirements_content: Content of the requirements document
             memory_context: Available memory context
+            codebase_analysis: Optional codebase analysis results
             
         Returns:
             Formatted prompt for design generation
@@ -390,6 +428,49 @@ Revised Design Document:"""
                 "",
                 "Use this memory context to inform your design decisions and leverage proven patterns.",
                 ""
+            ])
+        
+        # Add codebase analysis information if available
+        if codebase_analysis and codebase_analysis.get("has_codebase"):
+            insights = codebase_analysis.get("insights", {})
+            prompt_parts.extend([
+                "## Existing Codebase Analysis",
+                "An existing codebase has been analyzed. Consider the following insights when generating the design:",
+                "",
+                "### Architecture Summary",
+                insights.get("architecture_summary", "No architecture information available"),
+                "",
+                "### Key Technologies",
+                insights.get("key_technologies", "No technology information available"),
+                "",
+                "### Code Patterns and Conventions",
+                insights.get("code_patterns", "No code pattern information available"),
+                "",
+                "### Data Models",
+                insights.get("data_models", "No data model information available"),
+                "",
+                "### API Design Patterns",
+                insights.get("api_design", "No API design information available"),
+                "",
+                "### Integration Guidelines",
+                insights.get("integration_guidelines", "Follow existing patterns and conventions"),
+                "",
+                "## Integration Requirements",
+                "When designing new features or components:",
+                "1. **Maintain consistency** with existing architecture patterns",
+                "2. **Follow established** code styles and conventions",
+                "3. **Integrate seamlessly** with existing components and interfaces", 
+                "4. **Respect existing** data models and API contracts",
+                "5. **Consider compatibility** with current deployment and configuration patterns",
+                "6. **Extend rather than replace** existing functionality where possible",
+                "",
+            ])
+        else:
+            prompt_parts.extend([
+                "## New Project Context",
+                "This appears to be a new project with no existing codebase.",
+                "Focus on establishing solid architectural foundations and best practices.",
+                "",
             ])
         
         prompt_parts.extend([
