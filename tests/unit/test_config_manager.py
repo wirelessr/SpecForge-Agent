@@ -49,7 +49,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key',
+            'LLM_API_KEY': 'sk-test123',
             'LLM_TEMPERATURE': '0.8',
             'LLM_MAX_OUTPUT_TOKENS': '4096',
             'LLM_TIMEOUT_SECONDS': '30'
@@ -59,7 +59,7 @@ class TestConfigManager:
             
             assert config['base_url'] == 'http://test.local:8888/openai/v1'
             assert config['model'] == 'test-model'
-            assert config['api_key'] == 'test-key'
+            assert config['api_key'] == 'sk-test123'
             assert config['temperature'] == 0.8
             assert config['max_output_tokens'] == 4096
             assert config['timeout'] == 30
@@ -84,7 +84,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key'
+            'LLM_API_KEY': 'sk-test123'
             # No optional parameters set
         }, clear=True):
             config_manager = ConfigManager(load_env=False)
@@ -99,7 +99,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'invalid-url',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key'
+            'LLM_API_KEY': 'sk-test123'
         }, clear=True):
             config_manager = ConfigManager(load_env=False)
             
@@ -114,7 +114,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key',
+            'LLM_API_KEY': 'sk-test123',
             'LLM_TEMPERATURE': '3.0'  # Invalid: > 2.0
         }, clear=True):
             config_manager = ConfigManager(load_env=False)
@@ -173,7 +173,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key',
+            'LLM_API_KEY': 'sk-test123',
             'WORKSPACE_PATH': 'test_workspace',
             'LOG_LEVEL': 'DEBUG'
         }, clear=True):
@@ -182,7 +182,7 @@ class TestConfigManager:
             
             assert config['base_url'] == 'http://test.local:8888/openai/v1'
             assert config['model'] == 'test-model'
-            assert config['api_key'] == 'test-key'
+            assert config['api_key'] == 'sk-test123'
             assert config['workspace_path'] == 'test_workspace'
             assert config['log_level'] == 'DEBUG'
     
@@ -206,7 +206,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key'
+            'LLM_API_KEY': 'sk-test123'
         }, clear=True):
             config_manager = ConfigManager(load_env=False)
             errors = config_manager.validate_required_config()
@@ -227,7 +227,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {
             'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key',
+            'LLM_API_KEY': 'sk-test123',
             'WORKSPACE_PATH': '/test/workspace',
             'LOG_LEVEL': 'DEBUG'
         }, clear=True):

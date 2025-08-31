@@ -218,7 +218,7 @@ class TestConfigManagerMigrationWarnings:
             'SHELL_TIMEOUT_SECONDS': '45',
             'LLM_BASE_URL': 'http://localhost:8888/openai/v1',
             'LLM_MODEL': 'test-model',
-            'LLM_API_KEY': 'test-key'
+            'LLM_API_KEY': 'sk-test123'
         }):
             with caplog.at_level(logging.WARNING):
                 config_manager = ConfigManager(load_env=False)

@@ -94,7 +94,7 @@ class TestContextCompressorDynamicConfig:
         return LLMConfig(
             base_url="http://test.local/v1",
             model="test-model",
-            api_key="test-key",
+            api_key="sk-test123",
             temperature=0.7,
             max_output_tokens=4096,
             timeout=30
@@ -120,7 +120,7 @@ class TestContextCompressorDynamicConfig:
         test_config = LLMConfig(
             base_url="http://test.local/v1",
             model="test-custom-model",  # Should match "^test-.*" pattern
-            api_key="test-key"
+            api_key="sk-test123"
         )
         
         compressor = ContextCompressor(test_config, config_manager=real_config_manager)
@@ -135,7 +135,7 @@ class TestContextCompressorDynamicConfig:
         test_config = LLMConfig(
             base_url="http://test.local/v1",
             model="unknown-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
         
         compressor = ContextCompressor(test_config, config_manager=real_config_manager)

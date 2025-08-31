@@ -72,7 +72,7 @@ class TestBaseLLMAgent:
         invalid_config = LLMConfig(
             base_url="",  # Invalid empty URL
             model="test-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
         
         with pytest.raises(ValueError, match="Invalid LLM configuration"):
@@ -462,13 +462,17 @@ class TestBaseLLMAgentAutoGenMocking:
         )
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    def test_initialize_autogen_agent_success(self, mock_client_class, mock_agent_class, test_agent):
-        """Test successful AutoGen agent initialization with mocks."""
-        # Mock AutoGen components
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_success(self, mock_config_manager_class, mock_agent_class, test_agent):
+        """Test successful AutoGen agent initialization with codebase-agent ConfigurationManager."""
+        # Mock codebase-agent ConfigurationManager
+        mock_config_manager = Mock()
         mock_client = Mock()
+        mock_config_manager.get_model_client.return_value = mock_client
+        mock_config_manager_class.return_value = mock_config_manager
+        
+        # Mock AutoGen AssistantAgent
         mock_agent = Mock()
-        mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
         
         result = test_agent.initialize_autogen_agent()
@@ -477,12 +481,9 @@ class TestBaseLLMAgentAutoGenMocking:
         assert test_agent._is_initialized is True
         assert test_agent._autogen_agent == mock_agent
         
-        # Verify client was created with correct parameters
-        mock_client_class.assert_called_once()
-        client_call_args = mock_client_class.call_args
-        assert client_call_args[1]["model"] == test_agent.llm_config.model
-        assert client_call_args[1]["base_url"] == test_agent.llm_config.base_url
-        assert client_call_args[1]["api_key"] == test_agent.llm_config.api_key
+        # Verify ConfigurationManager was created and used
+        mock_config_manager_class.assert_called_once()
+        mock_config_manager.get_model_client.assert_called_once()
         
         # Verify agent was created with correct parameters
         mock_agent_class.assert_called_once()
@@ -492,10 +493,11 @@ class TestBaseLLMAgentAutoGenMocking:
         assert agent_call_args[1]["model_client"] == mock_client
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    def test_initialize_autogen_agent_exception(self, mock_client_class, mock_agent_class, test_agent):
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_exception(self, mock_config_manager_class, mock_agent_class, test_agent):
         """Test AutoGen agent initialization with exception."""
-        mock_client_class.side_effect = Exception("Test error")
+        # Mock codebase-agent ConfigurationManager to raise exception
+        mock_config_manager_class.side_effect = Exception("Test error")
         
         result = test_agent.initialize_autogen_agent()
         
@@ -504,13 +506,17 @@ class TestBaseLLMAgentAutoGenMocking:
         assert test_agent._autogen_agent is None
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    def test_initialize_autogen_agent_already_initialized(self, mock_client_class, mock_agent_class, test_agent):
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_already_initialized(self, mock_config_manager_class, mock_agent_class, test_agent):
         """Test that initialization is skipped if already initialized."""
-        # Mock successful first initialization
+        # Mock codebase-agent ConfigurationManager
+        mock_config_manager = Mock()
         mock_client = Mock()
+        mock_config_manager.get_model_client.return_value = mock_client
+        mock_config_manager_class.return_value = mock_config_manager
+        
+        # Mock AutoGen AssistantAgent
         mock_agent = Mock()
-        mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
         
         # First initialization
@@ -518,139 +524,82 @@ class TestBaseLLMAgentAutoGenMocking:
         assert result1 is True
         
         # Second initialization should return True without creating new agent
-        mock_client_class.reset_mock()
+        mock_config_manager_class.reset_mock()
         mock_agent_class.reset_mock()
         result2 = test_agent.initialize_autogen_agent()
         assert result2 is True
-        mock_client_class.assert_not_called()
+        mock_config_manager_class.assert_not_called()
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    @patch('autogen_core.models.ModelInfo')
-    @patch('autogen_core.models.ModelFamily')
-    def test_initialize_autogen_agent_with_dynamic_model_detection(self, mock_model_family, mock_model_info, mock_client_class, mock_agent_class, test_agent):
-        """Test AutoGen agent initialization uses dynamic model detection."""
-        # Setup mocks
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_with_dynamic_model_detection(self, mock_config_manager_class, mock_agent_class, test_agent):
+        """Test AutoGen agent initialization uses codebase-agent's intelligent model matching."""
+        # Mock codebase-agent ConfigurationManager
+        mock_config_manager = Mock()
         mock_client = Mock()
-        mock_agent = Mock()
-        mock_model_info_instance = Mock()
-        mock_client_class.return_value = mock_client
-        mock_agent_class.return_value = mock_agent
-        mock_model_info.return_value = mock_model_info_instance
-        mock_model_family.GEMINI_2_0_FLASH = "GEMINI_2_0_FLASH"
+        mock_config_manager.get_model_client.return_value = mock_client
+        mock_config_manager_class.return_value = mock_config_manager
         
-        # Configure ConfigManager to return specific model info
-        config_manager = test_agent.config_manager
-        config_manager.get_model_info.return_value = {
-            "family": "GEMINI_2_0_FLASH",
-            "token_limit": 1048576,
-            "capabilities": {
-                "vision": True,
-                "function_calling": True,
-                "streaming": True
-            }
-        }
+        # Mock AutoGen AssistantAgent  
+        mock_agent = Mock()
+        mock_agent_class.return_value = mock_agent
         
         result = test_agent.initialize_autogen_agent()
         
         assert result is True
+        assert test_agent._is_initialized is True
+        assert test_agent._autogen_agent == mock_agent
         
-        # Verify ConfigManager was called
-        config_manager.get_model_info.assert_called_once_with(test_agent.llm_config.model)
-        
-        # Verify ModelInfo was created with dynamic configuration
-        mock_model_info.assert_called_once_with(
-            family="GEMINI_2_0_FLASH",
-            vision=True,
-            function_calling=True,
-            json_output=True,
-            structured_output=True
-        )
+        # Verify codebase-agent's ConfigurationManager was used
+        mock_config_manager_class.assert_called_once()
+        mock_config_manager.get_model_client.assert_called_once()
     
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    @patch('autogen_core.models.ModelInfo')
-    @patch('autogen_core.models.ModelFamily')
-    def test_initialize_autogen_agent_with_unknown_model_family(self, mock_model_family, mock_model_info, mock_client_class, mock_agent_class, test_agent):
-        """Test AutoGen agent initialization handles unknown model family."""
-        # Setup mocks
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_with_unknown_model_family(self, mock_config_manager_class, mock_agent_class, test_agent):
+        """Test AutoGen agent initialization with codebase-agent handling unknown models."""
+        # Mock codebase-agent ConfigurationManager
+        mock_config_manager = Mock()
         mock_client = Mock()
+        mock_config_manager.get_model_client.return_value = mock_client
+        mock_config_manager_class.return_value = mock_config_manager
+        
+        # Mock AutoGen AssistantAgent  
         mock_agent = Mock()
-        mock_model_info_instance = Mock()
-        mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
-        mock_model_info.return_value = mock_model_info_instance
-        mock_model_family.GPT_4 = "GPT_4"
-        
-        # Configure ConfigManager to return unknown model family
-        config_manager = test_agent.config_manager
-        config_manager.get_model_info.return_value = {
-            "family": "UNKNOWN_FAMILY",
-            "token_limit": 8192,
-            "capabilities": {
-                "vision": False,
-                "function_calling": True,
-                "streaming": False
-            }
-        }
-        
-        # Mock hasattr to return False for unknown family, True for GPT_4
-        with patch('builtins.hasattr') as mock_hasattr:
-            def hasattr_side_effect(obj, name):
-                if name == "UNKNOWN_FAMILY":
-                    return False
-                elif name == "GPT_4":
-                    return True
-                return False
-            mock_hasattr.side_effect = hasattr_side_effect
-            
-            result = test_agent.initialize_autogen_agent()
-            
-            assert result is True
-            
-            # Verify ModelInfo was created with fallback GPT_4 family
-            mock_model_info.assert_called_once_with(
-                family="GPT_4",
-                vision=False,
-                function_calling=True,
-                json_output=True,
-                structured_output=True
-            )
-    
-    @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    @patch('autogen_core.models.ModelInfo')
-    @patch('autogen_core.models.ModelFamily')
-    def test_initialize_autogen_agent_config_manager_error_fallback(self, mock_model_family, mock_model_info, mock_client_class, mock_agent_class, test_agent):
-        """Test AutoGen agent initialization falls back when ConfigManager fails."""
-        # Setup mocks
-        mock_client = Mock()
-        mock_agent = Mock()
-        mock_model_info_instance = Mock()
-        mock_client_class.return_value = mock_client
-        mock_agent_class.return_value = mock_agent
-        mock_model_info.return_value = mock_model_info_instance
-        mock_model_family.GPT_4 = "GPT_4"
-        
-        # Configure ConfigManager to raise an exception
-        config_manager = test_agent.config_manager
-        config_manager.get_model_info.side_effect = Exception("Config error")
         
         result = test_agent.initialize_autogen_agent()
         
         assert result is True
+        assert test_agent._is_initialized is True
+        assert test_agent._autogen_agent == mock_agent
         
-        # Verify ModelInfo was created with fallback configuration
-        mock_model_info.assert_called_once_with(
-            family="GPT_4",
-            vision=False,
-            function_calling=True,
-            json_output=True,
-            structured_output=True
-        )
+        # Verify codebase-agent handles model matching automatically
+        mock_config_manager_class.assert_called_once()
+        mock_config_manager.get_model_client.assert_called_once()
+    
+    @patch('autogen_framework.agents.base_agent.AssistantAgent')
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    def test_initialize_autogen_agent_config_manager_error_fallback(self, mock_config_manager_class, mock_agent_class, test_agent):
+        """Test AutoGen agent initialization handles ConfigurationManager errors."""
+        # Mock codebase-agent ConfigurationManager to raise exception
+        mock_config_manager = Mock()
+        mock_config_manager.get_model_client.side_effect = Exception("Configuration validation failed")
+        mock_config_manager_class.return_value = mock_config_manager
         
-        # Verify that the agent was still created successfully
-        mock_agent_class.assert_called_once()
+        # Mock AutoGen AssistantAgent (not used in this error case)
+        mock_agent = Mock()
+        mock_agent_class.return_value = mock_agent
+        
+        result = test_agent.initialize_autogen_agent()
+        
+        # Should return False when configuration fails
+        assert result is False
+        assert test_agent._is_initialized is False
+        
+        # Verify ConfigurationManager was attempted
+        mock_config_manager_class.assert_called_once()
+        mock_config_manager.get_model_client.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_generate_autogen_response_not_initialized(self, test_agent):
@@ -683,13 +632,17 @@ class TestBaseLLMAgentAutoGenMocking:
     
     @pytest.mark.asyncio
     @patch('autogen_framework.agents.base_agent.AssistantAgent')
-    @patch('autogen_framework.agents.base_agent.OpenAIChatCompletionClient')
-    async def test_generate_response_with_context(self, mock_client_class, mock_agent_class, test_agent):
+    @patch('autogen_framework.agents.base_agent.CodebaseConfigManager')
+    async def test_generate_response_with_context(self, mock_config_manager_class, mock_agent_class, test_agent):
         """Test response generation with context and memory using manager dependencies."""
-        # Mock AutoGen components
+        # Mock codebase-agent ConfigurationManager
+        mock_config_manager = Mock()
         mock_client = Mock()
+        mock_config_manager.get_model_client.return_value = mock_client
+        mock_config_manager_class.return_value = mock_config_manager
+        
+        # Mock AutoGen AssistantAgent
         mock_agent = Mock()
-        mock_client_class.return_value = mock_client
         mock_agent_class.return_value = mock_agent
         
         # Configure context manager mock from container

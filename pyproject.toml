@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "autogen-agentchat>=0.7.1",
     "autogen-ext[openai]>=0.7.1",
+    "codebase-agent",
 ]
 
 [project.optional-dependencies]
@@ -71,3 +72,10 @@ dev = [
 
 [tool.coverage.run]
 source = ["autogen_framework"]
+
+[tool.uv]
+# Skip SSL verification for specific hosts
+allow-insecure-host = ["github.com", "release-assets.githubusercontent.com"]
+
+[tool.uv.sources]
+codebase-agent = { url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.2.0/codebase_agent-0.2.0-py3-none-any.whl" }

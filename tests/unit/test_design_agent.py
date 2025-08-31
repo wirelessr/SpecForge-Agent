@@ -916,7 +916,7 @@ def test_design_agent_with_memory_variations(memory_available):
     llm_config = LLMConfig(
         base_url="http://test.local:8888/openai/v1",
         model="test-model",
-        api_key="test-key"
+        api_key="sk-test123"
     )
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -949,7 +949,7 @@ def test_all_design_templates(template_type):
     llm_config = LLMConfig(
         base_url="http://test.local:8888/openai/v1",
         model="test-model",
-        api_key="test-key"
+        api_key="sk-test123"
     )
     
     with tempfile.TemporaryDirectory() as temp_dir:

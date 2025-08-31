@@ -29,7 +29,7 @@ class TestErrorRecovery:
         return LLMConfig(
             base_url="http://test.local:8888/openai/v1",
             model="test-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
     
     @pytest.fixture

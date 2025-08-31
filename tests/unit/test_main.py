@@ -73,7 +73,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     @patch('autogen_framework.main.MainController')
     def test_main_status_mode(self, mock_controller):
@@ -101,7 +101,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     @patch('autogen_framework.main.MainController')
     def test_main_initialization_failure(self, mock_controller):
@@ -121,7 +121,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     @patch('autogen_framework.main.MainController')
     @patch('autogen_framework.main.asyncio.run')
@@ -164,7 +164,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     @patch('autogen_framework.main.MainController')
     @patch('autogen_framework.main.asyncio.run')
@@ -240,7 +240,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     def test_workspace_path_resolution(self):
         """Test workspace path resolution."""
@@ -273,7 +273,7 @@ class TestMainEntryPoint:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     @patch('autogen_framework.main.MainController')
     def test_error_handling(self, mock_controller):

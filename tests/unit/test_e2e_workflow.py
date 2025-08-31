@@ -39,7 +39,7 @@ class TestE2EWorkflow:
         return LLMConfig(
             base_url="http://test.local:8888/openai/v1",
             model="test-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
     
     @pytest.mark.asyncio
@@ -594,7 +594,7 @@ graph TD
                     '--request', 'Create a simple web API',
                     '--llm-base-url', 'http://test.local:8888/openai/v1',
                     '--llm-model', 'test-model',
-                    '--llm-api-key', 'test-key'
+                    '--llm-api-key', 'sk-test123'
                 ])
                 
                 # Verify the CLI executed successfully
@@ -611,7 +611,7 @@ graph TD
                     '--status',
                     '--llm-base-url', 'http://test.local:8888/openai/v1',
                     '--llm-model', 'test-model',
-                    '--llm-api-key', 'test-key'
+                    '--llm-api-key', 'sk-test123'
                 ])
                 
                 assert result2.exit_code == 0

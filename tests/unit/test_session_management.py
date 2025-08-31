@@ -23,7 +23,7 @@ class TestSessionManagement:
         return LLMConfig(
             base_url="http://test.local:8888/openai/v1",
             model="test-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
     
     def test_session_creation_and_persistence(self, temp_workspace, mock_test_llm_config):
