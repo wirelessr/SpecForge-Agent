@@ -47,19 +47,19 @@ wheels = [
 
 [[package]]
 name = "autogen-agentchat"
-version = "0.7.1"
+version = "0.7.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autogen-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f1/b6/f7dbc0ab89b1175f6215b96b219b77846dbbac0d2c0c72c0665afae69d78/autogen_agentchat-0.7.1.tar.gz", hash = "sha256:24527947bef428710a14ea599879f6cd5308670602558234c8a8670f60e196b2", size = 143039, upload-time = "2025-07-28T08:41:13.875Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/12/a191a1b0dcb45a341e7a044fca82e71883a3cf8671fe7ad67e6d5d6f2a46/autogen_agentchat-0.7.4.tar.gz", hash = "sha256:9e9f0362c70d110479de351f8fc6afd497d9c926bd833f1bfafc118d993734c4", size = 147026, upload-time = "2025-08-19T18:49:22.521Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/60/cccd643af20ad5bd877a206854d85b7cbffd832928bb6b49fe0a51963365/autogen_agentchat-0.7.1-py3-none-any.whl", hash = "sha256:0eadf3a82974d6b41a6308b5625b578befb2d5bace82377e1dc930dde44f38bc", size = 117057, upload-time = "2025-07-28T08:41:12.291Z" },
+    { url = "https://files.pythonhosted.org/packages/39/eb/f1a278169a98c239720fc3cd050cde241c26813b53bbb573149d97f1e5fc/autogen_agentchat-0.7.4-py3-none-any.whl", hash = "sha256:8f62bf2854fa06663d37576500c3ef92f291c61f1d0026a6d60c46fa55292dde", size = 119094, upload-time = "2025-08-19T18:49:20.884Z" },
 ]
 
 [[package]]
 name = "autogen-core"
-version = "0.7.1"
+version = "0.7.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonref" },
@@ -69,21 +69,21 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/95/6e/32f766c96f6e54210f149703ae4aa224bd1e5cb18c5582b89a4cf245dcfe/autogen_core-0.7.1.tar.gz", hash = "sha256:b522321a6e776c104c8605310f17381a11068f3ab63ef711d1eaf887832b23b1", size = 99831, upload-time = "2025-07-28T08:41:11.102Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/ff/1e7a13ccfb7ae7edfba67d150d36cde9bd7e49f2908ec7160472115512bc/autogen_core-0.7.4.tar.gz", hash = "sha256:44b4574a378effbf52317e579ae1663602ce9bbb1c699100dec9f3cf19cc9e85", size = 100323, upload-time = "2025-08-19T18:49:45.118Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/42/36081c8d59290129cf2677589266fff5e3d16a7cfe4559f65f765d56d983/autogen_core-0.7.1-py3-none-any.whl", hash = "sha256:70336f8b85acb6d2a532f8d1417be66beecf08c86976ad97db6e55a932d29446", size = 101404, upload-time = "2025-07-28T08:41:09.52Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/e7/ceeebcbe25e5f225b858d702616a8cf61b8e0ec6a350e77257158124b4d5/autogen_core-0.7.4-py3-none-any.whl", hash = "sha256:b383d3b2dfe9f5d62e0da0057da6de3cb63259233570e4c85153e33703170afa", size = 101572, upload-time = "2025-08-19T18:49:43.491Z" },
 ]
 
 [[package]]
 name = "autogen-ext"
-version = "0.7.1"
+version = "0.7.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "autogen-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8f/81/e4af131b759bcf7869db34731fa90a530f9397b28dc363d2b9eac9ac1f71/autogen_ext-0.7.1.tar.gz", hash = "sha256:924c39f6349e05519b722b9ef5ec9cd9a408d122860058d0d5d5e2b61515d285", size = 406318, upload-time = "2025-07-28T08:41:24.646Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b2/0f/40b841cb408d20ed2b89d41e6ea0d604347f5b0cd1cc520a4cf2d2bacbf8/autogen_ext-0.7.4.tar.gz", hash = "sha256:1d69b37afa79787b43a401a10c857572d73b1d89e71950087543a81c8df02d27", size = 410149, upload-time = "2025-08-19T18:49:49.685Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/41/864e5e0936b9494e295d2e76b8922c236885381bb33042905a58dfa245be/autogen_ext-0.7.1-py3-none-any.whl", hash = "sha256:1b32ef0d96b9f7ca121f5f44a8e582ca638808eb91ff4d7ae3521daa85cd417f", size = 330850, upload-time = "2025-07-28T08:41:23.111Z" },
+    { url = "https://files.pythonhosted.org/packages/14/94/3f27f89e6873f973d0aa9b65cc9ce462897b7cc40d9d2b3a74e6c17d6369/autogen_ext-0.7.4-py3-none-any.whl", hash = "sha256:5afb47c8108168bce7b61eb476ed1bf025548f404da3742d322443fedad79e32", size = 328854, upload-time = "2025-08-19T18:49:48.176Z" },
 ]
 
 [package.optional-dependencies]
@@ -103,6 +103,7 @@ dependencies = [
     { name = "autogen-agentchat" },
     { name = "autogen-ext", extra = ["openai"] },
     { name = "click" },
+    { name = "codebase-agent" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -139,6 +140,7 @@ requires-dist = [
     { name = "autogen-ext", extras = ["openai"], specifier = ">=0.7.1" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "click", specifier = ">=8.0.0" },
+    { name = "codebase-agent", url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.2.0/codebase_agent-0.2.0-py3-none-any.whl" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "openai", specifier = ">=1.0.0" },
@@ -257,6 +259,45 @@ sdist = { url = "https://files.pythonhosted.org/packages/60/6c/8ca2efa64cf75a977
 wheels = [
     { url = "https://files.pythonhosted.org/packages/85/32/10bb5764d90a8eee674e9dc6f4db6a0ab47c8c4d0d83c27f7c39ac415a4d/click-8.2.1-py3-none-any.whl", hash = "sha256:61a3265b914e850b85317d0b3109c7f8cd35a670f963866005d6ef1d5175a12b", size = 102215, upload-time = "2025-05-20T23:19:47.796Z" },
 ]
+
+[[package]]
+name = "codebase-agent"
+version = "0.2.0"
+source = { url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.2.0/codebase_agent-0.2.0-py3-none-any.whl" }
+dependencies = [
+    { name = "autogen-agentchat" },
+    { name = "autogen-ext", extra = ["openai"] },
+    { name = "click" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "rich" },
+]
+wheels = [
+    { url = "https://github.com/wirelessr/codebase-analyzer-agent/releases/download/v0.2.0/codebase_agent-0.2.0-py3-none-any.whl", hash = "sha256:c674728eef5426b43997bdc7c28f56f0f00202f3da3c35d45e8835d7cb7fc2fc" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "autogen-agentchat", specifier = "==0.7.4" },
+    { name = "autogen-ext", extras = ["openai"], specifier = "==0.7.4" },
+    { name = "black", marker = "extra == 'dev'", specifier = ">=25.1.0" },
+    { name = "build", marker = "extra == 'dev'", specifier = ">=0.10.0" },
+    { name = "click", specifier = ">=8.1.0" },
+    { name = "markdown", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "mypy", marker = "extra == 'typing'", specifier = ">=1.17.1" },
+    { name = "openai", specifier = ">=1.0.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "rich", specifier = ">=13.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.0" },
+    { name = "twine", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+]
+provides-extras = ["dev", "typing"]
 
 [[package]]
 name = "colorama"

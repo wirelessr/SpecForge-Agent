@@ -18,6 +18,9 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from ..models import LLMConfig, AgentContext
 from ..utils.context_utils import dict_context_to_string
 
+# Import codebase-agent's ConfigurationManager for intelligent model matching
+from codebase_agent.config.configuration import ConfigurationManager as CodebaseConfigManager
+
 # Forward declarations for type hints
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
@@ -145,51 +148,25 @@ class BaseLLMAgent(ABC):
         if self._is_initialized and self._autogen_agent is not None:
             return True
         
-
-        
         try:
-            from autogen_core.models import ModelInfo, ModelFamily
+            # Use codebase-agent's ConfigurationManager for intelligent model matching
+            import os
+            os.environ.update({
+                'OPENAI_API_KEY': self.llm_config.api_key,
+                'OPENAI_BASE_URL': self.llm_config.base_url,
+                'OPENAI_MODEL': self.llm_config.model,
+                'MODEL_TEMPERATURE': str(self.llm_config.temperature),
+                'MAX_TOKENS': str(self.llm_config.max_output_tokens),
+                'REQUEST_TIMEOUT': str(self.llm_config.timeout)
+            })
             
-            # Get dynamic model information from ConfigManager
-            try:
-                model_info_dict = self.config_manager.get_model_info(self.llm_config.model)
-                family_str = model_info_dict["family"]
-                capabilities = model_info_dict["capabilities"]
-                
-                # Convert family string to ModelFamily enum with comprehensive error handling
-                model_family = self._convert_to_model_family(family_str)
-                
-                # Create model info with dynamic configuration
-                model_info = ModelInfo(
-                    family=model_family,
-                    vision=capabilities.get("vision", False),
-                    function_calling=capabilities.get("function_calling", True),
-                    json_output=True,
-                    structured_output=True
-                )
-                
-                self.logger.info(f"Using dynamic model configuration for {self.llm_config.model}: family={family_str}, capabilities={capabilities}")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to get dynamic model info for {self.llm_config.model}: {e}")
-                self.logger.warning("Falling back to default model configuration")
-                
-                # Fallback to default configuration
-                model_info = ModelInfo(
-                    family=ModelFamily.GPT_4,
-                    vision=False,
-                    function_calling=True,
-                    json_output=True,
-                    structured_output=True
-                )
+            # Create codebase-agent's ConfigurationManager
+            codebase_config = CodebaseConfigManager()
             
-            # Create OpenAI client for new AutoGen
-            client = OpenAIChatCompletionClient(
-                model=self.llm_config.model,
-                base_url=self.llm_config.base_url,
-                api_key=self.llm_config.api_key,
-                model_info=model_info
-            )
+            # Get model client using intelligent model matching
+            client = codebase_config.get_model_client()
+            
+            self.logger.info(f"Successfully created model client using codebase-agent's intelligent matching for {self.llm_config.model}")
             
             # Create the AssistantAgent
             self._autogen_agent = AssistantAgent(

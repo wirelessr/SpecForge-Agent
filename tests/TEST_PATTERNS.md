@@ -179,7 +179,7 @@ Use `patch.dict` for environment variable mocking:
 @patch.dict(os.environ, {
     'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
     'LLM_MODEL': 'test-model',
-    'LLM_API_KEY': 'test-key'
+    'LLM_API_KEY': 'sk-test123'
 })
 def test_with_env_vars(self):
     """Test functionality that depends on environment variables."""

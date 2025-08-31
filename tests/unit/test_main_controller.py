@@ -87,7 +87,7 @@ class TestMainController:
     @patch.dict(os.environ, {
         'LLM_BASE_URL': 'http://test.local:8888/openai/v1',
         'LLM_MODEL': 'test-model',
-        'LLM_API_KEY': 'test-key'
+        'LLM_API_KEY': 'sk-test123'
     })
     def test_initialize_framework_default_config(self, main_controller):
         """Test framework initialization with default LLM configuration."""
@@ -107,7 +107,7 @@ class TestMainController:
             # Verify LLM config was set correctly from environment
             assert main_controller.llm_config.base_url == 'http://test.local:8888/openai/v1'
             assert main_controller.llm_config.model == 'test-model'
-            assert main_controller.llm_config.api_key == 'test-key'
+            assert main_controller.llm_config.api_key == 'sk-test123'
     
     def test_initialize_framework_agent_setup_failure(self, main_controller, llm_config):
         """Test framework initialization when agent setup fails."""

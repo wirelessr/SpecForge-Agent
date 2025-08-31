@@ -63,7 +63,7 @@ class TestContextManager:
         return LLMConfig(
             base_url="http://test.local:8888/openai/v1",
             model="models/gemini-2.0-flash",
-            api_key="test-key",
+            api_key="sk-test123",
             temperature=0.7,
             max_output_tokens=8192,
             timeout=60

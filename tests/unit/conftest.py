@@ -36,7 +36,7 @@ def llm_config():
     return LLMConfig(
         base_url="http://test.local:8888/openai/v1",
         model="test-model",
-        api_key="test-key",
+        api_key="sk-test123",
         temperature=0.7,
         max_output_tokens=4096,
         timeout=30
@@ -258,7 +258,7 @@ def mock_config_manager():
     mock_manager.get_llm_config = Mock(return_value={
         "base_url": "http://test.local:8888/openai/v1",
         "model": "test-model",
-        "api_key": "test-key",
+        "api_key": "sk-test123",
         "temperature": 0.7,
         "max_output_tokens": 4096,
         "timeout": 30

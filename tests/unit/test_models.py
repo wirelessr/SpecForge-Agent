@@ -346,7 +346,7 @@ class TestLLMConfig:
         config = LLMConfig(
             base_url="http://test.com",
             model="test-model",
-            api_key="test-key",
+            api_key="sk-test123",
             temperature=0.8,
             max_output_tokens=3000,
             timeout=45
@@ -358,7 +358,7 @@ class TestLLMConfig:
             "config_list": [{
                 "model": "test-model",
                 "base_url": "http://test.com",
-                "api_key": "test-key",
+                "api_key": "sk-test123",
             }],
             "temperature": 0.8,
             "max_output_tokens": 3000,
@@ -372,14 +372,14 @@ class TestLLMConfig:
         config = LLMConfig(
             base_url="http://test.com",
             model="test-model",
-            api_key="test-key"
+            api_key="sk-test123"
         )
         assert config.validate() is True
         
         config = LLMConfig(
             base_url="http://test.com",
             model="test-model",
-            api_key="test-key",
+            api_key="sk-test123",
             temperature=1.0,
             max_output_tokens=1000,
             timeout=30
@@ -389,11 +389,11 @@ class TestLLMConfig:
     def test_validate_invalid_config(self):
         """Test validation of invalid configurations."""
         # Empty base_url
-        config = LLMConfig(base_url="", model="test-model", api_key="test-key")
+        config = LLMConfig(base_url="", model="test-model", api_key="sk-test123")
         assert config.validate() is False
         
         # Empty model
-        config = LLMConfig(base_url="http://test.com", model="", api_key="test-key")
+        config = LLMConfig(base_url="http://test.com", model="", api_key="sk-test123")
         assert config.validate() is False
         
         # Empty api_key
@@ -401,28 +401,28 @@ class TestLLMConfig:
         assert config.validate() is False
         
         # Invalid base_url format
-        config = LLMConfig(base_url="invalid-url", model="test-model", api_key="test-key")
+        config = LLMConfig(base_url="invalid-url", model="test-model", api_key="sk-test123")
         assert config.validate() is False
         
         # Invalid temperature
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", temperature=-0.1)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", temperature=-0.1)
         assert config.validate() is False
         
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", temperature=2.1)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", temperature=2.1)
         assert config.validate() is False
         
         # Invalid max_output_tokens
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", max_output_tokens=0)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", max_output_tokens=0)
         assert config.validate() is False
         
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", max_output_tokens=-100)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", max_output_tokens=-100)
         assert config.validate() is False
         
         # Invalid timeout
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", timeout=0)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", timeout=0)
         assert config.validate() is False
         
-        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="test-key", timeout=-10)
+        config = LLMConfig(base_url="http://test.com", model="test-model", api_key="sk-test123", timeout=-10)
         assert config.validate() is False
     
     def test_from_config_manager(self):
