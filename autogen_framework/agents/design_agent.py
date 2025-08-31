@@ -340,7 +340,13 @@ Revised Design Document:"""
                 self.logger.info("Existing codebase detected, performing analysis...")
                 success, analysis_result = await self.codebase_analysis_service.analyze_codebase(work_directory)
                 if success and analysis_result:
-                    codebase_analysis = analysis_result
+                    # Extract insights from the analysis result for the prompt
+                    if isinstance(analysis_result, dict) and 'analysis_result' in analysis_result:
+                        codebase_analysis = analysis_result['analysis_result']
+                    elif isinstance(analysis_result, str):
+                        codebase_analysis = analysis_result
+                    else:
+                        codebase_analysis = str(analysis_result)
                     self.logger.info("Codebase analysis completed successfully")
                 else:
                     self.logger.warning("Codebase analysis failed, proceeding without codebase context")
@@ -371,14 +377,14 @@ Revised Design Document:"""
             self.logger.error(f"Error generating design: {e}")
             raise
     
-    def _build_design_prompt(self, requirements_content: str, memory_context: Dict[str, Any], codebase_analysis: Optional[Dict[str, Any]] = None) -> str:
+    def _build_design_prompt(self, requirements_content: str, memory_context: Dict[str, Any], codebase_analysis: Optional[str] = None) -> str:
         """
         Build the prompt for design generation.
         
         Args:
             requirements_content: Content of the requirements document
             memory_context: Available memory context
-            codebase_analysis: Optional codebase analysis results
+            codebase_analysis: Optional codebase analysis insights as string
             
         Returns:
             Formatted prompt for design generation
@@ -421,8 +427,11 @@ Revised Design Document:"""
             for category, content in memory_context.items():
                 if isinstance(content, dict):
                     prompt_parts.append(f"- **{category}**: {len(content)} files with technical knowledge")
+                elif isinstance(content, str):
+                    prompt_parts.append(f"- **{category}**: {content}")
                 else:
-                    prompt_parts.append(f"- **{category}**: Technical knowledge available")
+                    # Convert any other type to string representation
+                    prompt_parts.append(f"- **{category}**: Technical knowledge available (type: {type(content).__name__})")
             
             prompt_parts.extend([
                 "",
@@ -431,29 +440,12 @@ Revised Design Document:"""
             ])
         
         # Add codebase analysis information if available
-        if codebase_analysis and codebase_analysis.get("has_codebase"):
-            insights = codebase_analysis.get("insights", {})
+        if codebase_analysis:
             prompt_parts.extend([
-                "## Existing Codebase Analysis",
+                "## Existing Codebase Context",
                 "An existing codebase has been analyzed. Consider the following insights when generating the design:",
                 "",
-                "### Architecture Summary",
-                insights.get("architecture_summary", "No architecture information available"),
-                "",
-                "### Key Technologies",
-                insights.get("key_technologies", "No technology information available"),
-                "",
-                "### Code Patterns and Conventions",
-                insights.get("code_patterns", "No code pattern information available"),
-                "",
-                "### Data Models",
-                insights.get("data_models", "No data model information available"),
-                "",
-                "### API Design Patterns",
-                insights.get("api_design", "No API design information available"),
-                "",
-                "### Integration Guidelines",
-                insights.get("integration_guidelines", "Follow existing patterns and conventions"),
+                codebase_analysis,
                 "",
                 "## Integration Requirements",
                 "When designing new features or components:",
@@ -468,7 +460,7 @@ Revised Design Document:"""
         else:
             prompt_parts.extend([
                 "## New Project Context",
-                "This appears to be a new project with no existing codebase.",
+                "This appears to be a new project with no existing codebase context available.",
                 "Focus on establishing solid architectural foundations and best practices.",
                 "",
             ])

@@ -248,6 +248,105 @@ graph TD
                     
                 finally:
                     os.unlink(temp_file.name)
+
+    @pytest.mark.asyncio
+    async def test_generate_design_with_existing_codebase(self, design_agent, sample_requirements):
+        """Test design generation with existing codebase analysis."""
+        agent = design_agent
+        
+        # Mock codebase analysis service
+        mock_codebase_insights = (
+            "Existing codebase analysis:\n"
+            "- Python-based AutoGen multi-agent framework\n"
+            "- Dependency injection container pattern\n"
+            "- LLM client integration for AI operations\n"
+            "- Memory management for persistent state"
+        )
+        mock_codebase_service = Mock()
+        mock_codebase_service.is_codebase_present.return_value = True
+        mock_codebase_service.analyze_codebase = AsyncMock(return_value=(True, mock_codebase_insights))
+        agent.codebase_analysis_service = mock_codebase_service
+        
+        mock_design_content = """# Design Document
+
+## Architectural Overview
+Enhanced architecture based on existing codebase.
+
+## Integration Points
+- Extends AutoGen framework
+- Uses dependency injection pattern
+"""
+        
+        with patch.object(agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_design_content
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as temp_file:
+                temp_file.write(sample_requirements)
+                temp_file.flush()
+                
+                try:
+                    result = await agent.generate_design(temp_file.name, agent.memory_context)
+                    
+                    assert "# Design Document" in result
+                    assert "AutoGen framework" in result
+                    
+                    # Verify codebase analysis was called
+                    mock_codebase_service.analyze_codebase.assert_called_once()
+                    
+                    # Verify prompt included codebase insights
+                    mock_generate.assert_called_once()
+                    call_args = mock_generate.call_args[0]
+                    prompt = call_args[0]
+                    
+                    assert "Existing Codebase Context" in prompt
+                    assert "AutoGen multi-agent framework" in prompt
+                    assert "Dependency injection container pattern" in prompt
+                    
+                finally:
+                    os.unlink(temp_file.name)
+
+    @pytest.mark.asyncio
+    async def test_generate_design_codebase_analysis_failure(self, design_agent, sample_requirements):
+        """Test design generation when codebase analysis fails."""
+        agent = design_agent
+        
+        # Mock codebase analysis service to return failure
+        mock_codebase_service = Mock()
+        mock_codebase_service.is_codebase_present.return_value = True
+        mock_codebase_service.analyze_codebase = AsyncMock(return_value=(False, None))
+        agent.codebase_analysis_service = mock_codebase_service
+        
+        mock_design_content = """# Design Document
+
+## Architectural Overview
+New greenfield design.
+"""
+        
+        with patch.object(agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_design_content
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as temp_file:
+                temp_file.write(sample_requirements)
+                temp_file.flush()
+                
+                try:
+                    result = await agent.generate_design(temp_file.name, agent.memory_context)
+                    
+                    assert "# Design Document" in result
+                    assert "greenfield design" in result
+                    
+                    # Verify codebase analysis was attempted
+                    mock_codebase_service.analyze_codebase.assert_called_once()
+                    
+                    # Verify prompt indicated no codebase context
+                    mock_generate.assert_called_once()
+                    call_args = mock_generate.call_args[0]
+                    prompt = call_args[0]
+                    
+                    assert "New Project Context" in prompt
+                    
+                finally:
+                    os.unlink(temp_file.name)
     
     def test_build_design_prompt(self, design_agent):
         """Test design prompt building."""
@@ -278,6 +377,44 @@ graph TD
         assert "Requirements Document" in prompt
         assert requirements in prompt
         assert "Available Memory Context" not in prompt
+
+    def test_build_design_prompt_with_codebase_insights(self, mock_dependency_container, test_llm_config):
+        """Test design prompt building with codebase analysis insights."""
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
+        
+        requirements = "Test requirements content"
+        codebase_insights = (
+            "Existing codebase analysis:\n"
+            "- Python-based multi-agent framework\n"
+            "- Uses dependency injection pattern\n"
+            "- Has LLM integration components"
+        )
+        
+        prompt = agent._build_design_prompt(requirements, {}, codebase_insights)
+        
+        assert "Requirements Document" in prompt
+        assert requirements in prompt
+        assert "Existing Codebase Context" in prompt
+        assert "multi-agent framework" in prompt
+        assert "dependency injection" in prompt
+
+    def test_build_design_prompt_no_codebase_insights(self, mock_dependency_container, test_llm_config):
+        """Test design prompt building without codebase insights."""
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config
+        )
+        
+        requirements = "Test requirements content"
+        prompt = agent._build_design_prompt(requirements, {}, None)
+        
+        assert "Requirements Document" in prompt
+        assert requirements in prompt
+        assert "no existing codebase context" in prompt.lower()
+        assert "Existing Codebase Context" not in prompt
     
     def test_validate_mermaid_diagrams(self, mock_dependency_container, test_llm_config):
         """Test Mermaid diagram validation and fixing."""
