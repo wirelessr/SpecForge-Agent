@@ -1034,3 +1034,318 @@ with authentication, authorization, and user profile management capabilities.
         )
         
         self.logger.info(f"Memory context integration test passed. Patterns found: {total_patterns_found}")
+
+    @sequential_test_execution()
+    @pytest.mark.asyncio
+    async def test_design_generation_with_existing_codebase_real_project(self):
+        """
+        Integration test: Generate design for new feature in existing spec-agent codebase.
+        
+        This test uses the actual spec-agent project as the target codebase and tests
+        the DesignAgent's ability to analyze existing code and generate coherent designs
+        for new features that integrate with the existing architecture.
+        """
+        self.logger.info("=== Testing Design Generation with Real Existing Codebase ===")
+        
+        # Create requirements for a new feature that should integrate with existing code
+        new_feature_requirements = """# Requirements: Task Scheduler Feature
+
+## Introduction
+
+Add a task scheduling capability to the AutoGen framework that allows agents to
+schedule and execute tasks at specific times or intervals. This feature should
+integrate seamlessly with the existing agent architecture and dependency injection system.
+
+## Requirements
+
+### Requirement 1: Task Scheduler Service
+
+**User Story:** As a framework user, I want to schedule agent tasks to run at specific times,
+so that I can automate periodic operations.
+
+#### Acceptance Criteria
+
+1. WHEN I create a scheduled task THEN the system SHALL store it with timing information
+2. WHEN the scheduled time arrives THEN the system SHALL execute the task automatically
+3. WHEN a task fails THEN the system SHALL retry according to retry policy
+4. IF a task succeeds THEN the system SHALL log completion status
+
+### Requirement 2: Agent Integration
+
+**User Story:** As a framework developer, I want the scheduler to work with existing agents,
+so that scheduled tasks can use all agent capabilities.
+
+#### Acceptance Criteria
+
+1. WHEN I schedule an agent task THEN it SHALL use the existing DependencyContainer
+2. WHEN scheduled tasks run THEN they SHALL have access to LLM services
+3. WHEN tasks complete THEN they SHALL store results in the memory system
+4. IF an agent is busy THEN the scheduler SHALL queue the task appropriately
+
+### Requirement 3: Configuration and Management
+
+**User Story:** As a system administrator, I want to configure and monitor scheduled tasks,
+so that I can maintain the system effectively.
+
+#### Acceptance Criteria
+
+1. WHEN I configure scheduler settings THEN they SHALL persist across restarts
+2. WHEN I query task status THEN the system SHALL show current and historical data
+3. WHEN I cancel a scheduled task THEN it SHALL stop executing
+4. IF the system restarts THEN scheduled tasks SHALL resume automatically
+"""
+        
+        # Use the actual project root directory instead of temp workspace
+        project_root = Path(__file__).parent.parent.parent  # Go up from tests/integration/
+        requirements_file = project_root / "scheduler_requirements.md"
+        
+        with open(requirements_file, 'w', encoding='utf-8') as f:
+            f.write(new_feature_requirements)
+        
+        try:
+            # Execute design generation with codebase analysis using real project
+            design_content = await self.execute_with_retry(
+                lambda: self.design_agent.generate_design(
+                    requirements_path=str(requirements_file),
+                    memory_context=self.design_agent.memory_context
+                )
+            )
+            
+            # Validate the design was generated
+            assert design_content, "Design content should not be empty"
+            assert isinstance(design_content, str), "Design should be a string"
+            
+            # Validate design quality with strict thresholds
+            validation_result = await self.quality_validator.validate_design_generation(
+                prompt="Generate design for task scheduler feature",
+                response=design_content,
+                thresholds=QUALITY_THRESHOLDS_STRICT['design_generation']
+            )
+            
+            self.log_quality_assessment(validation_result)
+            
+            # Enhanced validation for existing codebase integration
+            design_content_lower = design_content.lower()
+            
+            # Must reference existing architecture components
+            architecture_references = [
+                'dependencycontainer',
+                'autogen',
+                'agent',
+                'llm',
+                'memory'
+            ]
+            
+            found_references = [ref for ref in architecture_references if ref in design_content_lower]
+            assert len(found_references) >= 3, (
+                f"Design should reference existing architecture components. "
+                f"Found: {found_references}, Expected at least 3 from: {architecture_references}"
+            )
+            
+            # Must include integration considerations
+            integration_keywords = [
+                'integration',
+                'existing',
+                'current',
+                'framework',
+                'extend'
+            ]
+            
+            found_integration = [kw for kw in integration_keywords if kw in design_content_lower]
+            assert len(found_integration) >= 2, (
+                f"Design should discuss integration with existing code. "
+                f"Found: {found_integration}, Expected at least 2 from: {integration_keywords}"
+            )
+            
+            # Must have proper Mermaid diagrams
+            assert 'mermaid' in design_content_lower, "Design should include Mermaid diagrams"
+            
+            # Count diagram types
+            diagram_patterns = [
+                'graph',
+                'sequencediagram',
+                'classDiagram',
+                'flowchart'
+            ]
+            
+            found_diagrams = [pattern for pattern in diagram_patterns if pattern in design_content_lower]
+            assert len(found_diagrams) >= 1, (
+                f"Design should include at least one diagram type. "
+                f"Found: {found_diagrams}"
+            )
+            
+            # Validate that design addresses all requirements
+            requirement_keywords = ['scheduler', 'task', 'timing', 'configuration']
+            found_requirements = [kw for kw in requirement_keywords if kw in design_content_lower]
+            assert len(found_requirements) >= 3, (
+                f"Design should address core requirements. "
+                f"Found: {found_requirements}, Expected at least 3 from: {requirement_keywords}"
+            )
+            
+            # Assert quality meets strict thresholds
+            self.assert_quality_threshold(
+                validation_result,
+                "Design generation with existing codebase must meet strict quality standards"
+            )
+            
+            self.logger.info("✅ Real codebase integration test passed with high quality metrics")
+            
+        finally:
+            # Clean up test files
+            if requirements_file.exists():
+                requirements_file.unlink()
+
+    @sequential_test_execution()
+    @pytest.mark.asyncio
+    async def test_codebase_aware_design_comparison(self):
+        """
+        Integration test: Compare design quality with and without codebase analysis.
+        
+        This test validates that codebase-aware design generation produces significantly
+        better results than greenfield design generation for the same requirements.
+        """
+        self.logger.info("=== Testing Codebase-Aware vs Greenfield Design Comparison ===")
+        
+        # Create requirements that could benefit from existing codebase knowledge
+        api_feature_requirements = """# Requirements: REST API Endpoint Management
+
+## Introduction
+
+Add REST API endpoint management capabilities to the framework for external
+service integration and webhook handling.
+
+## Requirements
+
+### Requirement 1: API Server Integration
+
+**User Story:** As a framework user, I want to expose agent capabilities via REST API,
+so that external systems can interact with agents.
+
+#### Acceptance Criteria
+
+1. WHEN I start the API server THEN it SHALL expose agent endpoints
+2. WHEN external systems call endpoints THEN they SHALL receive proper responses
+3. WHEN authentication is required THEN the system SHALL validate credentials
+4. IF an agent is unavailable THEN the API SHALL return appropriate error codes
+
+### Requirement 2: Webhook Handling
+
+**User Story:** As a system integrator, I want to handle incoming webhooks,
+so that agents can respond to external events.
+
+#### Acceptance Criteria
+
+1. WHEN webhooks arrive THEN the system SHALL route them to appropriate agents
+2. WHEN agents process webhooks THEN they SHALL use existing services
+3. WHEN processing completes THEN the system SHALL send acknowledgments
+4. IF webhook processing fails THEN the system SHALL implement retry logic
+"""
+        
+        # Use project root for codebase-aware design
+        project_root = Path(__file__).parent.parent.parent  # Go up from tests/integration/
+        requirements_file = project_root / "api_requirements.md"
+        
+        with open(requirements_file, 'w', encoding='utf-8') as f:
+            f.write(api_feature_requirements)
+        
+        try:
+            # Generate design with codebase awareness (using current project)
+            codebase_aware_content = await self.execute_with_retry(
+                lambda: self.design_agent.generate_design(
+                    requirements_path=str(requirements_file),
+                    memory_context=self.design_agent.memory_context
+                )
+            )
+            
+            # Create temporary isolated workspace for greenfield comparison
+            greenfield_workspace = self.workspace_path / "greenfield_test"
+            greenfield_workspace.mkdir()
+            
+            # Copy only the requirements file, no existing code
+            greenfield_requirements = greenfield_workspace / "api_requirements.md"
+            with open(greenfield_requirements, 'w', encoding='utf-8') as f:
+                f.write(api_feature_requirements)
+            
+            # Generate greenfield design (no existing codebase)
+            greenfield_content = await self.execute_with_retry(
+                lambda: self.design_agent.generate_design(
+                    requirements_path=str(greenfield_requirements),
+                    memory_context=self.design_agent.memory_context
+                )
+            )
+            
+            # Validate both designs were generated successfully
+            assert codebase_aware_content, "Codebase-aware design content should not be empty"
+            assert greenfield_content, "Greenfield design content should not be empty"
+            assert isinstance(codebase_aware_content, str), "Codebase-aware design should be a string"
+            assert isinstance(greenfield_content, str), "Greenfield design should be a string"
+            
+            # Validate quality of both designs
+            codebase_validation = await self.quality_validator.validate_design_generation(
+                prompt="Generate API management design (codebase-aware)",
+                response=codebase_aware_content,
+                thresholds=QUALITY_THRESHOLDS_STRICT['design_generation']
+            )
+            
+            greenfield_validation = await self.quality_validator.validate_design_generation(
+                prompt="Generate API management design (greenfield)",
+                response=greenfield_content,
+                thresholds=QUALITY_THRESHOLDS_STRICT['design_generation']
+            )
+            
+            self.log_quality_assessment(codebase_validation)
+            self.log_quality_assessment(greenfield_validation)
+            
+            # Compare integration awareness
+            codebase_content_lower = codebase_aware_content.lower()
+            greenfield_content_lower = greenfield_content.lower()
+            
+            # Codebase-aware design should reference existing components
+            existing_components = [
+                'dependencycontainer',
+                'configmanager', 
+                'llmconfig',
+                'memory',
+                'agent'
+            ]
+            
+            codebase_references = len([comp for comp in existing_components if comp in codebase_content_lower])
+            greenfield_references = len([comp for comp in existing_components if comp in greenfield_content_lower])
+            
+            assert codebase_references > greenfield_references, (
+                f"Codebase-aware design should reference more existing components. "
+                f"Codebase: {codebase_references}, Greenfield: {greenfield_references}"
+            )
+            
+            # Codebase-aware design should have better integration considerations
+            integration_terms = ['integrate', 'existing', 'current', 'extend', 'leverage']
+            codebase_integration = len([term for term in integration_terms if term in codebase_content_lower])
+            greenfield_integration = len([term for term in integration_terms if term in greenfield_content_lower])
+            
+            assert codebase_integration >= greenfield_integration, (
+                f"Codebase-aware design should show better integration awareness. "
+                f"Codebase: {codebase_integration}, Greenfield: {greenfield_integration}"
+            )
+            
+            # Both should meet quality thresholds, but codebase-aware should be superior
+            self.assert_quality_threshold(codebase_validation, "Codebase-aware design quality")
+            self.assert_quality_threshold(greenfield_validation, "Greenfield design quality")
+            
+            # Quality comparison
+            codebase_score = codebase_validation.metrics.get('overall_score', 0)
+            greenfield_score = greenfield_validation.metrics.get('overall_score', 0)
+            
+            self.logger.info(f"Quality comparison - Codebase-aware: {codebase_score:.3f}, Greenfield: {greenfield_score:.3f}")
+            
+            # Log detailed comparison results
+            self.logger.info(f"Component references - Codebase: {codebase_references}, Greenfield: {greenfield_references}")
+            self.logger.info(f"Integration awareness - Codebase: {codebase_integration}, Greenfield: {greenfield_integration}")
+            
+            self.logger.info("✅ Codebase-aware vs greenfield comparison completed successfully")
+            
+        finally:
+            # Clean up test files
+            if requirements_file.exists():
+                requirements_file.unlink()
+            if greenfield_workspace.exists():
+                shutil.rmtree(greenfield_workspace)
