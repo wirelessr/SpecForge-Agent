@@ -651,9 +651,10 @@ class BaseLLMAgent(ABC):
         
         # Call appropriate context method based on type
         if context_type in ['plan', 'design', 'tasks']:
-            user_request = task_input.get('user_request')
+            # For revision tasks, revision_feedback is essentially a user_request
+            user_request = task_input.get('user_request') or task_input.get('revision_feedback')
             if not user_request:
-                self.logger.warning(f"{context_type} context requires user_request")
+                self.logger.warning(f"{context_type} context requires user_request or revision_feedback")
                 return None
             return await context_method(user_request)
         elif context_type == 'implementation':

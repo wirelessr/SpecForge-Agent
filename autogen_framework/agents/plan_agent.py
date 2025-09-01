@@ -118,9 +118,8 @@ You should be thorough, precise, and consider both functional and non-functional
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for PlanAgent."""
-        if task_input.get("user_request"):
-            return ContextSpec(context_type="plan")
-        return None
+        # Plan agent always needs plan context, regardless of task type (initial planning or revision)
+        return ContextSpec(context_type="plan")
     
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """

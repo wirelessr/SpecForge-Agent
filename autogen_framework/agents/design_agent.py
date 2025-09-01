@@ -157,10 +157,9 @@ Remember: Your designs serve as the foundation for implementation. They must be 
     
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for DesignAgent."""
-        if task_input.get("user_request"):
-            from .base_agent import ContextSpec
-            return ContextSpec(context_type="design")
-        return None
+        # Design agent always needs design context, regardless of task type (initial design or revision)
+        from .base_agent import ContextSpec
+        return ContextSpec(context_type="design")
     
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """
