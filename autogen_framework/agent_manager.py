@@ -182,26 +182,6 @@ class AgentManager:
             self.logger.error(f"Error setting up agents: {e}")
             return False
     
-    def set_context_manager(self, context_manager: 'ContextManager') -> None:
-        """
-        Set the ContextManager for all agents.
-        
-        Note: With DependencyContainer, the ContextManager is managed automatically.
-        This method is kept for backward compatibility but logs a warning.
-        
-        Args:
-            context_manager: ContextManager instance (ignored when using container)
-        """
-        if self.container:
-            self.logger.warning(
-                "set_context_manager called but DependencyContainer manages ContextManager automatically. "
-                "This call is ignored."
-            )
-            return
-        
-        # Legacy behavior for backward compatibility
-        self.logger.info("ContextManager set for all agents (legacy mode)")
-    
     async def coordinate_agents(self, task_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Coordinate multiple agents to work together on a task.

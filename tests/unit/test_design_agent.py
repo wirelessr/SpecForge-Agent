@@ -50,11 +50,19 @@ class TestDesignAgent:
     @pytest.fixture
     def design_agent(self, mock_dependency_container, test_llm_config, memory_context):
         """Create a DesignAgent instance for testing with container-based dependencies."""
-        return DesignAgent(
+        agent = DesignAgent(
             container=mock_dependency_container,
             llm_config=test_llm_config,
             memory_context=memory_context
         )
+        
+        # Mock the codebase analysis service to avoid slow real analysis
+        mock_codebase_service = Mock()
+        mock_codebase_service.is_codebase_present.return_value = False
+        mock_codebase_service.analyze_codebase = AsyncMock(return_value=(False, None))
+        agent.codebase_analysis_service = mock_codebase_service
+        
+        return agent
     
     @pytest.fixture
     def sample_requirements(self):
@@ -1100,8 +1108,156 @@ def test_all_design_templates(template_type):
         assert template_type in templates
         
         template_content = templates[template_type]
-    assert "# Design Document" in template_content
-    assert "Architectural Overview" in template_content
-    assert "Components and Interfaces" in template_content
-    assert "Security Considerations" in template_content
-    assert "Testing Strategy" in template_content
+        assert "# Design Document" in template_content
+        assert "Architectural Overview" in template_content
+        assert "Components and Interfaces" in template_content
+        assert "Security Considerations" in template_content
+        assert "Testing Strategy" in template_content
+
+
+class TestDesignAgentCodebaseIntegration:
+    """Test suite for DesignAgent codebase analysis integration."""
+
+    @pytest.fixture
+    def design_agent_with_mocked_codebase(self, mock_dependency_container, test_llm_config, mock_memory_context):
+        """Create a DesignAgent instance with mocked codebase service."""
+        agent = DesignAgent(
+            container=mock_dependency_container,
+            llm_config=test_llm_config,
+            memory_context=mock_memory_context
+        )
+        
+        # Mock the codebase analysis service to avoid slow real analysis
+        mock_codebase_service = Mock()
+        mock_codebase_service.is_codebase_present.return_value = False
+        mock_codebase_service.analyze_codebase = AsyncMock(return_value=(False, None))
+        agent.codebase_analysis_service = mock_codebase_service
+        
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_store_codebase_analysis_in_memory(self, design_agent_with_mocked_codebase):
+        """Test storing codebase analysis results in memory."""
+        agent = design_agent_with_mocked_codebase
+        
+        # Mock the memory manager
+        mock_memory_manager = AsyncMock()
+        agent.container.memory_manager = mock_memory_manager
+        
+        # Test data that matches the expected structure
+        analysis_result = {
+            'analysis_result': 'Detailed codebase analysis report with architecture insights',
+            'insights': {
+                'architecture_summary': 'Multi-layered architecture with clear separation',
+                'key_technologies': 'Python, FastAPI, SQLAlchemy',
+                'code_patterns': 'Repository pattern, dependency injection'
+            }
+        }
+        
+        work_directory = '/test/project/path'
+        
+        # Call the method
+        await agent._store_codebase_analysis_in_memory(analysis_result, work_directory)
+        
+        # Verify memory manager was called correctly
+        assert mock_memory_manager.save_memory.call_count == 2
+        
+        # Check first call (analysis report)
+        first_call = mock_memory_manager.save_memory.call_args_list[0]
+        assert first_call[1]['category'] == 'codebase_analysis'
+        assert first_call[1]['key'] == 'path_analysis_report'
+        assert first_call[1]['memory_type'] == 'project'
+        assert 'content' in first_call[1]['content']
+        assert first_call[1]['content']['content'] == analysis_result['analysis_result']
+        
+        # Check second call (insights)
+        second_call = mock_memory_manager.save_memory.call_args_list[1]
+        assert second_call[1]['category'] == 'codebase_insights'
+        assert second_call[1]['key'] == 'path_insights'
+        assert second_call[1]['memory_type'] == 'project'
+        assert 'insights' in second_call[1]['content']
+        assert second_call[1]['content']['insights'] == analysis_result['insights']
+
+    @pytest.mark.asyncio
+    async def test_store_codebase_analysis_no_memory_manager(self, design_agent_with_mocked_codebase):
+        """Test storing codebase analysis when memory manager is not available."""
+        agent = design_agent_with_mocked_codebase
+        
+        # Remove memory manager from container
+        agent.container.memory_manager = None
+        
+        analysis_result = {
+            'analysis_result': 'Test analysis',
+            'insights': {'test': 'data'}
+        }
+        
+        # Should not raise exception
+        await agent._store_codebase_analysis_in_memory(analysis_result, '/test/path')
+        
+        # No assertions needed - just verify it doesn't crash
+
+    @pytest.mark.asyncio
+    async def test_generate_design_with_codebase_analysis_storage(self, design_agent_with_mocked_codebase, sample_requirements):
+        """Test that design generation properly stores codebase analysis results."""
+        agent = design_agent_with_mocked_codebase
+        
+        # Mock the memory manager
+        mock_memory_manager = AsyncMock()
+        agent.container.memory_manager = mock_memory_manager
+        
+        # Configure codebase service to return analysis
+        mock_analysis_result = {
+            'analysis_result': 'Comprehensive codebase analysis',
+            'insights': {
+                'architecture': 'Layered architecture',
+                'patterns': 'Repository pattern'
+            }
+        }
+        
+        mock_codebase_service = Mock()
+        mock_codebase_service.is_codebase_present.return_value = True
+        mock_codebase_service.analyze_codebase = AsyncMock(return_value=(True, mock_analysis_result))
+        agent.codebase_analysis_service = mock_codebase_service
+        
+        mock_design_content = "# Design Document\n\nTest design content"
+        
+        with patch.object(agent, 'generate_response', new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_design_content
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as temp_file:
+                temp_file.write(sample_requirements)
+                temp_file.flush()
+                
+                try:
+                    result = await agent.generate_design(temp_file.name, agent.memory_context)
+                    
+                    # Verify design was generated
+                    assert "# Design Document" in result
+                    
+                    # Verify codebase analysis was called
+                    mock_codebase_service.analyze_codebase.assert_called_once()
+                    
+                    # Verify memory storage was called
+                    mock_memory_manager.save_memory.assert_called()
+                    assert mock_memory_manager.save_memory.call_count == 2  # report + insights
+                    
+                finally:
+                    os.unlink(temp_file.name)
+
+    @pytest.fixture
+    def sample_requirements(self):
+        """Create sample requirements content for codebase tests."""
+        return """# Requirements Document
+
+## Introduction
+Test project requirements for codebase integration testing.
+
+## Requirements
+
+### Requirement 1: Integration
+**User Story:** As a developer, I want to integrate with existing code.
+
+#### Acceptance Criteria
+1. WHEN new code is added THEN it SHALL follow existing patterns
+2. WHEN existing APIs are used THEN they SHALL be respected
+"""

@@ -96,10 +96,9 @@ Always maintain the existing task generation logic, prompts, and formatting unch
 
     def get_context_requirements(self, task_input: Dict[str, Any]) -> Optional['ContextSpec']:
         """Define context requirements for TasksAgent."""
-        if task_input.get("user_request"):
-            from .base_agent import ContextSpec
-            return ContextSpec(context_type="tasks")
-        return None
+        # Tasks agent always needs tasks context, regardless of task type (initial generation or revision)
+        from .base_agent import ContextSpec
+        return ContextSpec(context_type="tasks")
 
     async def _process_task_impl(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -273,12 +273,8 @@ class MainController:
         # Delegate to WorkflowManager
         result = await self.workflow_manager.process_request(user_request, auto_approve)
         
-        # After the first phase (requirements), ContextManager should be initialized
-        # Pass it to AgentManager so all agents can use it
-        context_manager = self.workflow_manager.get_context_manager()
-        if context_manager and self.agent_manager:
-            self.agent_manager.set_context_manager(context_manager)
-            self.logger.info("ContextManager passed to AgentManager")
+        # Note: ContextManager is automatically managed by DependencyContainer
+        # No need to manually pass it to AgentManager
         
         # Deprecated: Avoid mirroring state in MainController; rely on WorkflowManager as SSOT
         # self._sync_workflow_state_from_manager()
