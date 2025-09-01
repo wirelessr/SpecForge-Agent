@@ -346,6 +346,10 @@ Revised Design Document:"""
                         codebase_analysis = analysis_result
                     else:
                         codebase_analysis = str(analysis_result)
+                    
+                    # Store codebase analysis results in memory for future use
+                    await self._store_codebase_analysis_in_memory(analysis_result, work_directory)
+                    
                     self.logger.info("Codebase analysis completed successfully")
                 else:
                     self.logger.warning("Codebase analysis failed, proceeding without codebase context")
@@ -656,6 +660,65 @@ Revised Design Document:"""
                 diagram_lines.append(f'    {prev_letter} --> {curr_letter}[{component}]')
         
         return '\n'.join(diagram_lines)
+    
+    async def _store_codebase_analysis_in_memory(self, analysis_result: Dict[str, Any], work_directory: str) -> None:
+        """
+        Store codebase analysis results in memory for future use.
+        
+        Args:
+            analysis_result: The complete analysis result from codebase analysis service
+            work_directory: The working directory path for context
+        """
+        try:
+            if not self.container or not hasattr(self.container, 'memory_manager'):
+                self.logger.warning("Memory manager not available, skipping codebase analysis storage")
+                return
+            
+            memory_manager = self.container.memory_manager
+            project_name = os.path.basename(work_directory)
+            
+            # Store the complete analysis report
+            if 'analysis_result' in analysis_result:
+                analysis_content = {
+                    "content": analysis_result['analysis_result'],
+                    "type": "codebase_analysis_report",
+                    "project": project_name,
+                    "stored_at": self._get_current_timestamp()
+                }
+                
+                await memory_manager.save_memory(
+                    category="codebase_analysis",
+                    key=f"{project_name}_analysis_report",
+                    content=analysis_content,
+                    memory_type="project"
+                )
+                self.logger.info(f"Stored codebase analysis report for project: {project_name}")
+            
+            # Store the structured insights
+            if 'insights' in analysis_result:
+                insights_content = {
+                    "insights": analysis_result['insights'],
+                    "type": "codebase_analysis_insights", 
+                    "project": project_name,
+                    "stored_at": self._get_current_timestamp()
+                }
+                
+                await memory_manager.save_memory(
+                    category="codebase_insights",
+                    key=f"{project_name}_insights",
+                    content=insights_content,
+                    memory_type="project"
+                )
+                self.logger.info(f"Stored codebase analysis insights for project: {project_name}")
+                
+        except Exception as e:
+            self.logger.error(f"Error storing codebase analysis in memory: {e}")
+            # Don't raise exception as this is not critical to the main workflow
+    
+    def _get_current_timestamp(self) -> str:
+        """Get current timestamp as string for metadata."""
+        from datetime import datetime
+        return datetime.now().isoformat()
     
     def get_agent_capabilities(self) -> List[str]:
         """
